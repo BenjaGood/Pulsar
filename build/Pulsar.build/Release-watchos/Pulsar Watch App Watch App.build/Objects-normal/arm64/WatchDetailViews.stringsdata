@@ -1,0 +1,40 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/WatchDetailViews.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Heart Zones",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 45
+        }
+      },
+      {
+        "comment": "",
+        "key": "Data source: %@",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 118
+        }
+      },
+      {
+        "comment": "",
+        "key": "Connect",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 122
+        }
+      },
+      {
+        "comment": "",
+        "key": "HealthKit",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 111
+        }
+      }
+    ]
+  },
+  "version": 1
+}

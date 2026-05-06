@@ -9,6 +9,10 @@ import SwiftUI
 
 @main
 struct PulsarApp: App {
+    init() {
+        AppLifecycleStore().registerFirstLaunchIfNeeded()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

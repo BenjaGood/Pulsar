@@ -1,0 +1,48 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/ContentView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Pulsar",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 64
+        }
+      },
+      {
+        "comment": "",
+        "key": "Health Status",
+        "location": {
+          "startingColumn": 39,
+          "startingLine": 50
+        }
+      },
+      {
+        "comment": "",
+        "key": "Today",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 72
+        }
+      },
+      {
+        "comment": "",
+        "key": "Apple Health",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 84
+        }
+      },
+      {
+        "comment": "",
+        "key": "Connect",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 89
+        }
+      }
+    ]
+  },
+  "version": 1
+}

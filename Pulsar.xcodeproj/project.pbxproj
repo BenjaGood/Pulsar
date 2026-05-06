@@ -6,14 +6,66 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		EDF329D42FA7FABD00359606 /* Pulsar Watch App Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = EDF329CA2FA7FABC00359606 /* Pulsar Watch App Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		EDF329D22FA7FABD00359606 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EDF329B02FA7FA4B00359606 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EDF329C92FA7FABC00359606;
+			remoteInfo = "Pulsar Watch App Watch App";
+		};
+		EDF329EA2FA800000000000A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EDF329B02FA7FA4B00359606 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EDF329B72FA7FA4B00359606;
+			remoteInfo = Pulsar;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		EDF329D82FA7FABD00359606 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				EDF329D42FA7FABD00359606 /* Pulsar Watch App Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		EDF329B82FA7FA4B00359606 /* Pulsar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pulsar.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EDF329CA2FA7FABC00359606 /* Pulsar Watch App Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Pulsar Watch App Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		EDF329E12FA8000000000001 /* PulsarTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PulsarTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		EDF329BA2FA7FA4B00359606 /* Pulsar */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Pulsar;
+			sourceTree = "<group>";
+		};
+		EDF329CB2FA7FABC00359606 /* Pulsar Watch App Watch App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Pulsar Watch App Watch App";
+			sourceTree = "<group>";
+		};
+		EDF329E22FA8000000000002 /* PulsarTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PulsarTests;
+			sourceTree = "<group>";
+		};
+		EDF330002FA9000000000001 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -26,13 +78,30 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		EDF329C72FA7FABC00359606 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EDF329E42FA8000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		EDF329AF2FA7FA4B00359606 = {
 			isa = PBXGroup;
 			children = (
+				EDF330002FA9000000000001 /* Shared */,
 				EDF329BA2FA7FA4B00359606 /* Pulsar */,
+				EDF329CB2FA7FABC00359606 /* Pulsar Watch App Watch App */,
+				EDF329E22FA8000000000002 /* PulsarTests */,
 				EDF329B92FA7FA4B00359606 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +110,8 @@
 			isa = PBXGroup;
 			children = (
 				EDF329B82FA7FA4B00359606 /* Pulsar.app */,
+				EDF329CA2FA7FABC00359606 /* Pulsar Watch App Watch App.app */,
+				EDF329E12FA8000000000001 /* PulsarTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -55,13 +126,16 @@
 				EDF329B42FA7FA4B00359606 /* Sources */,
 				EDF329B52FA7FA4B00359606 /* Frameworks */,
 				EDF329B62FA7FA4B00359606 /* Resources */,
+				EDF329D82FA7FABD00359606 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				EDF329D32FA7FABD00359606 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				EDF329BA2FA7FA4B00359606 /* Pulsar */,
+				EDF330002FA9000000000001 /* Shared */,
 			);
 			name = Pulsar;
 			packageProductDependencies = (
@@ -69,6 +143,52 @@
 			productName = Pulsar;
 			productReference = EDF329B82FA7FA4B00359606 /* Pulsar.app */;
 			productType = "com.apple.product-type.application";
+		};
+		EDF329C92FA7FABC00359606 /* Pulsar Watch App Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EDF329D52FA7FABD00359606 /* Build configuration list for PBXNativeTarget "Pulsar Watch App Watch App" */;
+			buildPhases = (
+				EDF329C62FA7FABC00359606 /* Sources */,
+				EDF329C72FA7FABC00359606 /* Frameworks */,
+				EDF329C82FA7FABC00359606 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				EDF329CB2FA7FABC00359606 /* Pulsar Watch App Watch App */,
+				EDF330002FA9000000000001 /* Shared */,
+			);
+			name = "Pulsar Watch App Watch App";
+			packageProductDependencies = (
+			);
+			productName = "Pulsar Watch App Watch App";
+			productReference = EDF329CA2FA7FABC00359606 /* Pulsar Watch App Watch App.app */;
+			productType = "com.apple.product-type.application";
+		};
+		EDF329E62FA8000000000006 /* PulsarTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EDF329E72FA8000000000007 /* Build configuration list for PBXNativeTarget "PulsarTests" */;
+			buildPhases = (
+				EDF329E32FA8000000000003 /* Sources */,
+				EDF329E42FA8000000000004 /* Frameworks */,
+				EDF329E52FA8000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				EDF329EB2FA800000000000B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				EDF329E22FA8000000000002 /* PulsarTests */,
+			);
+			name = PulsarTests;
+			packageProductDependencies = (
+			);
+			productName = PulsarTests;
+			productReference = EDF329E12FA8000000000001 /* PulsarTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -82,6 +202,13 @@
 				TargetAttributes = {
 					EDF329B72FA7FA4B00359606 = {
 						CreatedOnToolsVersion = 26.4.1;
+					};
+					EDF329C92FA7FABC00359606 = {
+						CreatedOnToolsVersion = 26.4.1;
+					};
+					EDF329E62FA8000000000006 = {
+						CreatedOnToolsVersion = 26.4.1;
+						TestTargetID = EDF329B72FA7FA4B00359606;
 					};
 				};
 			};
@@ -100,12 +227,28 @@
 			projectRoot = "";
 			targets = (
 				EDF329B72FA7FA4B00359606 /* Pulsar */,
+				EDF329C92FA7FABC00359606 /* Pulsar Watch App Watch App */,
+				EDF329E62FA8000000000006 /* PulsarTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		EDF329B62FA7FA4B00359606 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EDF329C82FA7FABC00359606 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EDF329E52FA8000000000005 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +265,34 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		EDF329C62FA7FABC00359606 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EDF329E32FA8000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		EDF329D32FA7FABD00359606 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EDF329C92FA7FABC00359606 /* Pulsar Watch App Watch App */;
+			targetProxy = EDF329D22FA7FABD00359606 /* PBXContainerItemProxy */;
+		};
+		EDF329EB2FA800000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EDF329B72FA7FA4B00359606 /* Pulsar */;
+			targetProxy = EDF329EA2FA800000000000A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		EDF329C12FA7FA4C00359606 /* Debug */ = {
@@ -251,11 +421,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Pulsar/Pulsar.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Pulsar reads sleep, heart, activity, workout, and profile data from Apple Health to calculate Sleep, Recovery, and Strain.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -283,11 +455,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Pulsar/Pulsar.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Pulsar reads sleep, heart, activity, workout, and profile data from Apple Health to calculate Sleep, Recovery, and Strain.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -310,6 +484,134 @@
 			};
 			name = Release;
 		};
+		EDF329D62FA7FABD00359606 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Pulsar Watch App Watch App/Pulsar Watch App Watch App.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Pulsar Watch App";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Pulsar reads sleep, heart, activity, and workout data from Apple Health on Apple Watch to show today’s Sleep, Recovery, and Strain insights.";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = aetherial.Pulsar;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = aetherial.Pulsar.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.4;
+			};
+			name = Debug;
+		};
+		EDF329D72FA7FABD00359606 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Pulsar Watch App Watch App/Pulsar Watch App Watch App.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Pulsar Watch App";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Pulsar reads sleep, heart, activity, and workout data from Apple Health on Apple Watch to show today’s Sleep, Recovery, and Strain insights.";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = aetherial.Pulsar;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = aetherial.Pulsar.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.4;
+			};
+			name = Release;
+		};
+		EDF329E82FA8000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = aetherial.PulsarTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Pulsar.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Pulsar";
+			};
+			name = Debug;
+		};
+		EDF329E92FA8000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = aetherial.PulsarTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Pulsar.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Pulsar";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -327,6 +629,24 @@
 			buildConfigurations = (
 				EDF329C42FA7FA4C00359606 /* Debug */,
 				EDF329C52FA7FA4C00359606 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		EDF329D52FA7FABD00359606 /* Build configuration list for PBXNativeTarget "Pulsar Watch App Watch App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EDF329D62FA7FABD00359606 /* Debug */,
+				EDF329D72FA7FABD00359606 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		EDF329E72FA8000000000007 /* Build configuration list for PBXNativeTarget "PulsarTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EDF329E82FA8000000000008 /* Debug */,
+				EDF329E92FA8000000000009 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
