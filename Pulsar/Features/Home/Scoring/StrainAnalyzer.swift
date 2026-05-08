@@ -16,9 +16,13 @@ struct StrainAnalysisInput {
 
 struct StrainAnalyzer {
     func analyze(_ input: StrainAnalysisInput) -> StrainSummary {
-        var summary = StrainScoringEngine().score(input: input.strainInput)
         let workoutHeartSamples = input.strainInput.workouts.flatMap(\.heartRateSamples)
         let allHeartSamples = uniqueHeartSamples(input.dayHeartRateSamples + workoutHeartSamples).sorted { $0.start < $1.start }
+        var summary = StrainScoringEngine().score(
+            input: input.strainInput,
+            dayHeartRateSamples: allHeartSamples,
+            restingHeartRate: input.biometrics.restingHeartRateBPM
+        )
         let activeHeartSamples = preferredActiveHeartSamples(workoutSamples: workoutHeartSamples, daySamples: input.dayHeartRateSamples, restingHeartRate: input.biometrics.restingHeartRateBPM)
         let peakHeartRate = allHeartSamples.map(\.bpm).filter { $0 > 0 }.max()
 

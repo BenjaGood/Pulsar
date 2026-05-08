@@ -5,7 +5,7 @@
 
 import Foundation
 
-enum ConfidenceGrade: String, CaseIterable, Identifiable, Codable, Equatable {
+enum ConfidenceGrade: String, CaseIterable, Identifiable, Codable, Equatable, Hashable {
     case high = "High"
     case moderate = "Moderate"
     case low = "Low"
@@ -95,19 +95,231 @@ enum PrimarySleepSource: String, CaseIterable, Identifiable, Codable {
 }
 
 struct SleepSchedule: Codable, Equatable {
-    var targetBedtimeHour: Int
-    var targetBedtimeMinute: Int
-    var targetWakeHour: Int
-    var targetWakeMinute: Int
-    var targetSleepHours: Double
+    var bedtimeMinutesFromMidnight: Int
+    var wakeTimeMinutesFromMidnight: Int
+    var alarmEnabled: Bool
+    var alarmTimeMinutesFromMidnight: Int
+    var alarmUsesWakeTime: Bool
+    var alarmSoundName: String
+    var alarmHapticsEnabled: Bool
+    var snoozeEnabled: Bool
+    var smartWakeEnabled: Bool
+    var wakeWindowMinutes: Int?
 
     static let standard = SleepSchedule(
-        targetBedtimeHour: 22,
-        targetBedtimeMinute: 30,
-        targetWakeHour: 6,
-        targetWakeMinute: 30,
-        targetSleepHours: 8
+        bedtimeMinutesFromMidnight: 22 * 60 + 30,
+        wakeTimeMinutesFromMidnight: 6 * 60 + 30,
+        alarmEnabled: false,
+        alarmTimeMinutesFromMidnight: 6 * 60 + 30,
+        alarmUsesWakeTime: true,
+        alarmSoundName: "Default",
+        alarmHapticsEnabled: true,
+        snoozeEnabled: true,
+        smartWakeEnabled: false,
+        wakeWindowMinutes: 30
     )
+
+    init(
+        bedtimeMinutesFromMidnight: Int,
+        wakeTimeMinutesFromMidnight: Int,
+        alarmEnabled: Bool = false,
+        alarmTimeMinutesFromMidnight: Int? = nil,
+        alarmUsesWakeTime: Bool = true,
+        alarmSoundName: String = "Default",
+        alarmHapticsEnabled: Bool = true,
+        snoozeEnabled: Bool = true,
+        smartWakeEnabled: Bool = false,
+        wakeWindowMinutes: Int? = 30
+    ) {
+        let bedtime = Self.normalizedMinutes(bedtimeMinutesFromMidnight)
+        let wake = Self.normalizedMinutes(wakeTimeMinutesFromMidnight)
+        self.bedtimeMinutesFromMidnight = bedtime
+        self.wakeTimeMinutesFromMidnight = wake
+        self.alarmUsesWakeTime = alarmUsesWakeTime
+        self.alarmEnabled = alarmEnabled
+        self.alarmTimeMinutesFromMidnight = Self.normalizedMinutes(alarmTimeMinutesFromMidnight ?? wake)
+        self.alarmSoundName = alarmSoundName
+        self.alarmHapticsEnabled = alarmHapticsEnabled
+        self.snoozeEnabled = snoozeEnabled
+        self.smartWakeEnabled = smartWakeEnabled
+        self.wakeWindowMinutes = wakeWindowMinutes
+        if alarmUsesWakeTime {
+            self.alarmTimeMinutesFromMidnight = wake
+        }
+    }
+
+    init(
+        targetBedtimeHour: Int,
+        targetBedtimeMinute: Int,
+        targetWakeHour: Int,
+        targetWakeMinute: Int,
+        targetSleepHours: Double? = nil,
+        alarmEnabled: Bool = false,
+        alarmTimeMinutesFromMidnight: Int? = nil,
+        alarmUsesWakeTime: Bool = true,
+        alarmSoundName: String = "Default",
+        alarmHapticsEnabled: Bool = true,
+        snoozeEnabled: Bool = true,
+        smartWakeEnabled: Bool = false,
+        wakeWindowMinutes: Int? = 30
+    ) {
+        self.init(
+            bedtimeMinutesFromMidnight: targetBedtimeHour * 60 + targetBedtimeMinute,
+            wakeTimeMinutesFromMidnight: targetWakeHour * 60 + targetWakeMinute,
+            alarmEnabled: alarmEnabled,
+            alarmTimeMinutesFromMidnight: alarmTimeMinutesFromMidnight,
+            alarmUsesWakeTime: alarmUsesWakeTime,
+            alarmSoundName: alarmSoundName,
+            alarmHapticsEnabled: alarmHapticsEnabled,
+            snoozeEnabled: snoozeEnabled,
+            smartWakeEnabled: smartWakeEnabled,
+            wakeWindowMinutes: wakeWindowMinutes
+        )
+    }
+
+    var targetBedtimeHour: Int {
+        get { bedtimeMinutesFromMidnight / 60 }
+        set { bedtimeMinutesFromMidnight = Self.normalizedMinutes(newValue * 60 + targetBedtimeMinute) }
+    }
+
+    var targetBedtimeMinute: Int {
+        get { bedtimeMinutesFromMidnight % 60 }
+        set { bedtimeMinutesFromMidnight = Self.normalizedMinutes(targetBedtimeHour * 60 + newValue) }
+    }
+
+    var targetWakeHour: Int {
+        get { wakeTimeMinutesFromMidnight / 60 }
+        set { setWakeTimeMinutes(newValue * 60 + targetWakeMinute) }
+    }
+
+    var targetWakeMinute: Int {
+        get { wakeTimeMinutesFromMidnight % 60 }
+        set { setWakeTimeMinutes(targetWakeHour * 60 + newValue) }
+    }
+
+    var targetSleepDurationMinutes: Int {
+        Self.durationMinutes(from: bedtimeMinutesFromMidnight, to: wakeTimeMinutesFromMidnight)
+    }
+
+    var targetSleepHours: Double {
+        Double(targetSleepDurationMinutes) / 60
+    }
+
+    var resolvedAlarmTimeMinutesFromMidnight: Int {
+        alarmUsesWakeTime ? wakeTimeMinutesFromMidnight : alarmTimeMinutesFromMidnight
+    }
+
+    mutating func setBedtimeMinutes(_ minutes: Int) {
+        bedtimeMinutesFromMidnight = Self.normalizedMinutes(minutes)
+    }
+
+    mutating func setWakeTimeMinutes(_ minutes: Int) {
+        wakeTimeMinutesFromMidnight = Self.normalizedMinutes(minutes)
+        if alarmUsesWakeTime {
+            alarmTimeMinutesFromMidnight = wakeTimeMinutesFromMidnight
+        }
+    }
+
+    mutating func setAlarmTimeMinutes(_ minutes: Int) {
+        alarmUsesWakeTime = false
+        alarmTimeMinutesFromMidnight = Self.normalizedMinutes(minutes)
+    }
+
+    mutating func resetAlarmToWakeTime() {
+        alarmUsesWakeTime = true
+        alarmTimeMinutesFromMidnight = wakeTimeMinutesFromMidnight
+    }
+
+    mutating func setAlarmEnabled(_ enabled: Bool) {
+        alarmEnabled = enabled
+        if enabled, alarmUsesWakeTime {
+            alarmTimeMinutesFromMidnight = wakeTimeMinutesFromMidnight
+        }
+    }
+
+    static func durationMinutes(from startMinutes: Int, to endMinutes: Int) -> Int {
+        let normalizedStart = normalizedMinutes(startMinutes)
+        let normalizedEnd = normalizedMinutes(endMinutes)
+        return normalizedEnd >= normalizedStart ? (normalizedEnd - normalizedStart) : (24 * 60 - normalizedStart + normalizedEnd)
+    }
+
+    private static func normalizedMinutes(_ value: Int) -> Int {
+        let day = 24 * 60
+        let remainder = value % day
+        return remainder >= 0 ? remainder : remainder + day
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case bedtimeMinutesFromMidnight
+        case wakeTimeMinutesFromMidnight
+        case alarmEnabled
+        case alarmTimeMinutesFromMidnight
+        case alarmUsesWakeTime
+        case alarmSoundName
+        case alarmHapticsEnabled
+        case snoozeEnabled
+        case smartWakeEnabled
+        case wakeWindowMinutes
+        case targetBedtimeHour
+        case targetBedtimeMinute
+        case targetWakeHour
+        case targetWakeMinute
+        case targetSleepHours
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let bedtimeMinutes = try container.decodeIfPresent(Int.self, forKey: .bedtimeMinutesFromMidnight)
+        let wakeMinutes = try container.decodeIfPresent(Int.self, forKey: .wakeTimeMinutesFromMidnight)
+        let legacyBedtimeHour = try container.decodeIfPresent(Int.self, forKey: .targetBedtimeHour)
+        let legacyBedtimeMinute = try container.decodeIfPresent(Int.self, forKey: .targetBedtimeMinute)
+        let legacyWakeHour = try container.decodeIfPresent(Int.self, forKey: .targetWakeHour)
+        let legacyWakeMinute = try container.decodeIfPresent(Int.self, forKey: .targetWakeMinute)
+        let alarmEnabled = try container.decodeIfPresent(Bool.self, forKey: .alarmEnabled) ?? false
+        let alarmSoundName = try container.decodeIfPresent(String.self, forKey: .alarmSoundName) ?? Self.standard.alarmSoundName
+        let alarmHapticsEnabled = try container.decodeIfPresent(Bool.self, forKey: .alarmHapticsEnabled) ?? Self.standard.alarmHapticsEnabled
+        let snoozeEnabled = try container.decodeIfPresent(Bool.self, forKey: .snoozeEnabled) ?? Self.standard.snoozeEnabled
+        let smartWakeEnabled = try container.decodeIfPresent(Bool.self, forKey: .smartWakeEnabled) ?? Self.standard.smartWakeEnabled
+        let wakeWindowMinutes = try container.decodeIfPresent(Int.self, forKey: .wakeWindowMinutes) ?? Self.standard.wakeWindowMinutes
+
+        let resolvedBedtime = bedtimeMinutes ?? (
+            (legacyBedtimeHour ?? Self.standard.targetBedtimeHour) * 60 +
+            (legacyBedtimeMinute ?? Self.standard.targetBedtimeMinute)
+        )
+        let resolvedWake = wakeMinutes ?? (
+            (legacyWakeHour ?? Self.standard.targetWakeHour) * 60 +
+            (legacyWakeMinute ?? Self.standard.targetWakeMinute)
+        )
+        let resolvedAlarmUsesWakeTime = try container.decodeIfPresent(Bool.self, forKey: .alarmUsesWakeTime) ?? true
+        let resolvedAlarmTime = try container.decodeIfPresent(Int.self, forKey: .alarmTimeMinutesFromMidnight)
+
+        self.init(
+            bedtimeMinutesFromMidnight: resolvedBedtime,
+            wakeTimeMinutesFromMidnight: resolvedWake,
+            alarmEnabled: alarmEnabled,
+            alarmTimeMinutesFromMidnight: resolvedAlarmTime,
+            alarmUsesWakeTime: resolvedAlarmUsesWakeTime,
+            alarmSoundName: alarmSoundName,
+            alarmHapticsEnabled: alarmHapticsEnabled,
+            snoozeEnabled: snoozeEnabled,
+            smartWakeEnabled: smartWakeEnabled,
+            wakeWindowMinutes: wakeWindowMinutes
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(bedtimeMinutesFromMidnight, forKey: .bedtimeMinutesFromMidnight)
+        try container.encode(wakeTimeMinutesFromMidnight, forKey: .wakeTimeMinutesFromMidnight)
+        try container.encode(alarmEnabled, forKey: .alarmEnabled)
+        try container.encode(alarmTimeMinutesFromMidnight, forKey: .alarmTimeMinutesFromMidnight)
+        try container.encode(alarmUsesWakeTime, forKey: .alarmUsesWakeTime)
+        try container.encode(alarmSoundName, forKey: .alarmSoundName)
+        try container.encode(alarmHapticsEnabled, forKey: .alarmHapticsEnabled)
+        try container.encode(snoozeEnabled, forKey: .snoozeEnabled)
+        try container.encode(smartWakeEnabled, forKey: .smartWakeEnabled)
+        try container.encodeIfPresent(wakeWindowMinutes, forKey: .wakeWindowMinutes)
+    }
 }
 
 struct UserProfile: Codable, Equatable {
@@ -750,28 +962,449 @@ struct StrainSummary: Codable, Equatable {
     )
 }
 
+enum StressLevel: String, Codable, Equatable, Hashable, CaseIterable, Identifiable {
+    case low = "Low"
+    case balanced = "Balanced"
+    case elevated = "Elevated"
+    case high = "High"
+
+    nonisolated var id: String { rawValue }
+
+    nonisolated static func level(for score: Int) -> StressLevel {
+        switch PulsarStressCategory.category(for: score) {
+        case .low: .low
+        case .balanced: .balanced
+        case .elevated: .elevated
+        case .high: .high
+        }
+    }
+
+    nonisolated static func legacyLevel(named name: String?) -> StressLevel? {
+        guard let name else { return nil }
+        if let level = StressLevel(rawValue: name) {
+            return level
+        }
+        if name == "Medium" {
+            return .balanced
+        }
+        if name == "Moderate" {
+            return .balanced
+        }
+        if name == "Very High" {
+            return .high
+        }
+        return nil
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+        self = StressLevel.legacyLevel(named: value) ?? .balanced
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+enum StressDriverSeverity: String, Codable, Equatable {
+    case supportive
+    case neutral
+    case elevated
+    case high
+}
+
+struct StressDriver: Identifiable, Codable, Equatable {
+    var id: String
+    var title: String
+    var detail: String
+    var severity: StressDriverSeverity
+    var relatedMetric: String?
+
+    init(
+        id: String = UUID().uuidString,
+        title: String,
+        detail: String,
+        severity: StressDriverSeverity,
+        relatedMetric: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+        self.severity = severity
+        self.relatedMetric = relatedMetric
+    }
+}
+
+enum StressContext: String, Codable, Equatable, Hashable {
+    case sleep
+    case workout
+    case rest
+    case active
+    case recovery
+    case unknown
+}
+
+struct StressSample: Identifiable, Codable, Equatable, Hashable {
+    var id: Date { timestamp }
+    var timestamp: Date
+    var score: Double
+    var confidence: ConfidenceGrade
+    var context: StressContext?
+}
+
+enum StressSignalAvailability: String, Codable, Equatable {
+    case available
+    case limited
+    case unavailable
+}
+
+struct StressSignal: Identifiable, Codable, Equatable {
+    var id: String
+    var title: String
+    var value: String
+    var baseline: String?
+    var availability: StressSignalAvailability
+}
+
+enum StressSummaryState: String, Codable, Equatable {
+    case noData
+    case buildingBaseline
+    case ready
+    case lowConfidence
+    case workoutPaused
+    case cooldown
+}
+
+struct StressSummary: Codable, Equatable {
+    var date: Date?
+    var score: Int?
+    var level: StressLevel?
+    var confidence: ConfidenceGrade
+    var state: StressSummaryState
+    var driverInsights: [String]
+    var drivers: [StressDriver]
+    var signals: [StressSignal]
+    var dailySamples: [StressSample]
+    var analyzedSampleCount: Int
+    var baselineWindowDays: Int
+    var availableSignalCount: Int
+    var lastHeartRate: Double?
+    var lastHeartRateTimestamp: Date?
+    var lastHRV: Double?
+    var lastHRVTimestamp: Date?
+    var nonActivityStress: Int?
+    var activityAdjustedStress: Int?
+    var movementStateText: String?
+    var stressStatusText: String?
+    var queryStart: Date?
+    var queryEnd: Date?
+    var lastUpdated: Date?
+    var sourceBadges: [SourceProvenance]
+    var explanation: String
+    var subtext: String
+
+    var currentScore: Double? {
+        score.map(Double.init)
+    }
+
+    static let estimateSubtext = "Estimated from HRV, heart rate, sleep, respiration, temperature, and recent load"
+
+    init(
+        date: Date?,
+        score: Int?,
+        level: StressLevel?,
+        confidence: ConfidenceGrade,
+        state: StressSummaryState,
+        driverInsights: [String],
+        drivers: [StressDriver] = [],
+        signals: [StressSignal] = [],
+        dailySamples: [StressSample] = [],
+        analyzedSampleCount: Int,
+        baselineWindowDays: Int,
+        availableSignalCount: Int,
+        lastHeartRate: Double? = nil,
+        lastHeartRateTimestamp: Date? = nil,
+        lastHRV: Double? = nil,
+        lastHRVTimestamp: Date? = nil,
+        nonActivityStress: Int? = nil,
+        activityAdjustedStress: Int? = nil,
+        movementStateText: String? = nil,
+        stressStatusText: String? = nil,
+        queryStart: Date?,
+        queryEnd: Date?,
+        lastUpdated: Date?,
+        sourceBadges: [SourceProvenance],
+        explanation: String,
+        subtext: String
+    ) {
+        self.date = date
+        self.score = score
+        self.level = level
+        self.confidence = confidence
+        self.state = state
+        self.driverInsights = driverInsights
+        self.drivers = drivers
+        self.signals = signals
+        self.dailySamples = dailySamples
+        self.analyzedSampleCount = analyzedSampleCount
+        self.baselineWindowDays = baselineWindowDays
+        self.availableSignalCount = availableSignalCount
+        self.lastHeartRate = lastHeartRate
+        self.lastHeartRateTimestamp = lastHeartRateTimestamp
+        self.lastHRV = lastHRV
+        self.lastHRVTimestamp = lastHRVTimestamp
+        self.nonActivityStress = nonActivityStress
+        self.activityAdjustedStress = activityAdjustedStress
+        self.movementStateText = movementStateText
+        self.stressStatusText = stressStatusText
+        self.queryStart = queryStart
+        self.queryEnd = queryEnd
+        self.lastUpdated = lastUpdated
+        self.sourceBadges = sourceBadges
+        self.explanation = explanation
+        self.subtext = subtext
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case date
+        case score
+        case level
+        case band
+        case confidence
+        case state
+        case driverInsights
+        case drivers
+        case signals
+        case dailySamples
+        case analyzedSampleCount
+        case baselineWindowDays
+        case availableSignalCount
+        case lastHeartRate
+        case lastHeartRateTimestamp
+        case lastHRV
+        case lastHRVTimestamp
+        case nonActivityStress
+        case activityAdjustedStress
+        case movementStateText
+        case stressStatusText
+        case queryStart
+        case queryEnd
+        case lastUpdated
+        case sourceBadges
+        case explanation
+        case subtext
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        date = try container.decodeIfPresent(Date.self, forKey: .date)
+        score = try container.decodeIfPresent(Int.self, forKey: .score)
+        let legacyBand = try container.decodeIfPresent(String.self, forKey: .band)
+        level = try container.decodeIfPresent(StressLevel.self, forKey: .level) ??
+            StressLevel.legacyLevel(named: legacyBand) ??
+            score.map(StressLevel.level(for:))
+        confidence = try container.decodeIfPresent(ConfidenceGrade.self, forKey: .confidence) ?? .missing
+        state = try container.decodeIfPresent(StressSummaryState.self, forKey: .state) ?? .noData
+        driverInsights = try container.decodeIfPresent([String].self, forKey: .driverInsights) ?? []
+        drivers = try container.decodeIfPresent([StressDriver].self, forKey: .drivers) ?? []
+        signals = try container.decodeIfPresent([StressSignal].self, forKey: .signals) ?? []
+        dailySamples = try container.decodeIfPresent([StressSample].self, forKey: .dailySamples) ?? []
+        analyzedSampleCount = try container.decodeIfPresent(Int.self, forKey: .analyzedSampleCount) ?? 0
+        baselineWindowDays = try container.decodeIfPresent(Int.self, forKey: .baselineWindowDays) ?? 0
+        availableSignalCount = try container.decodeIfPresent(Int.self, forKey: .availableSignalCount) ?? 0
+        lastHeartRate = try container.decodeIfPresent(Double.self, forKey: .lastHeartRate)
+        lastHeartRateTimestamp = try container.decodeIfPresent(Date.self, forKey: .lastHeartRateTimestamp)
+        lastHRV = try container.decodeIfPresent(Double.self, forKey: .lastHRV)
+        lastHRVTimestamp = try container.decodeIfPresent(Date.self, forKey: .lastHRVTimestamp)
+        nonActivityStress = try container.decodeIfPresent(Int.self, forKey: .nonActivityStress)
+        activityAdjustedStress = try container.decodeIfPresent(Int.self, forKey: .activityAdjustedStress)
+        movementStateText = try container.decodeIfPresent(String.self, forKey: .movementStateText)
+        stressStatusText = try container.decodeIfPresent(String.self, forKey: .stressStatusText)
+        queryStart = try container.decodeIfPresent(Date.self, forKey: .queryStart)
+        queryEnd = try container.decodeIfPresent(Date.self, forKey: .queryEnd)
+        lastUpdated = try container.decodeIfPresent(Date.self, forKey: .lastUpdated)
+        sourceBadges = try container.decodeIfPresent([SourceProvenance].self, forKey: .sourceBadges) ?? []
+        explanation = try container.decodeIfPresent(String.self, forKey: .explanation) ?? "Estimated stress compares available wearable signals with your personal baseline."
+        subtext = try container.decodeIfPresent(String.self, forKey: .subtext) ?? Self.estimateSubtext
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(date, forKey: .date)
+        try container.encodeIfPresent(score, forKey: .score)
+        try container.encodeIfPresent(level, forKey: .level)
+        try container.encode(confidence, forKey: .confidence)
+        try container.encode(state, forKey: .state)
+        try container.encode(driverInsights, forKey: .driverInsights)
+        try container.encode(drivers, forKey: .drivers)
+        try container.encode(signals, forKey: .signals)
+        try container.encode(dailySamples, forKey: .dailySamples)
+        try container.encode(analyzedSampleCount, forKey: .analyzedSampleCount)
+        try container.encode(baselineWindowDays, forKey: .baselineWindowDays)
+        try container.encode(availableSignalCount, forKey: .availableSignalCount)
+        try container.encodeIfPresent(lastHeartRate, forKey: .lastHeartRate)
+        try container.encodeIfPresent(lastHeartRateTimestamp, forKey: .lastHeartRateTimestamp)
+        try container.encodeIfPresent(lastHRV, forKey: .lastHRV)
+        try container.encodeIfPresent(lastHRVTimestamp, forKey: .lastHRVTimestamp)
+        try container.encodeIfPresent(nonActivityStress, forKey: .nonActivityStress)
+        try container.encodeIfPresent(activityAdjustedStress, forKey: .activityAdjustedStress)
+        try container.encodeIfPresent(movementStateText, forKey: .movementStateText)
+        try container.encodeIfPresent(stressStatusText, forKey: .stressStatusText)
+        try container.encodeIfPresent(queryStart, forKey: .queryStart)
+        try container.encodeIfPresent(queryEnd, forKey: .queryEnd)
+        try container.encodeIfPresent(lastUpdated, forKey: .lastUpdated)
+        try container.encode(sourceBadges, forKey: .sourceBadges)
+        try container.encode(explanation, forKey: .explanation)
+        try container.encode(subtext, forKey: .subtext)
+    }
+
+    static let missing = StressSummary(
+        date: nil,
+        score: nil,
+        level: nil,
+        confidence: .missing,
+        state: .noData,
+        driverInsights: [
+            "Wearable signals are unavailable",
+            "Permissions or overnight wear may be needed"
+        ],
+        drivers: [
+            StressDriver(
+                id: "missing-signals",
+                title: "Wearable signals are unavailable",
+                detail: "Connect Apple Watch or allow Health access to estimate stress load.",
+                severity: .neutral,
+                relatedMetric: "Permissions"
+            )
+        ],
+        signals: [],
+        dailySamples: [],
+        analyzedSampleCount: 0,
+        baselineWindowDays: 0,
+        availableSignalCount: 0,
+        queryStart: nil,
+        queryEnd: nil,
+        lastUpdated: nil,
+        sourceBadges: [],
+        explanation: "Stress load needs wearable signals and a personal baseline.",
+        subtext: estimateSubtext
+    )
+
+    static func buildingBaseline(date: Date?, baselineWindowDays: Int, analyzedSampleCount: Int, sourceBadges: [SourceProvenance]) -> StressSummary {
+        StressSummary(
+            date: date,
+            score: nil,
+            level: nil,
+            confidence: .low,
+            state: .buildingBaseline,
+            driverInsights: [
+                "Building your personal baseline",
+                "More overnight wear improves accuracy"
+            ],
+            drivers: [
+                StressDriver(
+                    id: "building-baseline",
+                    title: "Building your personal baseline",
+                    detail: "Stress confidence improves after 7 or more baseline days.",
+                    severity: .neutral,
+                    relatedMetric: "Baseline"
+                )
+            ],
+            signals: [],
+            dailySamples: [],
+            analyzedSampleCount: analyzedSampleCount,
+            baselineWindowDays: baselineWindowDays,
+            availableSignalCount: 0,
+            queryStart: nil,
+            queryEnd: nil,
+            lastUpdated: nil,
+            sourceBadges: sourceBadges,
+            explanation: "Stress load needs at least 7 baseline days before showing a score.",
+            subtext: estimateSubtext
+        )
+    }
+}
+
 struct HomeDashboard: Codable, Equatable {
     var profile: UserProfile
     var sleep: SleepSummary
     var recovery: RecoverySummary
     var strain: StrainSummary
+    var stress: StressSummary
+    var healthMonitor: HealthMonitorSummary
     var generatedAt: Date
     var usingSampleData: Bool
 
+    init(
+        profile: UserProfile,
+        sleep: SleepSummary,
+        recovery: RecoverySummary,
+        strain: StrainSummary,
+        stress: StressSummary = .missing,
+        healthMonitor: HealthMonitorSummary = .missing(),
+        generatedAt: Date,
+        usingSampleData: Bool
+    ) {
+        self.profile = profile
+        self.sleep = sleep
+        self.recovery = recovery
+        self.strain = strain
+        self.stress = stress
+        self.healthMonitor = healthMonitor
+        self.generatedAt = generatedAt
+        self.usingSampleData = usingSampleData
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case profile, sleep, recovery, strain, stress, healthMonitor, generatedAt, usingSampleData
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        profile = try container.decode(UserProfile.self, forKey: .profile)
+        sleep = try container.decode(SleepSummary.self, forKey: .sleep)
+        recovery = try container.decode(RecoverySummary.self, forKey: .recovery)
+        strain = try container.decode(StrainSummary.self, forKey: .strain)
+        stress = try container.decodeIfPresent(StressSummary.self, forKey: .stress) ?? .missing
+        healthMonitor = try container.decodeIfPresent(HealthMonitorSummary.self, forKey: .healthMonitor) ?? .missing()
+        generatedAt = try container.decode(Date.self, forKey: .generatedAt)
+        usingSampleData = try container.decode(Bool.self, forKey: .usingSampleData)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(profile, forKey: .profile)
+        try container.encode(sleep, forKey: .sleep)
+        try container.encode(recovery, forKey: .recovery)
+        try container.encode(strain, forKey: .strain)
+        try container.encode(stress, forKey: .stress)
+        try container.encode(healthMonitor, forKey: .healthMonitor)
+        try container.encode(generatedAt, forKey: .generatedAt)
+        try container.encode(usingSampleData, forKey: .usingSampleData)
+    }
+
+    #if DEBUG
     static let sample = HomeDashboard(
         profile: MockHealthData.profile,
         sleep: MockHealthData.sleepSummary,
         recovery: MockHealthData.recoverySummary,
         strain: MockHealthData.strainSummary,
+        stress: MockHealthData.stressSummary,
+        healthMonitor: MockHealthData.healthMonitorSummary,
         generatedAt: .now,
         usingSampleData: true
     )
+    #endif
 
     static let empty = HomeDashboard(
         profile: .empty,
         sleep: .missing,
         recovery: .missing,
         strain: .missing,
+        stress: .missing,
+        healthMonitor: .missing(),
         generatedAt: .now,
         usingSampleData: false
     )

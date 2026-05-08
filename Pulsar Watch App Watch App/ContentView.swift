@@ -6,22 +6,41 @@
 import SwiftUI
 
 struct ContentView: View {
+    @State private var isShowingLaunch = true
+
     var body: some View {
-        WatchHomeView()
+        ZStack {
+            WatchHomeView()
+                .opacity(isShowingLaunch ? 0 : 1)
+                .animation(.easeOut(duration: 0.28), value: isShowingLaunch)
+
+            if isShowingLaunch {
+                WatchLaunchAnimationView {
+                    withAnimation(.easeInOut(duration: 0.24)) {
+                        isShowingLaunch = false
+                    }
+                }
+                .transition(.opacity)
+                .zIndex(1)
+                .allowsHitTesting(false)
+            }
+        }
     }
 }
 
 struct WatchHomeView: View {
     @StateObject private var store = WatchHealthKitStore()
+    @EnvironmentObject private var runManager: WatchRunSessionManager
     @Environment(\.scenePhase) private var scenePhase
+    @State private var isShowingWorkoutPicker = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     header
-                    if let syncBannerState = store.syncBannerState {
-                        WatchSyncBanner(state: syncBannerState)
+                    if store.snapshot.alarm.isEnabled, store.snapshot.alarm.syncedAt != nil {
+                        WatchAlarmPill(alarm: store.snapshot.alarm)
                     }
 
                     if store.snapshot.healthKitState == .notRequested {
@@ -30,69 +49,116 @@ struct WatchHomeView: View {
                         healthIssueCard
                     }
 
-                    if !store.isLoading,
-                       let message = store.message,
-                       store.snapshot.healthKitState == .connected {
-                        WatchSyncBanner(state: .failure(message))
-                    }
+                    topMetricRow
 
-                    NavigationLink { RecoveryDetailWatchView(snapshot: store.snapshot) } label: {
-                        WatchMetricCard(title: "Recovery", value: WatchFormatters.score(store.snapshot.recovery.score), subtitle: store.snapshot.recovery.label, symbol: "heart.text.square.fill", tint: .green)
-                    }
-                    .buttonStyle(.plain)
-
-                    NavigationLink { StrainDetailWatchView(snapshot: store.snapshot) } label: {
-                        WatchMetricCard(title: "Strain", value: WatchFormatters.score(store.snapshot.strain.score), subtitle: "\(WatchFormatters.minutes(store.snapshot.strain.workoutMinutes)) workout", symbol: "figure.run", tint: .orange)
-                    }
-                    .buttonStyle(.plain)
-
-                    NavigationLink { SleepDetailWatchView(snapshot: store.snapshot) } label: {
-                        WatchMetricCard(title: "Sleep", value: WatchFormatters.score(store.snapshot.sleep.score), subtitle: WatchFormatters.minutes(store.snapshot.sleep.totalSleepMinutes), symbol: "moon.zzz.fill", tint: .indigo)
-                    }
-                    .buttonStyle(.plain)
-
-                    activitySection
-                    heartSection
-
-                    NavigationLink { HealthStatusWatchView(snapshot: store.snapshot, store: store) } label: {
-                        WatchGlassCard {
-                            HStack {
-                                Label("Health Status", systemImage: "heart.circle.fill")
-                                    .font(.caption.weight(.semibold))
-                                Spacer()
-                                Text(store.snapshot.healthKitState.label)
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(store.snapshot.healthKitState.tint)
-                            }
-                        }
+                    NavigationLink { StressDetailWatchView(snapshot: store.snapshot) } label: {
+                        WatchStressCardView(stress: store.snapshot.stress)
                     }
                     .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 8)
-                .padding(.bottom, 12)
+                .padding(.bottom, 64)
             }
-            .navigationTitle("Pulsar")
+            .navigationTitle("")
+            .overlay(alignment: .top) {
+                if let syncBannerState = store.syncBannerState {
+                    WatchSyncBanner(state: syncBannerState)
+                        .padding(.horizontal, 8)
+                        .padding(.top, 4)
+                        .allowsHitTesting(false)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                WatchWorkoutFloatingAddButton {
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.76)) {
+                        isShowingWorkoutPicker = true
+                    }
+                }
+                .padding(.trailing, 9)
+                .padding(.bottom, 8)
+            }
+            .animation(.smooth(duration: 0.24), value: store.syncBannerState)
+            .sheet(isPresented: $isShowingWorkoutPicker) {
+                WatchWorkoutPickerView()
+                    .environmentObject(runManager)
+            }
             .task {
                 store.viewAppeared()
-                await store.load()
+                await store.refreshForAppActivation()
             }
-            .refreshable { await store.load() }
+            .refreshable { await store.load(reason: "manualRefresh", showsBanner: true) }
             .onChange(of: scenePhase) { _, newPhase in
                 guard newPhase == .active else { return }
-                Task { await store.load() }
+                Task { await store.refreshForAppActivation() }
             }
         }
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 1) {
             Text("Today")
                 .font(.title2.weight(.bold))
-            Text(store.snapshot.date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
-                .font(.caption)
+            Text(store.snapshot.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
+                .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 2)
+    }
+
+    private var topMetricRow: some View {
+        GeometryReader { proxy in
+            let spacing: CGFloat = proxy.size.width < 170 ? 4 : 6
+            let cardWidth = (proxy.size.width - spacing * 2) / 3
+            let ringSize: CGFloat = min(46, max(36, cardWidth * 0.78))
+
+            HStack(spacing: spacing) {
+                NavigationLink { SleepDetailWatchView(snapshot: store.snapshot) } label: {
+                    WatchMetricCardView(
+                        title: "Sleep",
+                        score: store.snapshot.sleep.score,
+                        subtitle: "",
+                        symbol: "moon.zzz.fill",
+                        tint: PulsarMetricRingTheme.tint(for: .sleep),
+                        ringSize: ringSize,
+                        showsSubtitle: false
+                    )
+                    .frame(width: cardWidth)
+                }
+                .buttonStyle(.plain)
+
+                NavigationLink { RecoveryDetailWatchView(snapshot: store.snapshot) } label: {
+                    WatchMetricCardView(
+                        title: "Recovery",
+                        score: store.snapshot.recovery.score,
+                        subtitle: "",
+                        symbol: "heart.text.square.fill",
+                        tint: PulsarMetricRingTheme.tint(for: .recovery),
+                        ringSize: ringSize,
+                        showsSubtitle: false
+                    )
+                    .frame(width: cardWidth)
+                }
+                .buttonStyle(.plain)
+
+                NavigationLink { StrainDetailWatchView(snapshot: store.snapshot) } label: {
+                    WatchMetricCardView(
+                        title: "Strain",
+                        score: store.snapshot.strain.score,
+                        subtitle: "",
+                        symbol: "figure.run",
+                        tint: PulsarMetricRingTheme.tint(for: .strain),
+                        ringSize: ringSize,
+                        showsSubtitle: false,
+                        targetRange: recommendedStrainTargetRange
+                    )
+                    .frame(width: cardWidth)
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(width: proxy.size.width, alignment: .center)
+        }
+        .frame(height: 78)
     }
 
     private var connectCard: some View {
@@ -113,6 +179,10 @@ struct WatchHomeView: View {
 
     private var healthIssueCard: some View {
         WatchEmptyState(title: store.snapshot.healthKitState.label, message: store.message ?? "Manage permissions from the iPhone app or Apple Health.", symbol: "exclamationmark.triangle.fill")
+    }
+
+    private var recommendedStrainTargetRange: PulsarSharedStrainTargetRange? {
+        PulsarSharedMetricCalculator.recommendedStrainTargetRange(forRecoveryScore: store.snapshot.recovery.score)
     }
 
     private var activitySection: some View {
@@ -150,31 +220,34 @@ private struct WatchSyncBanner: View {
     @State private var pulse = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 7) {
             ZStack {
                 Circle()
                     .fill(state.tint.opacity(0.16))
-                    .frame(width: 22, height: 22)
+                    .frame(width: 20, height: 20)
                     .scaleEffect(pulse && state.isSyncing ? 1.08 : 1)
                 if state.isSyncing {
                     ProgressView()
                         .controlSize(.small)
                         .tint(state.tint)
+                        .frame(width: 12, height: 12)
                 } else {
                     Image(systemName: state.symbol)
-                        .font(.caption.weight(.bold))
+                        .font(.caption2.weight(.bold))
                         .foregroundStyle(state.tint)
                         .scaleEffect(pulse ? 1.08 : 1)
                 }
             }
+            .frame(width: 22, height: 22)
 
-            Text(state.message)
-                .font(.caption.weight(.semibold))
+            Text(compactMessage)
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(1)
+                .minimumScaleFactor(0.9)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .frame(width: 116, height: 30)
+        .fixedSize(horizontal: true, vertical: true)
         .background(
             Capsule(style: .continuous)
                 .fill(.thinMaterial)
@@ -228,17 +301,52 @@ private struct WatchSyncBanner: View {
             }
         }
     }
+
+    private var compactMessage: String {
+        switch state {
+        case .syncing(_):
+            return "Syncing"
+        case .success(_):
+            return "Synced"
+        case .failure(_):
+            return "Latest"
+        }
+    }
 }
 
+#if DEBUG
 private struct WatchHomePreview: View {
     var snapshot: WatchDailyHealthSnapshot
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 10) {
-                WatchMetricCard(title: "Recovery", value: WatchFormatters.score(snapshot.recovery.score), subtitle: snapshot.recovery.label, symbol: "heart.text.square.fill", tint: .green)
-                WatchMetricCard(title: "Strain", value: WatchFormatters.score(snapshot.strain.score), subtitle: "\(WatchFormatters.minutes(snapshot.strain.workoutMinutes)) workout", symbol: "figure.run", tint: .orange)
-                WatchMetricCard(title: "Sleep", value: WatchFormatters.score(snapshot.sleep.score), subtitle: WatchFormatters.minutes(snapshot.sleep.totalSleepMinutes), symbol: "moon.zzz.fill", tint: .indigo)
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Today")
+                        .font(.title2.weight(.bold))
+                    Text(snapshot.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                if snapshot.alarm.isEnabled, snapshot.alarm.syncedAt != nil {
+                    WatchAlarmPill(alarm: snapshot.alarm)
+                }
+                GeometryReader { proxy in
+                    let spacing: CGFloat = proxy.size.width < 170 ? 4 : 6
+                    let cardWidth = (proxy.size.width - spacing * 2) / 3
+                    let ringSize: CGFloat = min(46, max(36, cardWidth * 0.78))
+                    HStack(spacing: spacing) {
+                        WatchMetricCardView(title: "Sleep", score: snapshot.sleep.score, subtitle: "", symbol: "moon.zzz.fill", tint: PulsarMetricRingTheme.tint(for: .sleep), ringSize: ringSize, showsSubtitle: false)
+                            .frame(width: cardWidth)
+                        WatchMetricCardView(title: "Recovery", score: snapshot.recovery.score, subtitle: "", symbol: "heart.text.square.fill", tint: PulsarMetricRingTheme.tint(for: .recovery), ringSize: ringSize, showsSubtitle: false)
+                            .frame(width: cardWidth)
+                        WatchMetricCardView(title: "Strain", score: snapshot.strain.score, subtitle: "", symbol: "figure.run", tint: PulsarMetricRingTheme.tint(for: .strain), ringSize: ringSize, showsSubtitle: false, targetRange: PulsarSharedMetricCalculator.recommendedStrainTargetRange(forRecoveryScore: snapshot.recovery.score))
+                            .frame(width: cardWidth)
+                    }
+                    .frame(width: proxy.size.width, alignment: .center)
+                }
+                .frame(height: 78)
+                WatchStressCardView(stress: snapshot.stress)
             }
             .padding(8)
         }
@@ -247,6 +355,20 @@ private struct WatchHomePreview: View {
 
 struct WatchHomeView_Previews: PreviewProvider {
     static var previews: some View {
-        WatchHomePreview(snapshot: WatchPreviewData.snapshot)
+        Group {
+            WatchHomePreview(snapshot: WatchPreviewData.snapshot)
+                .previewDevice("Apple Watch Series 9 (41mm)")
+                .previewDisplayName("Small")
+            WatchHomePreview(snapshot: WatchPreviewData.snapshot)
+                .previewDevice("Apple Watch Series 9 (45mm)")
+                .previewDisplayName("Medium")
+            WatchHomePreview(snapshot: WatchPreviewData.snapshot)
+                .previewDevice("Apple Watch Ultra 2 (49mm)")
+                .previewDisplayName("Ultra")
+            WatchHomePreview(snapshot: WatchPreviewData.missingSnapshot)
+                .previewDevice("Apple Watch Series 9 (41mm)")
+                .previewDisplayName("Watch Home Missing")
+        }
     }
 }
+#endif

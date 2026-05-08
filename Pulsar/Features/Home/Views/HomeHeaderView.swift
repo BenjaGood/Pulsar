@@ -17,6 +17,7 @@ struct HomeHeaderView: View {
                 HStack(spacing: 7) {
                     Text(title)
                         .font(.largeTitle.weight(.semibold))
+                        .foregroundStyle(.primary)
                     Image(systemName: "chevron.down")
                         .font(.headline.weight(.semibold))
                         .foregroundStyle(.secondary)

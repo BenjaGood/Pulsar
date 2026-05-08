@@ -21,6 +21,17 @@ enum PulsarDailyMetricsDateKey {
               let dayNumber = components.day else { return "" }
         return String(format: "%04d-%02d-%02d", year, month, dayNumber)
     }
+
+    nonisolated static func date(from dateKey: String, calendar: Calendar = .current) -> Date? {
+        let parts = dateKey.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        var components = DateComponents()
+        components.calendar = calendar
+        components.year = parts[0]
+        components.month = parts[1]
+        components.day = parts[2]
+        return components.date.map { calendar.startOfDay(for: $0) }
+    }
 }
 
 struct PulsarStrainSyncMetric: Codable, Equatable {
@@ -39,7 +50,7 @@ struct PulsarStrainSyncMetric: Codable, Equatable {
     var computedAt: Date
 
     nonisolated var isValid: Bool {
-        guard (1...100).contains(score),
+        guard (0...100).contains(score),
               rawLoad.isFinite,
               workoutLoad.isFinite,
               movementLoad.isFinite,
@@ -190,6 +201,162 @@ struct PulsarSleepSyncMetric: Codable, Equatable {
     }
 }
 
+struct PulsarStressSyncSample: Codable, Equatable {
+    var timestamp: Date
+    var score: Double
+    var context: String?
+}
+
+struct PulsarStressSyncMetric: Codable, Equatable {
+    var score: Int
+    var confidence: PulsarSyncConfidence
+    var levelText: String
+    var driverInsights: [String]
+    var hrvSDNN: Double?
+    var hrvTimestamp: Date? = nil
+    var hrvBaseline: Double? = nil
+    var restingHeartRate: Double?
+    var restingHeartRateBaseline: Double? = nil
+    var respiratoryRate: Double?
+    var recentHeartRate: Double?
+    var heartRateTimestamp: Date? = nil
+    var daytimeHeartRateBaseline: Double? = nil
+    var heartRateDeviation: Double? = nil
+    var hrvDeviation: Double? = nil
+    var nonActivityStress: Double? = nil
+    var activityAdjustedStress: Double? = nil
+    var rawStressScore: Double? = nil
+    var activityAdjustment: Double? = nil
+    var smoothedStressScore: Double? = nil
+    var movementState: String? = nil
+    var recentSteps: Double? = nil
+    var recentActiveEnergyKilocalories: Double? = nil
+    var isWorkoutActive: Bool = false
+    var lastWorkoutEnd: Date? = nil
+    var cooldownActive: Bool = false
+    var calculationState: String? = nil
+    var appliedAdjustments: [String] = []
+    var sleepDurationMinutes: Double?
+    var strainScore: Double?
+    var availableSignalCount: Int
+    var baselineWindowDays: Int
+    var timelineSamples: [PulsarStressSyncSample]
+    var sourceNames: [String]
+    var computedAt: Date
+
+    nonisolated var isValid: Bool {
+        guard (0...100).contains(score),
+              !levelText.isEmpty,
+              availableSignalCount >= 0,
+              baselineWindowDays >= 0,
+              computedAt.timeIntervalSinceReferenceDate.isFinite else { return false }
+        if let hrvSDNN, !(5...250).contains(hrvSDNN) { return false }
+        if let hrvTimestamp, !hrvTimestamp.timeIntervalSinceReferenceDate.isFinite { return false }
+        if let hrvBaseline, !(5...250).contains(hrvBaseline) { return false }
+        if let restingHeartRate, !(30...160).contains(restingHeartRate) { return false }
+        if let restingHeartRateBaseline, !(30...160).contains(restingHeartRateBaseline) { return false }
+        if let respiratoryRate, !(6...35).contains(respiratoryRate) { return false }
+        if let recentHeartRate, !(30...240).contains(recentHeartRate) { return false }
+        if let heartRateTimestamp, !heartRateTimestamp.timeIntervalSinceReferenceDate.isFinite { return false }
+        if let daytimeHeartRateBaseline, !(30...200).contains(daytimeHeartRateBaseline) { return false }
+        if let heartRateDeviation, !heartRateDeviation.isFinite { return false }
+        if let hrvDeviation, !hrvDeviation.isFinite { return false }
+        if let nonActivityStress, !(0...100).contains(nonActivityStress) { return false }
+        if let activityAdjustedStress, !(0...100).contains(activityAdjustedStress) { return false }
+        if let rawStressScore, !(0...100).contains(rawStressScore) { return false }
+        if let activityAdjustment, !activityAdjustment.isFinite { return false }
+        if let smoothedStressScore, !(0...100).contains(smoothedStressScore) { return false }
+        if let recentSteps, !recentSteps.isFinite || recentSteps < 0 || recentSteps > 20_000 { return false }
+        if let recentActiveEnergyKilocalories, !recentActiveEnergyKilocalories.isFinite || recentActiveEnergyKilocalories < 0 || recentActiveEnergyKilocalories > 3_000 { return false }
+        if let lastWorkoutEnd, !lastWorkoutEnd.timeIntervalSinceReferenceDate.isFinite { return false }
+        if let sleepDurationMinutes, !sleepDurationMinutes.isFinite || sleepDurationMinutes < 0 || sleepDurationMinutes > 1_440 { return false }
+        if let strainScore, !(0...100).contains(strainScore) { return false }
+        return timelineSamples.allSatisfy { sample in
+            sample.timestamp.timeIntervalSinceReferenceDate.isFinite &&
+                sample.score.isFinite &&
+                (0...100).contains(sample.score)
+        }
+    }
+
+    nonisolated var sharedCalculationState: PulsarSharedStressCalculationState {
+        calculationState.flatMap(PulsarSharedStressCalculationState.init(rawValue:)) ??
+            (cooldownActive ? .cooldownPaused : (isWorkoutActive ? .workoutPaused : .measuring))
+    }
+
+    nonisolated var isPaused: Bool {
+        sharedCalculationState.isPaused
+    }
+}
+
+enum PulsarHealthMetricSyncKind: String, Codable, CaseIterable {
+    case respiratoryRate
+    case restingHeartRate
+    case hrv
+    case oxygenSaturation
+    case wristTemperature
+    case sleep
+}
+
+enum PulsarHealthMetricSyncStatus: String, Codable {
+    case normal = "Normal"
+    case higher = "Higher"
+    case lower = "Lower"
+    case noData = "No data"
+}
+
+struct PulsarHealthMetricSyncValue: Codable, Equatable {
+    var kind: PulsarHealthMetricSyncKind
+    var value: Double?
+    var status: PulsarHealthMetricSyncStatus
+    var baselineValue: Double?
+    var comparisonText: String
+    var sourceNames: [String]
+
+    nonisolated var isValid: Bool {
+        guard !comparisonText.isEmpty else { return false }
+        if let value {
+            guard value.isFinite else { return false }
+            switch kind {
+            case .respiratoryRate:
+                guard (4...40).contains(value) else { return false }
+            case .restingHeartRate:
+                guard (25...160).contains(value) else { return false }
+            case .hrv:
+                guard (5...250).contains(value) else { return false }
+            case .oxygenSaturation:
+                guard (0.5...1).contains(value) else { return false }
+            case .wristTemperature:
+                guard abs(value) <= 10 else { return false }
+            case .sleep:
+                guard (0...1_440).contains(value) else { return false }
+            }
+        } else if status != .noData {
+            return false
+        }
+        if let baselineValue, !baselineValue.isFinite {
+            return false
+        }
+        return true
+    }
+}
+
+struct PulsarHealthMonitorSyncMetric: Codable, Equatable {
+    var metrics: [PulsarHealthMetricSyncValue]
+    var baselineWindowDays: Int
+    var sourceNames: [String]
+    var computedAt: Date
+
+    nonisolated var isValid: Bool {
+        guard baselineWindowDays >= 0,
+              computedAt.timeIntervalSinceReferenceDate.isFinite,
+              !metrics.isEmpty,
+              Set(metrics.map(\.kind)).count == metrics.count,
+              metrics.allSatisfy(\.isValid),
+              metrics.contains(where: { $0.value != nil }) else { return false }
+        return true
+    }
+}
+
 struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
     var date: Date
     var dateKey: String? = nil
@@ -198,12 +365,14 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
     var strain: PulsarStrainSyncMetric?
     var recovery: PulsarRecoverySyncMetric?
     var sleep: PulsarSleepSyncMetric? = nil
+    var stress: PulsarStressSyncMetric? = nil
+    var healthMonitor: PulsarHealthMonitorSyncMetric? = nil
     var syncSessionID: UUID? = nil
     var dataFingerprint: String? = nil
     var validityFlag: Bool? = nil
 
     nonisolated var hasValidData: Bool {
-        hasCompleteDailyScores || hasValidSleep
+        hasCompleteDailyScores || hasValidSleep || hasValidStress
     }
 
     nonisolated var hasCompleteDailyScores: Bool {
@@ -218,6 +387,14 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
         sleep?.isValid == true
     }
 
+    nonisolated var hasValidStress: Bool {
+        stress?.isValid == true
+    }
+
+    nonisolated var hasValidHealthMonitor: Bool {
+        healthMonitor?.isValid == true
+    }
+
     nonisolated var dailyMetricsComputedAt: Date? {
         guard let strain, let recovery, strain.isValid, recovery.isValid else { return nil }
         return max(strain.computedAt, recovery.computedAt)
@@ -226,6 +403,16 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
     nonisolated var sleepComputedAt: Date? {
         guard let sleep, sleep.isValid else { return nil }
         return sleep.computedAt
+    }
+
+    nonisolated var stressComputedAt: Date? {
+        guard let stress, stress.isValid else { return nil }
+        return stress.computedAt
+    }
+
+    nonisolated var healthMonitorComputedAt: Date? {
+        guard let healthMonitor, healthMonitor.isValid else { return nil }
+        return healthMonitor.computedAt
     }
 
     nonisolated var resolvedDateKey: String {
@@ -246,7 +433,7 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
 
     nonisolated var resolvedDataFingerprint: String {
         if let dataFingerprint, !dataFingerprint.isEmpty { return dataFingerprint }
-        return Self.makeFingerprint(dateKey: resolvedDateKey, strain: strain, recovery: recovery, sleep: sleep)
+        return Self.makeFingerprint(dateKey: resolvedDateKey, strain: strain, recovery: recovery, sleep: sleep, stress: stress, healthMonitor: healthMonitor)
     }
 
     nonisolated func applies(to day: Date, calendar: Calendar = .current) -> Bool {
@@ -263,6 +450,8 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
         let newer = syncedAt >= other.syncedAt ? self : other
         let dailySource = Self.newerMetricSource(lhs: self, rhs: other, timestamp: \.dailyMetricsComputedAt, isPresent: \.hasCompleteDailyScores)
         let sleepSource = Self.newerMetricSource(lhs: self, rhs: other, timestamp: \.sleepComputedAt, isPresent: \.hasValidSleep)
+        let stressSource = Self.newerMetricSource(lhs: self, rhs: other, timestamp: \.stressComputedAt, isPresent: \.hasValidStress)
+        let healthMonitorSource = Self.newerMetricSource(lhs: self, rhs: other, timestamp: \.healthMonitorComputedAt, isPresent: \.hasValidHealthMonitor)
 
         let merged = PulsarDailyMetricsSyncPayload(
             date: newer.date,
@@ -272,6 +461,8 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
             strain: dailySource?.strain,
             recovery: dailySource?.recovery,
             sleep: sleepSource?.sleep,
+            stress: stressSource?.stress,
+            healthMonitor: healthMonitorSource?.healthMonitor,
             syncSessionID: newer.syncSessionID,
             dataFingerprint: nil,
             validityFlag: true
@@ -294,7 +485,7 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
         return lhsTimestamp >= rhsTimestamp ? lhs : rhs
     }
 
-    private nonisolated static func makeFingerprint(dateKey: String, strain: PulsarStrainSyncMetric?, recovery: PulsarRecoverySyncMetric?, sleep: PulsarSleepSyncMetric?) -> String {
+    private nonisolated static func makeFingerprint(dateKey: String, strain: PulsarStrainSyncMetric?, recovery: PulsarRecoverySyncMetric?, sleep: PulsarSleepSyncMetric?, stress: PulsarStressSyncMetric? = nil, healthMonitor: PulsarHealthMonitorSyncMetric? = nil) -> String {
         var parts: [String] = []
         if !dateKey.isEmpty {
             parts.append("date:\(dateKey)")
@@ -363,6 +554,66 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
                 rounded(sleep.regularity),
                 rounded(sleep.continuity),
                 rounded(sleep.targetSleepHours)
+            ].joined(separator: ":"))
+        }
+        if let stress, stress.isValid {
+            let samples = stress.timelineSamples.prefix(12).map { sample in
+                [
+                    rounded(sample.timestamp.timeIntervalSinceReferenceDate),
+                    rounded(sample.score),
+                    sample.context ?? "none"
+                ].joined(separator: "/")
+            }.joined(separator: ",")
+            parts.append([
+                "stress",
+                "\(stress.score)",
+                stress.confidence.rawValue,
+                stress.levelText,
+                stress.driverInsights.prefix(2).joined(separator: ","),
+                rounded(stress.hrvSDNN),
+                rounded(stress.hrvBaseline),
+                rounded(stress.restingHeartRate),
+                rounded(stress.restingHeartRateBaseline),
+                rounded(stress.respiratoryRate),
+                rounded(stress.recentHeartRate),
+                rounded(stress.daytimeHeartRateBaseline),
+                rounded(stress.heartRateDeviation),
+                rounded(stress.hrvDeviation),
+                rounded(stress.nonActivityStress),
+                rounded(stress.activityAdjustedStress),
+                rounded(stress.rawStressScore),
+                rounded(stress.activityAdjustment),
+                stress.movementState ?? "nil",
+                rounded(stress.recentSteps),
+                rounded(stress.recentActiveEnergyKilocalories),
+                stress.isWorkoutActive ? "workout" : "noWorkout",
+                stress.cooldownActive ? "cooldown" : "noCooldown",
+                stress.calculationState ?? "nil",
+                rounded(stress.sleepDurationMinutes),
+                rounded(stress.strainScore),
+                "\(stress.availableSignalCount)",
+                "\(stress.baselineWindowDays)",
+                samples
+            ].joined(separator: ":"))
+        }
+        if let healthMonitor, healthMonitor.isValid {
+            let metrics = healthMonitor.metrics
+                .sorted { $0.kind.rawValue < $1.kind.rawValue }
+                .map { metric in
+                    [
+                        metric.kind.rawValue,
+                        rounded(metric.value),
+                        metric.status.rawValue,
+                        rounded(metric.baselineValue),
+                        metric.comparisonText,
+                        metric.sourceNames.joined(separator: ",")
+                    ].joined(separator: ":")
+                }
+                .joined(separator: "|")
+            parts.append([
+                "health-monitor",
+                "\(healthMonitor.baselineWindowDays)",
+                metrics
             ].joined(separator: ":"))
         }
         return parts.joined(separator: "|")

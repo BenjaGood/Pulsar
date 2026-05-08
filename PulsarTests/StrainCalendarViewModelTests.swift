@@ -84,6 +84,7 @@ final class StrainCalendarViewModelTests: XCTestCase {
     private func record(on date: Date) -> DailyStrainRecord {
         DailyStrainRecord(
             date: date,
+            calendar: calendar,
             strainScore: 62,
             workoutMinutes: 38,
             steps: 8_400,

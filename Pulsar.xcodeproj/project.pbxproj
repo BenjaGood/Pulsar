@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		EDF329D42FA7FABD00359606 /* Pulsar Watch App Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = EDF329CA2FA7FABC00359606 /* Pulsar Watch App Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		EDF33A102FA9000000000001 /* PulsarWidgetsExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = EDF33A132FA9000000000004 /* PulsarWidgetsExtension.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -25,6 +26,13 @@
 			remoteGlobalIDString = EDF329B72FA7FA4B00359606;
 			remoteInfo = Pulsar;
 		};
+		EDF33A112FA9000000000002 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EDF329B02FA7FA4B00359606 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EDF33A172FA9000000000008;
+			remoteInfo = PulsarWidgetsExtension;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -39,12 +47,25 @@
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		EDF33A122FA9000000000003 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				EDF33A102FA9000000000001 /* PulsarWidgetsExtension.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		EDF329B82FA7FA4B00359606 /* Pulsar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pulsar.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EDF329CA2FA7FABC00359606 /* Pulsar Watch App Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Pulsar Watch App Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		EDF329E12FA8000000000001 /* PulsarTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PulsarTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		EDF33A132FA9000000000004 /* PulsarWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PulsarWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		EDF33A1E2FA900000000000F /* PulsarWidgetsExtension-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "PulsarWidgetsExtension-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -66,6 +87,16 @@
 		EDF330002FA9000000000001 /* Shared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Shared;
+			sourceTree = "<group>";
+		};
+		EDF33A142FA9000000000005 /* PulsarWidgetShared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PulsarWidgetShared;
+			sourceTree = "<group>";
+		};
+		EDF33A152FA9000000000006 /* PulsarWidgetsExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PulsarWidgetsExtension;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -92,6 +123,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		EDF33A162FA9000000000007 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -99,7 +137,10 @@
 			isa = PBXGroup;
 			children = (
 				EDF330002FA9000000000001 /* Shared */,
+				EDF33A142FA9000000000005 /* PulsarWidgetShared */,
 				EDF329BA2FA7FA4B00359606 /* Pulsar */,
+				EDF33A152FA9000000000006 /* PulsarWidgetsExtension */,
+				EDF33A1E2FA900000000000F /* PulsarWidgetsExtension-Info.plist */,
 				EDF329CB2FA7FABC00359606 /* Pulsar Watch App Watch App */,
 				EDF329E22FA8000000000002 /* PulsarTests */,
 				EDF329B92FA7FA4B00359606 /* Products */,
@@ -110,6 +151,7 @@
 			isa = PBXGroup;
 			children = (
 				EDF329B82FA7FA4B00359606 /* Pulsar.app */,
+				EDF33A132FA9000000000004 /* PulsarWidgetsExtension.appex */,
 				EDF329CA2FA7FABC00359606 /* Pulsar Watch App Watch App.app */,
 				EDF329E12FA8000000000001 /* PulsarTests.xctest */,
 			);
@@ -126,16 +168,19 @@
 				EDF329B42FA7FA4B00359606 /* Sources */,
 				EDF329B52FA7FA4B00359606 /* Frameworks */,
 				EDF329B62FA7FA4B00359606 /* Resources */,
+				EDF33A122FA9000000000003 /* Embed App Extensions */,
 				EDF329D82FA7FABD00359606 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				EDF33A1A2FA900000000000B /* PBXTargetDependency */,
 				EDF329D32FA7FABD00359606 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				EDF329BA2FA7FA4B00359606 /* Pulsar */,
 				EDF330002FA9000000000001 /* Shared */,
+				EDF33A142FA9000000000005 /* PulsarWidgetShared */,
 			);
 			name = Pulsar;
 			packageProductDependencies = (
@@ -190,6 +235,29 @@
 			productReference = EDF329E12FA8000000000001 /* PulsarTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		EDF33A172FA9000000000008 /* PulsarWidgetsExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EDF33A1D2FA900000000000E /* Build configuration list for PBXNativeTarget "PulsarWidgetsExtension" */;
+			buildPhases = (
+				EDF33A192FA900000000000A /* Sources */,
+				EDF33A162FA9000000000007 /* Frameworks */,
+				EDF33A182FA9000000000009 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				EDF33A142FA9000000000005 /* PulsarWidgetShared */,
+				EDF33A152FA9000000000006 /* PulsarWidgetsExtension */,
+			);
+			name = PulsarWidgetsExtension;
+			packageProductDependencies = (
+			);
+			productName = PulsarWidgetsExtension;
+			productReference = EDF33A132FA9000000000004 /* PulsarWidgetsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -210,6 +278,9 @@
 						CreatedOnToolsVersion = 26.4.1;
 						TestTargetID = EDF329B72FA7FA4B00359606;
 					};
+					EDF33A172FA9000000000008 = {
+						CreatedOnToolsVersion = 26.4.1;
+					};
 				};
 			};
 			buildConfigurationList = EDF329B32FA7FA4B00359606 /* Build configuration list for PBXProject "Pulsar" */;
@@ -227,6 +298,7 @@
 			projectRoot = "";
 			targets = (
 				EDF329B72FA7FA4B00359606 /* Pulsar */,
+				EDF33A172FA9000000000008 /* PulsarWidgetsExtension */,
 				EDF329C92FA7FABC00359606 /* Pulsar Watch App Watch App */,
 				EDF329E62FA8000000000006 /* PulsarTests */,
 			);
@@ -249,6 +321,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		EDF329E52FA8000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EDF33A182FA9000000000009 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -279,6 +358,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		EDF33A192FA900000000000A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -291,6 +377,11 @@
 			isa = PBXTargetDependency;
 			target = EDF329B72FA7FA4B00359606 /* Pulsar */;
 			targetProxy = EDF329EA2FA800000000000A /* PBXContainerItemProxy */;
+		};
+		EDF33A1A2FA900000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EDF33A172FA9000000000008 /* PulsarWidgetsExtension */;
+			targetProxy = EDF33A112FA9000000000002 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -428,6 +519,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Pulsar reads sleep, heart, activity, workout, and profile data from Apple Health to calculate Sleep, Recovery, and Strain.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Pulsar saves running workouts, routes, distance, calories, and workout metrics to Apple Health.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Pulsar uses location during outdoor runs to show your live map, distance, pace, elevation, and route.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "Pulsar uses motion data to track your running activity, movement, pace, cadence, and workout performance.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -462,6 +556,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Pulsar reads sleep, heart, activity, workout, and profile data from Apple Health to calculate Sleep, Recovery, and Strain.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Pulsar saves running workouts, routes, distance, calories, and workout metrics to Apple Health.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Pulsar uses location during outdoor runs to show your live map, distance, pace, elevation, and route.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "Pulsar uses motion data to track your running activity, movement, pace, cadence, and workout performance.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -497,6 +594,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Pulsar Watch App";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Pulsar reads sleep, heart, activity, and workout data from Apple Health on Apple Watch to show today’s Sleep, Recovery, and Strain insights.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Pulsar saves running workouts, routes, distance, calories, and workout metrics to Apple Health from Apple Watch.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Pulsar uses location during outdoor runs to show distance, pace, elevation, and your route.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = aetherial.Pulsar;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -532,6 +631,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Pulsar Watch App";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Pulsar reads sleep, heart, activity, and workout data from Apple Health on Apple Watch to show today’s Sleep, Recovery, and Strain insights.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Pulsar saves running workouts, routes, distance, calories, and workout metrics to Apple Health from Apple Watch.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Pulsar uses location during outdoor runs to show distance, pace, elevation, and your route.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = aetherial.Pulsar;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -612,6 +713,70 @@
 			};
 			name = Release;
 		};
+		EDF33A1B2FA900000000000C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PulsarWidgetsExtension/PulsarWidgetsExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "PulsarWidgetsExtension-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = aetherial.Pulsar.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		EDF33A1C2FA900000000000D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PulsarWidgetsExtension/PulsarWidgetsExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "PulsarWidgetsExtension-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = aetherial.Pulsar.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -647,6 +812,15 @@
 			buildConfigurations = (
 				EDF329E82FA8000000000008 /* Debug */,
 				EDF329E92FA8000000000009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		EDF33A1D2FA900000000000E /* Build configuration list for PBXNativeTarget "PulsarWidgetsExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EDF33A1B2FA900000000000C /* Debug */,
+				EDF33A1C2FA900000000000D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

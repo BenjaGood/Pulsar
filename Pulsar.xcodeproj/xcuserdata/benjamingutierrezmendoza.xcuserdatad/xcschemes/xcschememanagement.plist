@@ -14,6 +14,29 @@
 			<key>orderHint</key>
 			<integer>0</integer>
 		</dict>
+		<key>PulsarWidgetsExtension.xcscheme_^#shared#^_</key>
+		<dict>
+			<key>orderHint</key>
+			<integer>0</integer>
+		</dict>
+	</dict>
+	<key>SuppressBuildableAutocreation</key>
+	<dict>
+		<key>EDF329B72FA7FA4B00359606</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>EDF329C92FA7FABC00359606</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>EDF33A172FA9000000000008</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
 	</dict>
 </dict>
 </plist>

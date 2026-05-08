@@ -70,6 +70,10 @@ final class SleepDetailsViewModel: ObservableObject {
     var awakeningsText: String { summary.analyzedSampleCount > 0 ? "\(summary.awakenings)" : "Not enough data" }
     var sampleCountText: String { summary.analyzedSampleCount > 0 ? "\(summary.analyzedSampleCount) samples" : "No samples" }
     var lastUpdatedText: String { summary.lastUpdated.map { "Updated \(relativeText($0))" } ?? "Not updated" }
+    var alarmBadgeText: String? {
+        guard profile.sleepSchedule.alarmEnabled else { return nil }
+        return "Alarm \(timeText(minutesFromMidnight: profile.sleepSchedule.resolvedAlarmTimeMinutesFromMidnight))"
+    }
 
     var dateSubtitle: String {
         if calendar.isDateInToday(wakeUpDate) { return "Last night" }
@@ -237,6 +241,12 @@ final class SleepDetailsViewModel: ObservableObject {
 
     private func timeText(_ date: Date) -> String {
         date.formatted(.dateTime.hour().minute())
+    }
+
+    private func timeText(minutesFromMidnight: Int) -> String {
+        let components = DateComponents(hour: minutesFromMidnight / 60, minute: minutesFromMidnight % 60)
+        let date = calendar.date(from: components) ?? Date()
+        return timeText(date)
     }
 
     private func relativeText(_ date: Date) -> String {

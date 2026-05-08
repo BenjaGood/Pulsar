@@ -122,9 +122,7 @@ final class SleepDetailsViewModelTests: XCTestCase {
     }
 
     private var profile: UserProfile {
-        var profile = MockHealthData.profile
-        profile.sleepSchedule.targetSleepHours = 8
-        return profile
+        MockHealthData.profile
     }
 
     private var calendar: Calendar {

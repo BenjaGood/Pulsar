@@ -6,26 +6,67 @@
 import Foundation
 
 struct StrainScoringEngine {
-    func score(input: DailyStrainInput) -> StrainSummary {
+    func score(input: DailyStrainInput, dayHeartRateSamples: [HeartRateSample] = [], restingHeartRate: Double? = nil) -> StrainSummary {
         let maxHeartRate = input.maxHeartRate
         let workoutEntries = input.workouts.map { workout in
             ledgerEntry(for: workout, maxHeartRate: maxHeartRate)
         }
-        let workoutLoad = workoutEntries.reduce(0) { $0 + $1.load }
-        let movementLoad = movementLoad(activity: input.activity, workoutLoad: workoutLoad)
-        let rawLoad = workoutLoad + movementLoad
-        let normalized = normalizedDailyStrain(rawLoad: rawLoad, recentLoads: input.recentRawLoads)
+        let heartContext = PulsarSharedMetricCalculator.heartRateContext(
+            samples: dayHeartRateSamples.map {
+                PulsarSharedHeartRateSample(start: $0.start, end: $0.end, bpm: $0.bpm)
+            },
+            restingHeartRate: restingHeartRate,
+            maxHeartRate: maxHeartRate
+        )
+        let sharedMetric = PulsarSharedMetricCalculator.makeStrainMetric(
+            activity: PulsarSharedActivityInput(
+                steps: input.activity.steps,
+                activeEnergyKilocalories: input.activity.activeEnergyKilocalories,
+                basalEnergyKilocalories: input.activity.basalEnergyKilocalories,
+                distanceMeters: input.activity.distanceMeters,
+                exerciseMinutes: input.activity.exerciseMinutes,
+                elevatedHeartRateMinutes: heartContext.elevatedMinutes,
+                moderateHeartRateMinutes: heartContext.moderateMinutes,
+                vigorousHeartRateMinutes: heartContext.vigorousMinutes,
+                zone1Minutes: heartContext.zone1Minutes,
+                zone2Minutes: heartContext.zone2Minutes,
+                zone3Minutes: heartContext.zone3Minutes,
+                zone4Minutes: heartContext.zone4Minutes,
+                zone5Minutes: heartContext.zone5Minutes,
+                averageElevatedHeartRate: heartContext.averageElevatedHeartRate,
+                peakHeartRate: heartContext.peakHeartRate,
+                restingHeartRate: restingHeartRate,
+                maxHeartRate: maxHeartRate
+            ),
+            workouts: input.workouts.map { workout in
+                let heartRates = workout.heartRateSamples.map(\.bpm).filter { $0 > 0 }
+                return PulsarSharedWorkoutInput(
+                    type: workout.type,
+                    durationMinutes: workout.durationMinutes,
+                    activeEnergyKilocalories: workout.activeEnergyKilocalories,
+                    distanceMeters: workout.distanceMeters,
+                    averageHeartRate: heartRates.isEmpty ? nil : heartRates.reduce(0, +) / Double(heartRates.count),
+                    peakHeartRate: heartRates.max(),
+                    sourceName: workout.provenance.displayName
+                )
+            },
+            recentRawLoads: input.recentRawLoads,
+            computedAt: input.date
+        )
+        let workoutLoad = sharedMetric?.workoutLoad ?? workoutEntries.reduce(0) { $0 + $1.load }
+        let movementLoad = sharedMetric?.movementLoad ?? 0
+        let rawLoad = sharedMetric?.rawLoad ?? workoutLoad
         let twentyEightDailyAverage = input.twentyEightDayRawLoad / 28
         let expectedSevenDayLoad = max(1, twentyEightDailyAverage * 7)
         let sevenVsTwentyEightRatio = input.sevenDayRawLoad / expectedSevenDayLoad
         let sourceBadges = SourceResolver.uniqueSourceBadges(
             input.workouts.map(\.provenance) + input.activity.provenance
         )
-        let confidence = confidenceGrade(maxHeartRate: maxHeartRate, workouts: input.workouts, activity: input.activity)
+        let confidence = sharedMetric?.confidence.appConfidence ?? confidenceGrade(maxHeartRate: maxHeartRate, workouts: input.workouts, activity: input.activity)
 
         return StrainSummary(
             date: input.date,
-            score: ScoreMath.roundedScore(normalized),
+            score: sharedMetric?.score ?? 0,
             confidence: confidence,
             rawLoad: rawLoad,
             workoutLoad: workoutLoad,
@@ -38,9 +79,9 @@ struct StrainScoringEngine {
             activeEnergyKilocalories: input.activity.activeEnergyKilocalories,
             basalEnergyKilocalories: input.activity.basalEnergyKilocalories,
             exerciseMinutes: input.activity.exerciseMinutes,
-            averageActiveHeartRate: nil,
-            peakHeartRate: input.workouts.flatMap(\.heartRateSamples).map(\.bpm).max(),
-            restingHeartRate: nil,
+            averageActiveHeartRate: sharedMetric?.averageActiveHeartRate,
+            peakHeartRate: sharedMetric?.peakHeartRate ?? input.workouts.flatMap(\.heartRateSamples).map(\.bpm).max(),
+            restingHeartRate: restingHeartRate,
             hrvSDNNMilliseconds: nil,
             workoutMinutes: input.workouts.reduce(0) { $0 + $1.durationMinutes },
             workouts: input.workouts.map { workout in
@@ -105,22 +146,6 @@ struct StrainScoringEngine {
         case ..<0.90: return 4
         default: return 5
         }
-    }
-
-    private func movementLoad(activity: DailyActivityInput, workoutLoad: Double) -> Double {
-        let stepLoad = min(35, activity.steps / 1_000 * 1.2)
-        let exerciseLoad = min(45, activity.exerciseMinutes * 1.5)
-        let energyContext = min(20, activity.activeEnergyKilocalories / 50)
-        let rawMovement = stepLoad + exerciseLoad + energyContext
-        let cap = max(25, workoutLoad * 0.35 + 35)
-        return min(rawMovement, cap)
-    }
-
-    private func normalizedDailyStrain(rawLoad: Double, recentLoads: [Double]) -> Double {
-        guard recentLoads.count >= 10, let z = ScoreMath.robustZScore(value: rawLoad, baseline: recentLoads, outlierLimit: 3) else {
-            return ScoreMath.clamp(rawLoad / 220)
-        }
-        return ScoreMath.clamp(0.50 + z * 0.16)
     }
 
     private func combineZones(_ zones: [TimeInZone]) -> [TimeInZone] {

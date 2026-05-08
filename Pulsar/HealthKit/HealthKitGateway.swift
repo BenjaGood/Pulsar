@@ -103,6 +103,37 @@ actor HealthKitGateway {
         )
     }
 
+    func fetchWalkingHeartRateAverage(date: Date, calendar: Calendar) async -> (value: Double, provenance: SourceProvenance)? {
+        let interval = calendar.dateInterval(of: .day, for: date) ?? DateInterval(start: date, duration: 86_400)
+        return await fetchMostRecentQuantity(
+            identifier: .walkingHeartRateAverage,
+            unit: HKUnit.count().unitDivided(by: .minute()),
+            start: interval.start,
+            end: interval.end
+        )
+    }
+
+    func fetchMostRecentQuantitySample(identifier: HKQuantityTypeIdentifier, unit: HKUnit, start: Date, end: Date) async -> (value: Double, start: Date, end: Date, provenance: SourceProvenance)? {
+        guard let type = HKObjectType.quantityType(forIdentifier: identifier) else { return nil }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictEndDate)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: 1, sortDescriptors: [sort]) { [unit] _, samples, _ in
+                guard let sample = samples?.first as? HKQuantitySample else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: (
+                    sample.quantity.doubleValue(for: unit),
+                    sample.startDate,
+                    sample.endDate,
+                    self.provenance(for: sample)
+                ))
+            }
+            store.execute(query)
+        }
+    }
+
     func fetchActivity(date: Date, calendar: Calendar) async -> DailyActivityInput {
         let interval = calendar.dateInterval(of: .day, for: date) ?? DateInterval(start: date, duration: 86_400)
         return await fetchActivity(start: interval.start, end: interval.end)
@@ -154,6 +185,73 @@ actor HealthKitGateway {
             )
         }
         return results
+    }
+
+    func fetchWeeklyActivities(start: Date, end: Date, includesHeartRate: Bool = true) async -> [WeeklyActivity] {
+        let workouts = await fetchWorkoutSamples(start: start, end: end, ascending: false)
+        var activities: [WeeklyActivity] = []
+
+        for workout in workouts {
+            let heartRateSamples = includesHeartRate ? await fetchHeartRateSamples(start: workout.startDate, end: workout.endDate) : []
+            let heartRates = heartRateSamples.map(\.bpm).filter { $0 > 0 }
+            let category = fitnessCategory(for: workout.workoutActivityType)
+            let provenance = provenance(for: workout)
+
+            activities.append(
+                WeeklyActivity(
+                    id: "healthkit-\(workout.uuid.uuidString)",
+                    workoutUUID: workout.uuid,
+                    workoutType: workout.workoutActivityType.fitnessDisplayName,
+                    displayName: workout.workoutActivityType.fitnessDisplayName,
+                    category: category,
+                    startDate: workout.startDate,
+                    endDate: workout.endDate,
+                    duration: workout.duration,
+                    calories: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
+                    distanceMeters: workout.totalDistance?.doubleValue(for: .meter()),
+                    averageHeartRate: heartRates.isEmpty ? nil : heartRates.reduce(0, +) / Double(heartRates.count),
+                    maxHeartRate: heartRates.max(),
+                    source: .healthKit,
+                    sourceName: provenance.displayName
+                )
+            )
+        }
+
+        return activities
+    }
+
+    func fetchWorkoutStartDates(start: Date, end: Date) async -> [Date] {
+        await fetchWorkoutSamples(start: start, end: end, ascending: true).map(\.startDate)
+    }
+
+    func fetchWorkoutNotificationEvents(start: Date, end: Date) async -> [WorkoutNotificationEvent] {
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+        let workouts: [HKWorkout] = await withCheckedContinuation { (continuation: CheckedContinuation<[HKWorkout], Never>) in
+            let query = HKSampleQuery(sampleType: .workoutType(), predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, samples, _ in
+                continuation.resume(returning: samples as? [HKWorkout] ?? [])
+            }
+            store.execute(query)
+        }
+
+        var events: [WorkoutNotificationEvent] = []
+        for workout in workouts {
+            let heartRateSamples = await fetchHeartRateSamples(start: workout.startDate, end: workout.endDate)
+            let heartRates = heartRateSamples.map(\.bpm).filter { $0 > 0 }
+            events.append(
+                WorkoutNotificationEvent(
+                    id: workout.uuid.uuidString,
+                    workoutType: workout.workoutActivityType.displayName,
+                    startDate: workout.startDate,
+                    endDate: workout.endDate,
+                    activeEnergyKilocalories: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
+                    averageHeartRate: heartRates.isEmpty ? nil : heartRates.reduce(0, +) / Double(heartRates.count),
+                    maxHeartRate: heartRates.max(),
+                    sourceName: provenance(for: workout).displayName
+                )
+            )
+        }
+        return events
     }
 
     func fetchHeartRateSamples(start: Date, end: Date) async -> [HeartRateSample] {
@@ -272,6 +370,17 @@ actor HealthKitGateway {
         }
     }
 
+    private func fetchWorkoutSamples(start: Date, end: Date, ascending: Bool) async -> [HKWorkout] {
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: ascending)
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(sampleType: .workoutType(), predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, samples, _ in
+                continuation.resume(returning: samples as? [HKWorkout] ?? [])
+            }
+            store.execute(query)
+        }
+    }
+
     private func fetchCategorySamples(type: HKCategoryType, start: Date, end: Date) async -> [HKCategorySample] {
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
@@ -342,6 +451,23 @@ actor HealthKitGateway {
         default: return .notSet
         }
     }
+
+    nonisolated private func fitnessCategory(for activityType: HKWorkoutActivityType) -> WeeklyActivityCategory {
+        switch activityType {
+        case .running: return .running
+        case .walking: return .walking
+        case .hiking: return .hiking
+        case .cycling: return .cycling
+        case .traditionalStrengthTraining, .functionalStrengthTraining, .crossTraining: return .strength
+        case .highIntensityIntervalTraining: return .hiit
+        case .yoga, .mindAndBody: return .yoga
+        case .swimming, .waterFitness, .waterPolo: return .swimming
+        case .rowing: return .rowing
+        case .dance, .socialDance, .cardioDance: return .dance
+        case .flexibility, .preparationAndRecovery, .cooldown: return .recovery
+        default: return .other
+        }
+    }
 }
 
 enum HealthKitGatewayError: Error {
@@ -355,6 +481,7 @@ extension HealthKitGateway {
         let quantityIdentifiers: [HKQuantityTypeIdentifier] = [
             .heartRateVariabilitySDNN,
             .restingHeartRate,
+            .walkingHeartRateAverage,
             .respiratoryRate,
             .heartRate,
             .oxygenSaturation,
@@ -381,6 +508,7 @@ extension HealthKitGateway {
         let quantityIdentifiers: [HKQuantityTypeIdentifier] = [
             .heartRateVariabilitySDNN,
             .restingHeartRate,
+            .walkingHeartRateAverage,
             .respiratoryRate,
             .heartRate,
             .oxygenSaturation,
@@ -402,6 +530,26 @@ extension HealthKitGateway {
 }
 
 private extension HKWorkoutActivityType {
+    nonisolated var fitnessDisplayName: String {
+        switch self {
+        case .running: return "Running"
+        case .cycling: return "Cycling"
+        case .walking: return "Walking"
+        case .traditionalStrengthTraining: return "Strength"
+        case .functionalStrengthTraining: return "Functional Strength"
+        case .crossTraining: return "Gym"
+        case .swimming: return "Swimming"
+        case .hiking: return "Hiking"
+        case .yoga: return "Yoga"
+        case .highIntensityIntervalTraining: return "HIIT"
+        case .rowing: return "Rowing"
+        case .dance, .socialDance, .cardioDance: return "Dance"
+        case .flexibility: return "Mobility"
+        case .preparationAndRecovery, .cooldown: return "Recovery"
+        default: return "Workout"
+        }
+    }
+
     nonisolated var displayName: String {
         switch self {
         case .running: return "Run"

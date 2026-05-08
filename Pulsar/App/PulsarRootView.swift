@@ -8,6 +8,7 @@ import SwiftUI
 struct PulsarRootView: View {
     @State private var selectedTab: PulsarTab = .home
     @StateObject private var homeViewModel = HomeViewModel()
+    @StateObject private var runCoordinator = PulsarRunCoordinator()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -18,6 +19,7 @@ struct PulsarRootView: View {
                 .accessibilityLabel(PulsarTab.home.title)
 
             FitnessView()
+                .environmentObject(runCoordinator)
                 .tabItem { Label(PulsarTab.fitness.title, systemImage: PulsarTab.fitness.symbol) }
                 .tag(PulsarTab.fitness)
                 .accessibilityLabel(PulsarTab.fitness.title)

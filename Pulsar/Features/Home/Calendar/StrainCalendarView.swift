@@ -4,9 +4,11 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct StrainCalendarView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @StateObject private var viewModel: StrainCalendarViewModel
     @State private var isShowingInfo = false
     private let onDateSelected: (Date) -> Void
@@ -32,131 +34,226 @@ struct StrainCalendarView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 18) {
+                VStack(spacing: 16) {
+                    dragIndicator
+                    calendarHero
                     monthHeader
                     calendarCard
                     selectedDaySummary
                     bottomActions
                 }
                 .padding(.horizontal, 18)
-                .padding(.top, 18)
+                .padding(.top, 10)
                 .padding(.bottom, 26)
             }
-            .background(PulsarSectionBackground())
+            .background(CalendarBackdrop())
             .toolbar(.hidden, for: .navigationBar)
             .alert("Strain Rings", isPresented: $isShowingInfo) {
                 Button("OK", role: .cancel) { }
             } message: {
-                Text("Each ring summarizes the day’s strain score. Empty rings mean no record. Larger, brighter rings indicate higher training load from workouts and background movement.")
+                Text("Calendar rings summarize saved daily data. Colored dots mark Sleep, Recovery, Strain, and Stress records when available. Empty days stay quiet until Pulsar has data for that local calendar day.")
             }
         }
     }
 
-    private var monthHeader: some View {
+    private var dragIndicator: some View {
+        Capsule(style: .continuous)
+            .fill(.secondary.opacity(colorScheme == .dark ? 0.34 : 0.22))
+            .frame(width: 42, height: 5)
+            .padding(.bottom, 2)
+            .accessibilityHidden(true)
+    }
+
+    private var calendarHero: some View {
         HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                PulsarMetricRingTheme.tint(for: .strain).opacity(0.28),
+                                PulsarMetricRingTheme.tint(for: .sleep).opacity(0.12)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 48, height: 48)
+                Image(systemName: "calendar")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white.opacity(colorScheme == .dark ? 0.95 : 0.86))
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Daily Calendar")
+                    .font(.title2.weight(.bold))
+                Text("Review saved Sleep, Recovery, Strain, and Stress history.")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(colorScheme == .dark ? 0.12 : 0.72),
+                            PulsarMetricRingTheme.tint(for: .sleep).opacity(colorScheme == .dark ? 0.09 : 0.13),
+                            Color.black.opacity(colorScheme == .dark ? 0.14 : 0.03)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(.white.opacity(colorScheme == .dark ? 0.14 : 0.34), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.24 : 0.08), radius: 18, y: 10)
+    }
+
+    private var monthHeader: some View {
+        HStack(spacing: 10) {
             Button {
                 withAnimation(.snappy) { viewModel.goToPreviousMonth() }
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.headline.weight(.semibold))
-                    .frame(width: 40, height: 40)
+                    .font(.callout.weight(.bold))
+                    .frame(width: 38, height: 38)
             }
             .buttonStyle(.plain)
             .disabled(!viewModel.canGoToPreviousMonth)
             .opacity(viewModel.canGoToPreviousMonth ? 1 : 0.35)
-            .pulsarLiquidGlass(cornerRadius: 20)
+            .calendarGlass(cornerRadius: 19)
             .accessibilityLabel("Previous month")
 
-            Text(viewModel.monthTitle)
-                .font(.title2.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .contentTransition(.numericText())
+            VStack(spacing: 2) {
+                Text(viewModel.monthTitle)
+                    .font(.title3.weight(.bold))
+                    .contentTransition(.numericText())
+                Text("\(viewModel.records.count) saved days")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
 
             Button {
                 withAnimation(.snappy) { viewModel.goToNextMonth() }
             } label: {
                 Image(systemName: "chevron.right")
-                    .font(.headline.weight(.semibold))
-                    .frame(width: 40, height: 40)
+                    .font(.callout.weight(.bold))
+                    .frame(width: 38, height: 38)
             }
             .buttonStyle(.plain)
             .disabled(!viewModel.canGoToNextMonth)
             .opacity(viewModel.canGoToNextMonth ? 1 : 0.35)
-            .pulsarLiquidGlass(cornerRadius: 20)
+            .calendarGlass(cornerRadius: 19)
             .accessibilityLabel("Next month")
         }
     }
 
     private var calendarCard: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             HStack(spacing: 0) {
                 ForEach(viewModel.weekdaySymbols, id: \.self) { weekday in
                     Text(weekday)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.8)
+                        .foregroundStyle(.secondary.opacity(0.86))
                         .frame(maxWidth: .infinity)
                 }
             }
+            .padding(.horizontal, 2)
 
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 7), spacing: 8) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 7), count: 7), spacing: 9) {
                 ForEach(viewModel.monthDays) { day in
+                    let record = viewModel.record(for: day.date)
                     StrainCalendarDayCell(
                         date: day.date,
-                        record: viewModel.record(for: day.date),
+                        record: record,
                         isToday: viewModel.isToday(day.date),
                         isSelected: viewModel.isSelected(day.date),
-                        isSelectable: day.isInDisplayedMonth && viewModel.isDateSelectable(day.date),
+                        isSelectable: viewModel.isDateSelectable(day.date),
                         isInDisplayedMonth: day.isInDisplayedMonth,
                         calendar: viewModel.calendar
                     )
                     .onTapGesture {
-                        guard day.isInDisplayedMonth && viewModel.isDateSelectable(day.date) else { return }
-                        withAnimation(.snappy) { viewModel.selectDate(day.date) }
+                        handleDayTap(day.date, record: record)
                     }
                 }
             }
         }
-        .padding(16)
-        .pulsarLiquidGlass(cornerRadius: 30)
+        .padding(15)
+        .calendarGlass(cornerRadius: 30)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.18 : 0.06), radius: 16, y: 8)
+    }
+
+    private func handleDayTap(_ date: Date, record: DailyStrainRecord?) {
+        guard viewModel.isDateSelectable(date) else { return }
+        UIImpactFeedbackGenerator(style: record == nil ? .light : .soft).impactOccurred()
+        withAnimation(.snappy) { viewModel.selectDate(date) }
+        guard record?.hasRecordedData == true else { return }
+        onDateSelected(date)
+        dismiss()
     }
 
     @ViewBuilder
     private var selectedDaySummary: some View {
         if let record = viewModel.selectedRecord {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .center, spacing: 14) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(viewModel.selectedDate.formatted(date: .abbreviated, time: .omitted))
-                            .font(.headline)
+                            .font(.headline.weight(.bold))
                         Text("\(record.sourceName) · \(record.confidence.rawValue) confidence")
-                            .font(.caption)
+                            .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    StrainRing(score: record.strainScore, lineWidth: 8, size: 54)
+                    CalendarCompositeRing(record: record, size: 62, lineWidth: 7)
                 }
 
-                HStack(spacing: 10) {
-                    CalendarSummaryMetric(title: "Strain", value: "\(record.strainScore)")
-                    CalendarSummaryMetric(title: "Workout", value: "\(record.workoutMinutes)m")
-                    CalendarSummaryMetric(title: "Steps", value: record.steps.formatted())
-                    CalendarSummaryMetric(title: "Energy", value: "\(record.activeEnergyKilocalories)")
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2), spacing: 10) {
+                    CalendarSummaryMetric(title: "Sleep", value: record.sleepMinutes.map(minutesText) ?? "--", tint: PulsarMetricRingTheme.tint(for: .sleep))
+                    CalendarSummaryMetric(title: "Recovery", value: record.recoveryScore.map(String.init) ?? "--", tint: PulsarMetricRingTheme.tint(for: .recovery))
+                    CalendarSummaryMetric(title: "Strain", value: record.strainScore > 0 ? "\(record.strainScore)" : "--", tint: PulsarMetricRingTheme.tint(for: .strain))
+                    CalendarSummaryMetric(title: "Stress", value: record.stressScore.map(String.init) ?? "--", tint: PulsarStressRingTheme.tint(for: record.stressScore))
+                    CalendarSummaryMetric(title: "Workout", value: "\(record.workoutMinutes)m", tint: PulsarMetricRingTheme.tint(for: .strain))
+                    CalendarSummaryMetric(title: "Steps", value: record.steps.formatted(), tint: .secondary)
                 }
-            }
-            .padding(16)
-            .pulsarLiquidGlass(cornerRadius: 26)
-            .transition(.opacity.combined(with: .move(edge: .bottom)))
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(viewModel.selectedDate.formatted(date: .abbreviated, time: .omitted))
-                    .font(.headline)
-                Text(emptyMessage)
-                    .font(.subheadline)
+
+                Text("Tap any saved day to open its details immediately.")
+                    .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
             }
             .padding(16)
+            .calendarGlass(cornerRadius: 28)
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+        } else {
+            HStack(spacing: 12) {
+                Image(systemName: "moonphase.new.moon")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 42, height: 42)
+                    .background(.secondary.opacity(0.10), in: Circle())
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(viewModel.selectedDate.formatted(date: .abbreviated, time: .omitted))
+                        .font(.headline.weight(.bold))
+                    Text(emptyMessage)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .pulsarLiquidGlass(cornerRadius: 26)
+            .calendarGlass(cornerRadius: 28)
         }
     }
 
@@ -171,21 +268,9 @@ struct StrainCalendarView: View {
                     .frame(height: 42)
             }
             .buttonStyle(.plain)
-            .pulsarLiquidGlass(cornerRadius: 21)
+            .calendarGlass(cornerRadius: 21)
 
             Spacer()
-
-            Button {
-                onDateSelected(viewModel.selectedDate)
-                dismiss()
-            } label: {
-                Label("View Day", systemImage: "checkmark")
-                    .font(.callout.weight(.semibold))
-                    .padding(.horizontal, 14)
-                    .frame(height: 42)
-            }
-            .buttonStyle(.plain)
-            .pulsarLiquidGlass(cornerRadius: 21)
 
             Button {
                 isShowingInfo = true
@@ -195,13 +280,21 @@ struct StrainCalendarView: View {
                     .frame(width: 42, height: 42)
             }
             .buttonStyle(.plain)
-            .pulsarLiquidGlass(cornerRadius: 21)
+            .calendarGlass(cornerRadius: 21)
             .accessibilityLabel("Strain ring information")
         }
     }
 
     private var emptyMessage: String {
-        viewModel.isToday(viewModel.selectedDate) ? "No strain data recorded yet today." : "No strain data recorded for this day."
+        viewModel.isToday(viewModel.selectedDate) ? "No data recorded yet today." : "No data recorded for this day."
+    }
+
+    private func minutesText(_ minutes: Int) -> String {
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        if hours == 0 { return "\(remainder)m" }
+        if remainder == 0 { return "\(hours)h" }
+        return "\(hours)h \(remainder)m"
     }
 }
 
@@ -213,96 +306,299 @@ struct StrainCalendarDayCell: View {
     var isSelectable: Bool
     var isInDisplayedMonth: Bool
     var calendar: Calendar
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 3) {
             ZStack {
-                if let record, isSelectable {
-                    StrainRing(score: record.strainScore, lineWidth: 4, size: 34)
+                if let record, record.hasRecordedData, isSelectable {
+                    CalendarCompositeRing(record: record, size: 36, lineWidth: 3.4)
                 } else {
                     Circle()
-                        .stroke(.secondary.opacity(isSelectable ? 0.18 : 0.08), lineWidth: 1.5)
-                        .frame(width: 34, height: 34)
+                        .stroke(emptyStroke, lineWidth: 1.2)
+                        .frame(width: 36, height: 36)
                 }
 
                 Text("\(calendar.component(.day, from: date))")
-                    .font(.caption.weight(isToday || isSelected ? .bold : .medium))
+                    .font(.caption.weight(isToday || isSelected ? .bold : .semibold))
                     .monospacedDigit()
-                    .foregroundStyle(isSelectable ? .primary : .secondary)
+                    .foregroundStyle(textColor)
             }
+
+            MetricAvailabilityDots(record: record)
+                .opacity(record?.hasRecordedData == true && isSelectable ? 1 : 0)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 48)
-        .opacity(isSelectable ? 1 : 0.32)
+        .frame(height: 54)
+        .opacity(dayOpacity)
         .background {
             if isSelected && isSelectable {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.tint.opacity(0.14))
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(colorScheme == .dark ? 0.15 : 0.68),
+                                primaryTint.opacity(colorScheme == .dark ? 0.18 : 0.16)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(primaryTint.opacity(0.42), lineWidth: 1)
+                    }
+                    .shadow(color: primaryTint.opacity(0.18), radius: 8, y: 4)
             } else if isToday && isSelectable {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(.tint.opacity(0.45), lineWidth: 1)
+                    .stroke(PulsarMetricRingTheme.tint(for: .sleep).opacity(0.42), lineWidth: 1)
             }
         }
         .contentShape(isSelectable ? RoundedRectangle(cornerRadius: 16, style: .continuous) : RoundedRectangle(cornerRadius: 0, style: .continuous))
         .accessibilityLabel(accessibilityLabel)
     }
 
+    private var emptyStroke: Color {
+        if !isInDisplayedMonth {
+            return .secondary.opacity(colorScheme == .dark ? 0.10 : 0.08)
+        }
+        return .secondary.opacity(isSelectable ? (colorScheme == .dark ? 0.20 : 0.16) : 0.08)
+    }
+
+    private var textColor: Color {
+        if !isSelectable { return .secondary.opacity(0.48) }
+        if !isInDisplayedMonth { return .secondary.opacity(0.72) }
+        return .primary
+    }
+
+    private var dayOpacity: Double {
+        if !isSelectable { return 0.26 }
+        if !isInDisplayedMonth { return 0.56 }
+        if record?.hasRecordedData == true { return 1 }
+        return 0.72
+    }
+
+    private var primaryTint: Color {
+        calendarPrimaryTint(for: record)
+    }
+
     private var accessibilityLabel: String {
         guard isSelectable else {
             return "\(date.formatted(date: .abbreviated, time: .omitted)), unavailable"
         }
-        if let record {
-            return "\(date.formatted(date: .abbreviated, time: .omitted)), strain \(record.strainScore)"
+        if let record, record.hasRecordedData {
+            let sleep = record.sleepScore.map { ", sleep \($0)" } ?? ""
+            let recovery = record.recoveryScore.map { ", recovery \($0)" } ?? ""
+            let strain = record.strainScore > 0 ? ", strain \(record.strainScore)" : ""
+            let stress = record.stressScore.map { ", stress \($0)" } ?? ""
+            return "\(date.formatted(date: .abbreviated, time: .omitted))\(sleep)\(recovery)\(strain)\(stress)"
         }
-        return "\(date.formatted(date: .abbreviated, time: .omitted)), no strain data"
+        return "\(date.formatted(date: .abbreviated, time: .omitted)), no data"
     }
 }
 
-private struct StrainRing: View {
+private struct CalendarCompositeRing: View {
+    var record: DailyStrainRecord
+    var size: CGFloat
+    var lineWidth: CGFloat
+
+    var body: some View {
+        CalendarScoreRing(
+            score: primaryScore,
+            tint: calendarPrimaryTint(for: record),
+            lineWidth: lineWidth,
+            size: size
+        )
+    }
+
+    private var primaryScore: Int {
+        if record.strainScore > 0 { return record.strainScore }
+        if let recoveryScore = record.recoveryScore { return recoveryScore }
+        if let sleepScore = record.sleepScore { return sleepScore }
+        if let stressScore = record.stressScore { return stressScore }
+        return 0
+    }
+}
+
+private struct CalendarScoreRing: View {
     var score: Int
+    var tint: Color
     var lineWidth: CGFloat
     var size: CGFloat
 
     var body: some View {
         ZStack {
             Circle()
-                .stroke(.secondary.opacity(0.16), lineWidth: lineWidth)
+                .stroke(PulsarMetricRingTheme.track, lineWidth: lineWidth)
             Circle()
                 .trim(from: 0, to: max(0.02, Double(score) / 100))
-                .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .stroke(
+                    PulsarMetricRingTheme.progressGradient(tint: tint),
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                )
                 .rotationEffect(.degrees(-90))
+                .shadow(color: PulsarMetricRingTheme.ringShadow(tint: tint), radius: 4, y: 1)
         }
         .frame(width: size, height: size)
     }
+}
 
-    private var color: Color {
-        switch score {
-        case 1..<35: .mint.opacity(0.75)
-        case 35..<70: .blue
-        case 70...100: .orange
-        default: .secondary.opacity(0.25)
+private struct MetricAvailabilityDots: View {
+    var record: DailyStrainRecord?
+
+    var body: some View {
+        HStack(spacing: 2.5) {
+            if record?.sleepScore != nil {
+                dot(PulsarMetricRingTheme.tint(for: .sleep))
+            }
+            if record?.recoveryScore != nil {
+                dot(PulsarMetricRingTheme.tint(for: .recovery))
+            }
+            if let record, record.strainScore > 0 {
+                dot(PulsarMetricRingTheme.tint(for: .strain))
+            }
+            if let stressScore = record?.stressScore {
+                dot(PulsarStressRingTheme.tint(for: stressScore))
+            }
         }
+        .frame(height: 5)
+    }
+
+    private func dot(_ color: Color) -> some View {
+        Circle()
+            .fill(color)
+            .frame(width: 4.5, height: 4.5)
     }
 }
 
 private struct CalendarSummaryMetric: View {
     var title: String
     var value: String
+    var tint: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .monospacedDigit()
+        HStack(spacing: 8) {
+            Circle()
+                .fill(tint.opacity(0.92))
+                .frame(width: 8, height: 8)
+                .shadow(color: tint.opacity(0.24), radius: 4)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.caption.weight(.bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .monospacedDigit()
+            }
         }
-        .padding(10)
+        .padding(11)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(
+            LinearGradient(
+                colors: [
+                    tint.opacity(0.12),
+                    Color.white.opacity(0.06),
+                    Color.black.opacity(0.04)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(.white.opacity(0.10), lineWidth: 0.8)
+        }
+    }
+}
+
+private func calendarPrimaryTint(for record: DailyStrainRecord?) -> Color {
+    guard let record else { return PulsarMetricRingTheme.tint(for: .strain) }
+    if record.strainScore > 0 { return PulsarMetricRingTheme.tint(for: .strain) }
+    if record.recoveryScore != nil { return PulsarMetricRingTheme.tint(for: .recovery) }
+    if record.sleepScore != nil { return PulsarMetricRingTheme.tint(for: .sleep) }
+    return PulsarStressRingTheme.tint(for: record.stressScore)
+}
+
+private struct CalendarBackdrop: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: colorScheme == .dark
+                    ? [
+                        Color(red: 0.03, green: 0.04, blue: 0.08),
+                        Color(red: 0.06, green: 0.08, blue: 0.14),
+                        Color(red: 0.01, green: 0.02, blue: 0.05)
+                    ]
+                    : [
+                        Color(.systemBackground),
+                        Color(red: 0.94, green: 0.97, blue: 1.00),
+                        Color(.secondarySystemBackground)
+                    ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            Circle()
+                .fill(PulsarMetricRingTheme.tint(for: .sleep).opacity(colorScheme == .dark ? 0.18 : 0.10))
+                .blur(radius: 60)
+                .offset(x: -130, y: -220)
+
+            Circle()
+                .fill(PulsarMetricRingTheme.tint(for: .strain).opacity(colorScheme == .dark ? 0.16 : 0.08))
+                .blur(radius: 70)
+                .offset(x: 150, y: 220)
+        }
+        .ignoresSafeArea()
+    }
+}
+
+private struct CalendarGlassModifier: ViewModifier {
+    var cornerRadius: CGFloat
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(colorScheme == .dark ? 0.11 : 0.62),
+                                Color.white.opacity(colorScheme == .dark ? 0.045 : 0.28),
+                                Color.black.opacity(colorScheme == .dark ? 0.12 : 0.025)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(colorScheme == .dark ? 0.15 : 0.46),
+                                Color.white.opacity(colorScheme == .dark ? 0.055 : 0.16),
+                                Color.black.opacity(colorScheme == .dark ? 0.12 : 0.04)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+    }
+}
+
+private extension View {
+    func calendarGlass(cornerRadius: CGFloat) -> some View {
+        modifier(CalendarGlassModifier(cornerRadius: cornerRadius))
     }
 }
 

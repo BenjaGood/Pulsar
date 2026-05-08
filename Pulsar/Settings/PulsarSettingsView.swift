@@ -35,7 +35,7 @@ struct PulsarSettingsView: View {
                         }
                         SettingsDivider()
                         NavigationLink { SleepPreferencesView(store: store, onSave: onProfileUpdated) } label: {
-                            SettingsNavigationRow(title: "Sleep Preferences", subtitle: "Sleep target, schedule, and source", symbol: "moon.zzz.fill", tint: .indigo)
+                            SettingsNavigationRow(title: "Sleep Preferences", subtitle: "Sleep schedule, goal days, and alarm", symbol: "moon.zzz.fill", tint: .indigo)
                         }
                     }
 
@@ -60,7 +60,9 @@ struct PulsarSettingsView: View {
                     SettingsSectionCard(title: "App") {
                         SettingsNavigationRow(title: "Appearance", subtitle: "Follows your system appearance", symbol: "circle.lefthalf.filled", tint: .cyan, badge: "Auto")
                         SettingsDivider()
-                        SettingsNavigationRow(title: "Notifications", subtitle: "Reminders and insight alerts coming later", symbol: "bell.badge.fill", tint: .red, badge: "Soon")
+                        NavigationLink { NotificationsSettingsView() } label: {
+                            SettingsNavigationRow(title: "Notifications", subtitle: "Workout, stress, wind-down, and sleep insights", symbol: "bell.badge.fill", tint: .red)
+                        }
                         SettingsDivider()
                         SettingsNavigationRow(title: "Units", subtitle: "Managed in Measurements", symbol: "slider.horizontal.3", tint: .mint, badge: store.profile.preferredUnits.rawValue)
                     }
@@ -126,7 +128,7 @@ enum SettingsPreviewStore {
     static func make() -> ProfileStore {
         let defaults = UserDefaults(suiteName: "pulsar.settings.preview") ?? .standard
         defaults.removeObject(forKey: "pulsar.profile.v1")
-        let store = ProfileStore(defaults: defaults)
+        let store = ProfileStore(defaults: defaults, sideEffectsEnabled: false)
         var profile = MockHealthData.profile
         profile.restingHeartRateBaselineBPM = 52
         profile.hrvBaselineMilliseconds = 58

@@ -1,2 +1,0 @@
-Target dependency graph (1 target)
-Target 'Pulsar Watch App Watch App' in project 'Pulsar' (no dependencies)

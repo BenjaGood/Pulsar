@@ -89,6 +89,14 @@ private struct SleepDetailsHeader: View {
                     .background(.indigo.opacity(0.14), in: Capsule())
                     .foregroundStyle(.indigo)
             }
+            if let alarmBadgeText = viewModel.alarmBadgeText {
+                Label(alarmBadgeText, systemImage: "alarm.fill")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.orange.opacity(0.12), in: Capsule())
+            }
         }
         .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -213,70 +213,6 @@ struct PerformanceSettingsView: View {
     private func save() { store.save(draft); draft = store.profile; onSave?() }
 }
 
-struct SleepPreferencesView: View {
-    @ObservedObject var store: ProfileStore
-    var onSave: (() -> Void)? = nil
-
-    @State private var draft: UserProfile
-    private let calendar = Calendar.current
-
-    init(store: ProfileStore, onSave: (() -> Void)? = nil) {
-        self.store = store
-        self.onSave = onSave
-        _draft = State(initialValue: store.profile)
-    }
-
-    var body: some View {
-        SettingsDetailScaffold(title: "Sleep", hasChanges: draft != store.profile, save: save) {
-            VStack(spacing: 18) {
-                HelperCard(symbol: "moon.zzz.fill", title: "Sleep Personalization", message: "Used for sleep consistency, sleep performance, and recovery insights.", tint: .indigo)
-                SettingsSectionCard(title: "Schedule") {
-                    Stepper(value: targetSleepBinding, in: 5...10.5, step: 0.25) {
-                        SettingsValueRow(title: "Target Sleep Duration", value: formattedSleepDuration(draft.sleepSchedule.targetSleepHours))
-                    }
-                    SettingsDivider()
-                    DatePicker("Usual Bedtime", selection: bedtimeBinding, displayedComponents: .hourAndMinute)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                    SettingsDivider()
-                    DatePicker("Usual Wake Time", selection: wakeTimeBinding, displayedComponents: .hourAndMinute)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                }
-                SettingsSectionCard(title: "Goals & Source") {
-                    Picker("Sleep Goal Days", selection: $draft.sleepGoalDays) {
-                        ForEach(SleepGoalDays.allCases) { days in Text(days.rawValue).tag(days) }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    SettingsDivider()
-                    Picker("Primary Sleep Source", selection: $draft.primarySleepSource) {
-                        ForEach(PrimarySleepSource.allCases) { source in Text(source.rawValue).tag(source) }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                }
-            }
-        }
-    }
-
-    private var targetSleepBinding: Binding<Double> { Binding(get: { draft.sleepSchedule.targetSleepHours }, set: { draft.sleepSchedule.targetSleepHours = $0 }) }
-    private var bedtimeBinding: Binding<Date> { sleepTimeBinding(hour: \.targetBedtimeHour, minute: \.targetBedtimeMinute) }
-    private var wakeTimeBinding: Binding<Date> { sleepTimeBinding(hour: \.targetWakeHour, minute: \.targetWakeMinute) }
-    private func sleepTimeBinding(hour: WritableKeyPath<SleepSchedule, Int>, minute: WritableKeyPath<SleepSchedule, Int>) -> Binding<Date> {
-        Binding(get: { calendar.date(from: DateComponents(hour: draft.sleepSchedule[keyPath: hour], minute: draft.sleepSchedule[keyPath: minute])) ?? Date() }, set: { date in
-            let components = calendar.dateComponents([.hour, .minute], from: date)
-            draft.sleepSchedule[keyPath: hour] = components.hour ?? 0
-            draft.sleepSchedule[keyPath: minute] = components.minute ?? 0
-        })
-    }
-    private func formattedSleepDuration(_ hours: Double) -> String {
-        let minutes = Int((hours * 60).rounded())
-        return "\(minutes / 60)h \(minutes % 60)m"
-    }
-    private func save() { store.save(draft); draft = store.profile; onSave?() }
-}
-
 struct SettingsDetailScaffold<Content: View>: View {
     var title: String
     var hasChanges: Bool
@@ -306,4 +242,3 @@ struct SettingsDetailScaffold<Content: View>: View {
 #Preview("Profile Details") { NavigationStack { ProfileDetailsView(store: SettingsPreviewStore.make()) } }
 #Preview("Measurements") { NavigationStack { MeasurementsView(store: SettingsPreviewStore.make()) } }
 #Preview("Performance") { NavigationStack { PerformanceSettingsView(store: SettingsPreviewStore.make()) } }
-#Preview("Sleep") { NavigationStack { SleepPreferencesView(store: SettingsPreviewStore.make()) } }

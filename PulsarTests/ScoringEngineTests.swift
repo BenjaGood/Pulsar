@@ -68,6 +68,110 @@ final class ScoringEngineTests: XCTestCase {
         XCTAssertGreaterThan(summary.score, 50)
     }
 
+    func testMorningNoActivityStrainStaysLowDespiteRecentHistory() {
+        let date = MockHealthData.calendar.date(from: DateComponents(year: 2026, month: 5, day: 3, hour: 7))!
+        let input = DailyStrainInput(
+            date: date,
+            maxHeartRate: 188,
+            workouts: [],
+            activity: DailyActivityInput(
+                date: date,
+                steps: 250,
+                activeEnergyKilocalories: 18,
+                basalEnergyKilocalories: 420,
+                distanceMeters: 140,
+                exerciseMinutes: 0,
+                provenance: [.sample]
+            ),
+            recentRawLoads: Array(repeating: 4, count: 28),
+            sevenDayRawLoad: 28,
+            twentyEightDayRawLoad: 112
+        )
+
+        let summary = StrainScoringEngine().score(input: input, dayHeartRateSamples: [], restingHeartRate: 52)
+
+        XCTAssertLessThanOrEqual(summary.score, 10)
+    }
+
+    func testRecoveryOnlySetsRecommendedStrainTarget() {
+        let lowActivityMetric = PulsarSharedMetricCalculator.makeStrainMetric(
+            activity: PulsarSharedActivityInput(steps: 400, activeEnergyKilocalories: 25, exerciseMinutes: 0),
+            workouts: [],
+            recentRawLoads: Array(repeating: 2, count: 28),
+            computedAt: Date()
+        )
+        let targetRange = PulsarSharedMetricCalculator.recommendedStrainTargetRange(forRecoveryScore: 92)
+
+        XCTAssertNotNil(lowActivityMetric)
+        XCTAssertLessThanOrEqual(lowActivityMetric?.score ?? 100, 10)
+        XCTAssertEqual(targetRange?.lowerBound, 68)
+        XCTAssertEqual(targetRange?.upperBound, 86)
+    }
+
+    func testModerateStrengthDayDoesNotInflateToPeakStrain() {
+        let date = MockHealthData.calendar.date(from: DateComponents(year: 2026, month: 5, day: 4, hour: 12))!
+        let workout = PulsarSharedWorkoutInput(
+            type: "Traditional Strength Training",
+            durationMinutes: 43,
+            activeEnergyKilocalories: 190,
+            averageHeartRate: 104,
+            peakHeartRate: 132,
+            sourceName: "Apple Watch"
+        )
+        let metric = PulsarSharedMetricCalculator.makeStrainMetric(
+            activity: PulsarSharedActivityInput(
+                steps: 5_537,
+                activeEnergyKilocalories: 360,
+                basalEnergyKilocalories: 1_568,
+                distanceMeters: 4_200,
+                exerciseMinutes: 43,
+                averageElevatedHeartRate: 86,
+                peakHeartRate: 132,
+                restingHeartRate: 64,
+                maxHeartRate: 188
+            ),
+            workouts: [workout],
+            recentRawLoads: Array(repeating: 35, count: 7),
+            computedAt: date
+        )
+
+        XCTAssertNotNil(metric)
+        XCTAssertGreaterThanOrEqual(metric?.score ?? 0, 45)
+        XCTAssertLessThanOrEqual(metric?.score ?? 100, 60)
+    }
+
+    func testTotalEnergyLikeInputCannotCreatePeakStrainByItself() {
+        let date = MockHealthData.calendar.date(from: DateComponents(year: 2026, month: 5, day: 4, hour: 12))!
+        let metric = PulsarSharedMetricCalculator.makeStrainMetric(
+            activity: PulsarSharedActivityInput(
+                steps: 5_537,
+                activeEnergyKilocalories: 1_928,
+                basalEnergyKilocalories: 1_568,
+                distanceMeters: 4_200,
+                exerciseMinutes: 43,
+                averageElevatedHeartRate: 86,
+                peakHeartRate: 132,
+                restingHeartRate: 64,
+                maxHeartRate: 188
+            ),
+            workouts: [
+                PulsarSharedWorkoutInput(
+                    type: "Traditional Strength Training",
+                    durationMinutes: 43,
+                    activeEnergyKilocalories: 190,
+                    averageHeartRate: 104,
+                    peakHeartRate: 132,
+                    sourceName: "Apple Watch"
+                )
+            ],
+            recentRawLoads: Array(repeating: 35, count: 7),
+            computedAt: date
+        )
+
+        XCTAssertNotNil(metric)
+        XCTAssertLessThanOrEqual(metric?.score ?? 100, 65)
+    }
+
     func testMaxHeartRateFallsBackOnlyWhenManualValueIsMissing() {
         var profile = MockHealthData.profile
         profile.manualMaxHeartRate = nil

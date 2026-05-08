@@ -75,31 +75,149 @@ private struct StrainDetailsHeader: View {
     @ObservedObject var viewModel: StrainDetailsViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Strain")
+                Text("Current Strain")
                     .font(.largeTitle.weight(.bold))
                 Text(viewModel.dateSubtitle)
                     .font(.callout.weight(.medium))
                     .foregroundStyle(.secondary)
             }
-            HStack(alignment: .lastTextBaseline) {
-                Text(viewModel.scoreText)
-                    .font(.system(size: 58, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .minimumScaleFactor(0.72)
-                Spacer(minLength: 12)
-                Text(viewModel.statusText)
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.orange.opacity(0.14), in: Capsule())
-                    .foregroundStyle(.orange)
+            HStack(alignment: .center, spacing: 12) {
+                StrainHeaderMetric(title: "Current", value: viewModel.scoreText, subtitle: "Accumulated today", tint: .orange)
+                StrainHeaderMetric(title: "Target Range", value: viewModel.recommendedTargetText, subtitle: "Recovery + recent load", tint: .cyan)
             }
+            StrainTargetProgressBar(current: viewModel.hasCurrentStrainValue ? viewModel.summary.score : nil, targetRange: viewModel.targetRange)
+            HStack(spacing: 10) {
+                StrainLoadSplitPill(title: "Active", value: viewModel.activeStrainText, subtitle: "Workout", tint: .orange)
+                StrainLoadSplitPill(title: "Passive", value: viewModel.passiveStrainText, subtitle: "Movement", tint: .cyan)
+            }
+            Text(viewModel.insights.first?.text ?? viewModel.statusText)
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(viewModel.statusText)
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.orange.opacity(0.14), in: Capsule())
+                .foregroundStyle(.orange)
         }
         .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
         .pulsarLiquidGlass(cornerRadius: 34)
+    }
+}
+
+private struct StrainLoadSplitPill: View {
+    var title: String
+    var value: String
+    var subtitle: String
+    var tint: Color
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Circle()
+                .fill(tint)
+                .frame(width: 8, height: 8)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title.uppercased())
+                    .font(.caption2.weight(.bold))
+                    .tracking(0.6)
+                    .foregroundStyle(.secondary)
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 4)
+            Text(value)
+                .font(.callout.weight(.bold).monospacedDigit())
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(.white.opacity(0.07), in: Capsule())
+        .overlay {
+            Capsule()
+                .stroke(tint.opacity(0.18), lineWidth: 1)
+        }
+    }
+}
+
+private struct StrainHeaderMetric: View {
+    var title: String
+    var value: String
+    var subtitle: String
+    var tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title.uppercased())
+                .font(.caption2.weight(.bold))
+                .tracking(0.7)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+            Text(subtitle)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(
+            LinearGradient(
+                colors: [tint.opacity(0.18), .white.opacity(0.055), .black.opacity(0.06)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(tint.opacity(0.20), lineWidth: 1)
+        }
+    }
+}
+
+private struct StrainTargetProgressBar: View {
+    var current: Int?
+    var targetRange: PulsarSharedStrainTargetRange?
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let currentProgress = CGFloat(min(1, max(0, Double(current ?? 0) / 100)))
+            let lowerProgress = CGFloat(min(1, max(0, Double(targetRange?.lowerBound ?? 0) / 100)))
+            let upperProgress = CGFloat(min(1, max(0, Double(targetRange?.upperBound ?? 0) / 100)))
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(.white.opacity(0.08))
+                if targetRange != nil {
+                    Capsule()
+                        .fill(LinearGradient(colors: [.cyan.opacity(0.28), .cyan.opacity(0.58)], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(8, width * max(0, upperProgress - lowerProgress)))
+                        .offset(x: width * lowerProgress)
+                }
+                if current != nil {
+                    Capsule()
+                        .fill(LinearGradient(colors: [.orange, .pink], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(8, width * currentProgress))
+                }
+                if targetRange != nil {
+                    Capsule()
+                        .fill(.white.opacity(0.92))
+                        .frame(width: 5, height: 24)
+                        .shadow(color: .cyan.opacity(0.35), radius: 6)
+                        .offset(x: min(max(0, width * upperProgress - 2.5), width - 5))
+                }
+            }
+        }
+        .frame(height: 14)
+        .accessibilityLabel("Current strain \(current.map(String.init) ?? "unavailable"), target range \(targetRange?.displayText ?? "unavailable")")
     }
 }
 

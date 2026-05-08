@@ -24,16 +24,21 @@ extension PulsarSyncConfidence {
 
 extension HomeDashboard {
     func syncPayload(sourceDevice: PulsarSyncSourceDevice, syncSessionID: UUID = UUID(), calendar: Calendar = .current) -> PulsarDailyMetricsSyncPayload? {
-        let day = calendar.startOfDay(for: sleep.wakeUpDate ?? strain.date ?? recovery.date ?? generatedAt)
+        let day = calendar.startOfDay(for: sleep.wakeUpDate ?? strain.date ?? recovery.date ?? healthMonitor.date ?? generatedAt)
         let sleepMetric = sleep.syncMetric(targetSleepHours: profile.sleepSchedule.targetSleepHours, calendar: calendar)
         let strainMetric = strain.syncMetric()
         let recoveryMetric = recovery.syncMetric()
+        let stressMetric = stress.syncMetric()
+        let healthMonitorMetric = healthMonitor.syncMetric()
         let hasCompleteDailyMetrics = strainMetric?.isValid == true && recoveryMetric?.isValid == true
         if (strainMetric != nil || recoveryMetric != nil) && !hasCompleteDailyMetrics {
             PulsarSyncDebugLogger.log("invalid or partial Recovery/Strain payload ignored before build dateKey=\(PulsarDailyMetricsDateKey.dateKey(for: day, calendar: calendar)) strainValid=\(strainMetric?.isValid == true) recoveryValid=\(recoveryMetric?.isValid == true)")
         }
         let syncedAt = max(
-            max(strain.lastUpdated ?? generatedAt, recovery.lastUpdated ?? generatedAt),
+            max(
+                max(max(strain.lastUpdated ?? generatedAt, recovery.lastUpdated ?? generatedAt), stress.lastUpdated ?? generatedAt),
+                healthMonitor.lastUpdated ?? generatedAt
+            ),
             max(sleep.lastUpdated ?? generatedAt, generatedAt)
         )
         let payload = PulsarDailyMetricsSyncPayload(
@@ -44,6 +49,8 @@ extension HomeDashboard {
             strain: hasCompleteDailyMetrics ? strainMetric : nil,
             recovery: hasCompleteDailyMetrics ? recoveryMetric : nil,
             sleep: sleepMetric,
+            stress: stressMetric,
+            healthMonitor: healthMonitorMetric,
             syncSessionID: syncSessionID,
             validityFlag: true
         )
@@ -52,7 +59,7 @@ extension HomeDashboard {
 
     func applying(payload: PulsarDailyMetricsSyncPayload, calendar: Calendar = .current) -> HomeDashboard {
         guard payload.isValidPayload,
-              payload.applies(to: sleep.wakeUpDate ?? strain.date ?? recovery.date ?? generatedAt, calendar: calendar) else { return self }
+              payload.applies(to: sleep.wakeUpDate ?? strain.date ?? recovery.date ?? healthMonitor.date ?? generatedAt, calendar: calendar) else { return self }
         var copy = self
         if payload.hasCompleteDailyScores, let strain = payload.strain, let recovery = payload.recovery {
             let incomingDailyUpdatedAt = max(strain.computedAt, recovery.computedAt)
@@ -66,6 +73,16 @@ extension HomeDashboard {
         }
         if let sleep = payload.sleep, sleep.isValid {
             copy.sleep = copy.sleep.applying(syncMetric: sleep, sourceDevice: payload.sourceDevice)
+        }
+        if let stress = payload.stress, stress.isValid {
+            if payload.sourceDevice == .appleWatch, copy.stress.score != nil {
+                PulsarSyncDebugLogger.log("skipped Watch Stress UI update because iPhone Stress remains canonical dateKey=\(payload.resolvedDateKey) incoming=\(stress.computedAt) current=\(copy.stress.lastUpdated ?? .distantPast) session=\(payload.syncSessionID?.uuidString ?? "none")")
+            } else {
+                copy.stress = copy.stress.applying(syncMetric: stress, sourceDevice: payload.sourceDevice)
+            }
+        }
+        if let healthMonitor = payload.healthMonitor, healthMonitor.isValid {
+            copy.healthMonitor = copy.healthMonitor.applying(syncMetric: healthMonitor, sourceDevice: payload.sourceDevice)
         }
         copy.generatedAt = max(copy.generatedAt, payload.syncedAt)
         return copy
@@ -266,6 +283,174 @@ private extension RecoverySummary {
     }
 }
 
+private extension StressSummary {
+    func syncMetric() -> PulsarStressSyncMetric? {
+        guard let score else { return nil }
+        let metric = PulsarStressSyncMetric(
+            score: score,
+            confidence: confidence.syncConfidence,
+            levelText: PulsarSharedMetricCalculator.stressLevelText(score: score),
+            driverInsights: Array(driverInsights.prefix(2)),
+            hrvSDNN: lastHRV ?? signalValue(id: "hrv"),
+            hrvTimestamp: lastHRVTimestamp,
+            hrvBaseline: nil,
+            restingHeartRate: signalValue(id: "resting-heart-rate"),
+            restingHeartRateBaseline: nil,
+            respiratoryRate: signalValue(id: "respiratory-rate"),
+            recentHeartRate: lastHeartRate ?? signalValue(id: "heart-rate"),
+            heartRateTimestamp: lastHeartRateTimestamp,
+            daytimeHeartRateBaseline: nil,
+            nonActivityStress: nonActivityStress.map(Double.init),
+            activityAdjustedStress: activityAdjustedStress.map(Double.init),
+            movementState: movementStateText,
+            calculationState: syncCalculationStateRawValue,
+            sleepDurationMinutes: nil,
+            strainScore: signalValue(id: "recent-load"),
+            availableSignalCount: availableSignalCount,
+            baselineWindowDays: baselineWindowDays,
+            timelineSamples: dailySamples.prefix(36).map {
+                PulsarStressSyncSample(timestamp: $0.timestamp, score: $0.score, context: $0.context?.rawValue)
+            },
+            sourceNames: sourceBadges.map(\.displayName),
+            computedAt: lastUpdated ?? queryEnd ?? date ?? .distantPast
+        )
+        return metric.isValid ? metric : nil
+    }
+
+    func applying(syncMetric: PulsarStressSyncMetric, sourceDevice: PulsarSyncSourceDevice) -> StressSummary {
+        var copy = self
+        copy.date = copy.date ?? syncMetric.computedAt
+        copy.score = syncMetric.score
+        copy.level = StressLevel.legacyLevel(named: syncMetric.levelText) ?? StressLevel.level(for: syncMetric.score)
+        copy.confidence = syncMetric.confidence.appConfidence
+        if syncMetric.isPaused {
+            copy.score = nil
+            copy.level = nil
+            copy.state = syncMetric.sharedCalculationState == .workoutPaused ? .workoutPaused : .cooldown
+        } else {
+            copy.state = syncMetric.confidence == .low ? .lowConfidence : .ready
+        }
+        copy.driverInsights = syncMetric.driverInsights.isEmpty ? copy.driverInsights : syncMetric.driverInsights
+        copy.drivers = syncMetric.driverInsights.enumerated().map { index, insight in
+            StressDriver(
+                id: "synced-stress-driver-\(index)",
+                title: insight,
+                detail: "Synced from \(sourceDevice == .appleWatch ? "Apple Watch" : "iPhone") while local HealthKit data refreshes.",
+                severity: syncMetric.score >= Int(PulsarStressScale.highLowerBound) ? .elevated : .neutral,
+                relatedMetric: nil
+            )
+        }
+        copy.signals = stressSignals(from: syncMetric)
+        copy.lastHeartRate = syncMetric.recentHeartRate
+        copy.lastHeartRateTimestamp = syncMetric.heartRateTimestamp
+        copy.lastHRV = syncMetric.hrvSDNN
+        copy.lastHRVTimestamp = syncMetric.hrvTimestamp
+        copy.nonActivityStress = syncMetric.nonActivityStress.map(PulsarStressScale.roundedScore)
+        copy.activityAdjustedStress = syncMetric.activityAdjustedStress.map(PulsarStressScale.roundedScore)
+        copy.movementStateText = syncMetric.movementState.flatMap(PulsarSharedStressMovementState.init(rawValue:))?.displayText ?? syncMetric.movementState
+        copy.stressStatusText = syncMetric.sharedCalculationState.displayText
+        copy.dailySamples = syncMetric.timelineSamples.map {
+            StressSample(
+                timestamp: $0.timestamp,
+                score: $0.score,
+                confidence: syncMetric.confidence.appConfidence,
+                context: $0.context.flatMap(StressContext.init(rawValue:))
+            )
+        }
+        copy.analyzedSampleCount = max(copy.analyzedSampleCount, syncMetric.availableSignalCount)
+        copy.baselineWindowDays = max(copy.baselineWindowDays, syncMetric.baselineWindowDays)
+        copy.availableSignalCount = max(copy.availableSignalCount, syncMetric.availableSignalCount)
+        copy.lastUpdated = syncMetric.computedAt
+        if copy.queryEnd == nil { copy.queryEnd = syncMetric.computedAt }
+        copy.sourceBadges = mergeSources(existing: copy.sourceBadges, names: syncMetric.sourceNames, sourceDevice: sourceDevice)
+        copy.explanation = syncMetric.isPaused ? (syncMetric.driverInsights.first ?? syncMetric.sharedCalculationState.displayText) : "Current stress compares recent HR and HRV with your baseline, while filtering movement and workout effects."
+        copy.subtext = StressSummary.estimateSubtext
+        return copy
+    }
+
+    private func signalValue(id: String) -> Double? {
+        signals.first(where: { $0.id == id })?.value.extractFirstNumber()
+    }
+
+    private var syncCalculationStateRawValue: String {
+        switch state {
+        case .workoutPaused:
+            return PulsarSharedStressCalculationState.workoutPaused.rawValue
+        case .cooldown:
+            return PulsarSharedStressCalculationState.cooldownPaused.rawValue
+        case .lowConfidence:
+            return PulsarSharedStressCalculationState.lowConfidence.rawValue
+        case .ready, .noData, .buildingBaseline:
+            return PulsarSharedStressCalculationState.measuring.rawValue
+        }
+    }
+
+    private func stressSignals(from metric: PulsarStressSyncMetric) -> [StressSignal] {
+        [
+            StressSignal(id: "hrv", title: "HRV", value: metric.hrvSDNN.map { "\(Int($0.rounded())) ms" } ?? "Not available", baseline: nil, availability: metric.hrvSDNN == nil ? .unavailable : .limited),
+            StressSignal(id: "heart-rate", title: "Heart rate", value: metric.recentHeartRate.map { "\(Int($0.rounded())) bpm" } ?? "Not available", baseline: nil, availability: metric.recentHeartRate == nil ? .unavailable : .limited),
+            StressSignal(id: "resting-heart-rate", title: "Resting heart rate", value: metric.restingHeartRate.map { "\(Int($0.rounded())) bpm" } ?? "Not available", baseline: nil, availability: metric.restingHeartRate == nil ? .unavailable : .limited),
+            StressSignal(id: "respiratory-rate", title: "Respiratory rate", value: metric.respiratoryRate.map { String(format: "%.1f br/min", $0) } ?? "Not available", baseline: nil, availability: metric.respiratoryRate == nil ? .unavailable : .limited),
+            StressSignal(id: "non-activity-stress", title: "Non-activity stress", value: metric.nonActivityStress.map { "\(PulsarStressScale.roundedScore($0))" } ?? "Paused", baseline: "Inactive-only estimate", availability: metric.nonActivityStress == nil ? .limited : .available),
+            StressSignal(id: "activity-adjusted-stress", title: "Activity-adjusted stress", value: metric.activityAdjustedStress.map { "\(PulsarStressScale.roundedScore($0))" } ?? "Paused", baseline: metric.movementState, availability: metric.activityAdjustedStress == nil ? .limited : .available),
+            StressSignal(id: "recent-load", title: "Recent strain/load", value: metric.strainScore.map { "\(Int($0.rounded()))" } ?? "Not available", baseline: nil, availability: metric.strainScore == nil ? .unavailable : .limited)
+        ]
+    }
+}
+
+private extension HealthMonitorSummary {
+    func syncMetric() -> PulsarHealthMonitorSyncMetric? {
+        let metrics = HealthMetricKind.allCases.map { metric($0).syncMetric() }
+        let syncMetric = PulsarHealthMonitorSyncMetric(
+            metrics: metrics,
+            baselineWindowDays: baselineWindowDays,
+            sourceNames: sourceBadges.map(\.displayName),
+            computedAt: lastUpdated ?? date ?? Date()
+        )
+        return syncMetric.isValid ? syncMetric : nil
+    }
+
+    func applying(syncMetric: PulsarHealthMonitorSyncMetric, sourceDevice: PulsarSyncSourceDevice) -> HealthMonitorSummary {
+        let existingByKind = Dictionary(uniqueKeysWithValues: metrics.map { ($0.kind, $0) })
+        let incomingByKind = Dictionary(uniqueKeysWithValues: syncMetric.metrics.map { ($0.kind.appKind, $0) })
+        let mergedMetrics = HealthMetricKind.allCases.map { kind -> HealthMetricModel in
+            if let incoming = incomingByKind[kind] {
+                return HealthMetricModel(
+                    kind: kind,
+                    value: incoming.value,
+                    status: incoming.status.appStatus,
+                    baselineValue: incoming.baselineValue,
+                    comparisonText: incoming.comparisonText,
+                    sourceBadges: mergeSources(existing: existingByKind[kind]?.sourceBadges ?? [], names: incoming.sourceNames, sourceDevice: sourceDevice),
+                    lastUpdated: syncMetric.computedAt
+                )
+            }
+            return existingByKind[kind] ?? .noData(kind: kind, lastUpdated: lastUpdated)
+        }
+
+        return HealthMonitorSummary(
+            date: date,
+            metrics: mergedMetrics,
+            lastUpdated: syncMetric.computedAt,
+            baselineWindowDays: max(baselineWindowDays, syncMetric.baselineWindowDays),
+            sourceBadges: mergeSources(existing: sourceBadges, names: syncMetric.sourceNames, sourceDevice: sourceDevice)
+        )
+    }
+}
+
+private extension HealthMetricModel {
+    func syncMetric() -> PulsarHealthMetricSyncValue {
+        PulsarHealthMetricSyncValue(
+            kind: kind.syncKind,
+            value: value,
+            status: status.syncStatus,
+            baselineValue: baselineValue,
+            comparisonText: comparisonText,
+            sourceNames: sourceBadges.map(\.displayName)
+        )
+    }
+}
+
 private func mergeSources(existing: [SourceProvenance], names: [String], sourceDevice: PulsarSyncSourceDevice) -> [SourceProvenance] {
     let syncedSources = names.map {
         SourceProvenance(
@@ -296,5 +481,83 @@ private func statusFromLabel(_ label: String) -> RecoveryStatus {
     case RecoveryStatus.low.label: .low
     case RecoveryStatus.needsAttention.label: .needsAttention
     default: .unknown
+    }
+}
+
+private extension String {
+    func extractFirstNumber() -> Double? {
+        let allowed = Set("0123456789.-")
+        let token = split(separator: " ").first { part in
+            part.contains { allowed.contains($0) }
+        }
+        return token.flatMap { Double($0.filter { allowed.contains($0) }) }
+    }
+}
+
+private extension HealthMetricKind {
+    var syncKind: PulsarHealthMetricSyncKind {
+        switch self {
+        case .respiratoryRate:
+            .respiratoryRate
+        case .restingHeartRate:
+            .restingHeartRate
+        case .hrv:
+            .hrv
+        case .oxygenSaturation:
+            .oxygenSaturation
+        case .wristTemperature:
+            .wristTemperature
+        case .sleep:
+            .sleep
+        }
+    }
+}
+
+extension PulsarHealthMetricSyncKind {
+    var appKind: HealthMetricKind {
+        switch self {
+        case .respiratoryRate:
+            .respiratoryRate
+        case .restingHeartRate:
+            .restingHeartRate
+        case .hrv:
+            .hrv
+        case .oxygenSaturation:
+            .oxygenSaturation
+        case .wristTemperature:
+            .wristTemperature
+        case .sleep:
+            .sleep
+        }
+    }
+}
+
+private extension HealthMetricStatus {
+    var syncStatus: PulsarHealthMetricSyncStatus {
+        switch self {
+        case .normal:
+            .normal
+        case .higher:
+            .higher
+        case .lower:
+            .lower
+        case .noData:
+            .noData
+        }
+    }
+}
+
+extension PulsarHealthMetricSyncStatus {
+    var appStatus: HealthMetricStatus {
+        switch self {
+        case .normal:
+            .normal
+        case .higher:
+            .higher
+        case .lower:
+            .lower
+        case .noData:
+            .noData
+        }
     }
 }

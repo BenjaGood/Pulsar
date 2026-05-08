@@ -7,11 +7,13 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     static let shared = PulsarWatchConnectivitySyncStore()
 
     @Published private(set) var latestPayload: PulsarDailyMetricsSyncPayload?
+    @Published private(set) var latestSleepPreferences: PulsarSleepPreferencesSyncPayload?
 
     private let defaults: UserDefaults
     private let cacheKey = "pulsar.sync.cachedDailyMetricsPayload.v1"
     private let dailyCacheKey = "pulsar.sync.cachedDailyMetricPayloadsByDateKey.v1"
     private let sleepCacheKey = "pulsar.sync.cachedSleepPayloadsByDateKey.v1"
+    private let sleepPreferencesCacheKey = "pulsar.sync.cachedSleepPreferencesPayload.v1"
     private let session: WCSession?
     private var dailyPayloadsByDateKey: [String: PulsarDailyMetricsSyncPayload]
     private var sleepPayloadsByDateKey: [String: PulsarDailyMetricsSyncPayload]
@@ -22,7 +24,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         if let data = defaults.data(forKey: dailyCacheKey),
            let payloads = try? JSONDecoder().decode([String: PulsarDailyMetricsSyncPayload].self, from: data) {
             self.dailyPayloadsByDateKey = payloads.filter { key, payload in
-                key == payload.resolvedDateKey && payload.isValidPayload && payload.hasCompleteDailyScores
+                key == payload.resolvedDateKey && payload.isValidPayload && (payload.hasCompleteDailyScores || payload.hasValidStress)
             }
         } else {
             self.dailyPayloadsByDateKey = [:]
@@ -39,6 +41,13 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             self.latestPayload = payload
         } else {
             self.latestPayload = nil
+        }
+        if let data = defaults.data(forKey: sleepPreferencesCacheKey),
+           let payload = try? JSONDecoder().decode(PulsarSleepPreferencesSyncPayload.self, from: data),
+           payload.isValid {
+            self.latestSleepPreferences = payload
+        } else {
+            self.latestSleepPreferences = nil
         }
         super.init()
         activateSessionIfNeeded()
@@ -59,7 +68,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         guard !dateKey.isEmpty,
               let payload = dailyPayloadsByDateKey[dateKey],
               payload.isValidPayload,
-              payload.hasCompleteDailyScores else { return nil }
+              payload.hasCompleteDailyScores || payload.hasValidStress else { return nil }
         return payload
     }
 
@@ -71,10 +80,39 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         return payload
     }
 
+    func cachedDailyPayloads() -> [PulsarDailyMetricsSyncPayload] {
+        dailyPayloadsByDateKey.values
+            .filter { $0.isValidPayload && ($0.hasCompleteDailyScores || $0.hasValidStress) }
+            .sorted { $0.resolvedDateKey < $1.resolvedDateKey }
+    }
+
+    func cachedSleepPayloads() -> [PulsarDailyMetricsSyncPayload] {
+        sleepPayloadsByDateKey.values
+            .filter { $0.isValidPayload && $0.sleep?.isValid == true }
+            .sorted { $0.resolvedDateKey < $1.resolvedDateKey }
+    }
+
+    func cachedSleepPreferences() -> PulsarSleepPreferencesSyncPayload? {
+        guard let latestSleepPreferences, latestSleepPreferences.isValid else { return nil }
+        return latestSleepPreferences
+    }
+
     @discardableResult
     func storeLocalPayload(_ payload: PulsarDailyMetricsSyncPayload, broadcast: Bool, reason: String) -> Bool {
         apply(payload: payload, broadcast: broadcast, reason: reason)
     }
+
+    @discardableResult
+    func storeSleepPreferences(_ payload: PulsarSleepPreferencesSyncPayload, broadcast: Bool, reason: String) -> Bool {
+        apply(sleepPreferences: payload, broadcast: broadcast, reason: reason)
+    }
+
+    #if os(iOS)
+    @discardableResult
+    func storeSleepPreferences(for profile: UserProfile, broadcast: Bool, reason: String) -> Bool {
+        storeSleepPreferences(PulsarSleepPreferencesSyncPayload(profile: profile), broadcast: broadcast, reason: reason)
+    }
+    #endif
 
     private func activateSessionIfNeeded() {
         guard let session else {
@@ -125,7 +163,35 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         PulsarSyncDebugLogger.log("Cache updated via \(reason): source=\(merged.sourceDevice.rawValue) dateKey=\(merged.resolvedDateKey) syncedAt=\(merged.syncedAt) session=\(merged.syncSessionID?.uuidString ?? "none") fingerprint=\(merged.resolvedDataFingerprint)")
 
         if broadcast {
-            sendToCounterpart(merged)
+            sendToCounterpart(metricPayload: merged)
+        }
+        return true
+    }
+
+    @discardableResult
+    private func apply(sleepPreferences incoming: PulsarSleepPreferencesSyncPayload, broadcast: Bool, reason: String) -> Bool {
+        guard incoming.isValid else {
+            PulsarSyncDebugLogger.log("Skipped \(reason) sleep preferences because payload was invalid")
+            return false
+        }
+        if let latestSleepPreferences,
+           latestSleepPreferences == incoming {
+            PulsarSyncDebugLogger.log("Skipped \(reason) sleep preferences because the payload was unchanged")
+            return false
+        }
+        if let latestSleepPreferences,
+           incoming.syncedAt < latestSleepPreferences.syncedAt,
+           latestSleepPreferences != incoming {
+            PulsarSyncDebugLogger.log("Skipped \(reason) sleep preferences because cached data was newer incoming=\(incoming.syncedAt) cached=\(latestSleepPreferences.syncedAt)")
+            return false
+        }
+
+        latestSleepPreferences = incoming
+        persistSleepPreferences(incoming)
+        PulsarSyncDebugLogger.log("Sleep preferences cache updated via \(reason) syncedAt=\(incoming.syncedAt) alarmEnabled=\(incoming.alarmEnabled)")
+
+        if broadcast {
+            sendToCounterpart(sleepPreferences: incoming)
         }
         return true
     }
@@ -136,8 +202,9 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     }
 
     private func persistDailyPayloadIfNeeded(_ payload: PulsarDailyMetricsSyncPayload) {
-        guard payload.hasCompleteDailyScores,
-              let dailyComputedAt = payload.dailyMetricsComputedAt else { return }
+        guard payload.hasCompleteDailyScores || payload.hasValidStress else { return }
+        let dailyComputedAt = [payload.dailyMetricsComputedAt, payload.stressComputedAt, payload.healthMonitorComputedAt].compactMap { $0 }.max()
+        guard let dailyComputedAt else { return }
         let dateKey = payload.resolvedDateKey
         guard !dateKey.isEmpty else { return }
         let dailyPayload = PulsarDailyMetricsSyncPayload(
@@ -148,6 +215,8 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             strain: payload.strain,
             recovery: payload.recovery,
             sleep: nil,
+            stress: payload.stress,
+            healthMonitor: payload.healthMonitor,
             syncSessionID: payload.syncSessionID,
             validityFlag: true
         )
@@ -192,33 +261,64 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         PulsarSyncDebugLogger.log("Sleep cache updated sleepDateKey=\(sleep.sleepDateKey) score=\(sleep.score) session=\(sleepPayload.syncSessionID?.uuidString ?? "none")")
     }
 
-    private func sendToCounterpart(_ payload: PulsarDailyMetricsSyncPayload) {
+    private func persistSleepPreferences(_ payload: PulsarSleepPreferencesSyncPayload) {
+        guard let data = try? JSONEncoder().encode(payload) else { return }
+        defaults.set(data, forKey: sleepPreferencesCacheKey)
+    }
+
+    private func sendToCounterpart(metricPayload: PulsarDailyMetricsSyncPayload? = nil, sleepPreferences: PulsarSleepPreferencesSyncPayload? = nil) {
         guard let session else { return }
-        guard let data = PulsarSyncPayloadCodec.encode(payload) else { return }
+        let metric = metricPayload ?? latestPayload
+        let sleepPreferences = sleepPreferences ?? latestSleepPreferences
+        var applicationContext: [String: Any] = [:]
+
+        if let metric, let data = PulsarSyncPayloadCodec.encode(metric) {
+            applicationContext[PulsarSyncPayloadCodec.payloadKey] = data
+        }
+        if let sleepPreferences,
+           let data = try? JSONEncoder().encode(sleepPreferences) {
+            applicationContext[Self.sleepPreferencesPayloadKey] = data
+        }
+        guard !applicationContext.isEmpty else { return }
 
         do {
-            try session.updateApplicationContext([PulsarSyncPayloadCodec.payloadKey: data])
-            PulsarSyncDebugLogger.log("WatchConnectivity applicationContext updated session=\(payload.syncSessionID?.uuidString ?? "none") source=\(payload.sourceDevice.rawValue)")
+            try session.updateApplicationContext(applicationContext)
+            PulsarSyncDebugLogger.log("WatchConnectivity applicationContext updated metricSession=\(metric?.syncSessionID?.uuidString ?? "none") alarmEnabled=\(sleepPreferences?.alarmEnabled == true)")
         } catch {
             PulsarSyncDebugLogger.log("Failed to update applicationContext: \(error.localizedDescription)")
         }
 
-        session.transferUserInfo([PulsarSyncPayloadCodec.payloadKey: data])
-        PulsarSyncDebugLogger.log("WatchConnectivity payload queued for transfer session=\(payload.syncSessionID?.uuidString ?? "none") source=\(payload.sourceDevice.rawValue)")
+        session.transferUserInfo(applicationContext)
+        PulsarSyncDebugLogger.log("WatchConnectivity payload queued for transfer metricSession=\(metric?.syncSessionID?.uuidString ?? "none") alarmEnabled=\(sleepPreferences?.alarmEnabled == true)")
     }
 
     private func receive(dictionary: [String: Any], reason: String) {
-        guard let data = dictionary[PulsarSyncPayloadCodec.payloadKey] as? Data,
-              let payload = PulsarSyncPayloadCodec.decode(data: data) else {
-            PulsarSyncDebugLogger.log("Skipped \(reason) payload because decoding failed")
-            return
+        var didApplyAnyPayload = false
+
+        if let data = dictionary[PulsarSyncPayloadCodec.payloadKey] as? Data,
+           let payload = PulsarSyncPayloadCodec.decode(data: data) {
+            didApplyAnyPayload = apply(payload: payload, broadcast: false, reason: reason) || didApplyAnyPayload
+        } else if dictionary[PulsarSyncPayloadCodec.payloadKey] != nil {
+            PulsarSyncDebugLogger.log("Skipped \(reason) metrics payload because decoding failed")
         }
-        apply(payload: payload, broadcast: false, reason: reason)
+
+        if let data = dictionary[Self.sleepPreferencesPayloadKey] as? Data,
+           let payload = try? JSONDecoder().decode(PulsarSleepPreferencesSyncPayload.self, from: data) {
+            didApplyAnyPayload = apply(sleepPreferences: payload, broadcast: false, reason: reason) || didApplyAnyPayload
+        } else if dictionary[Self.sleepPreferencesPayloadKey] != nil {
+            PulsarSyncDebugLogger.log("Skipped \(reason) sleep preferences because decoding failed")
+        }
+
+        if !didApplyAnyPayload {
+            PulsarSyncDebugLogger.log("Skipped \(reason) payload because nothing valid could be applied")
+        }
     }
 
     private func incomingCanFillMissingMetric(_ incoming: PulsarDailyMetricsSyncPayload, current: PulsarDailyMetricsSyncPayload) -> Bool {
         (current.hasCompleteDailyScores == false && incoming.hasCompleteDailyScores) ||
-        (current.sleep?.isValid != true && incoming.sleep?.isValid == true)
+        (current.sleep?.isValid != true && incoming.sleep?.isValid == true) ||
+        (current.stress?.isValid != true && incoming.stress?.isValid == true) ||
+        (current.healthMonitor?.isValid != true && incoming.healthMonitor?.isValid == true)
     }
 
     private func incomingCarriesNewerMetric(_ incoming: PulsarDailyMetricsSyncPayload, current: PulsarDailyMetricsSyncPayload) -> Bool {
@@ -232,8 +332,20 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
            incomingSleep > currentSleep {
             return true
         }
+        if let incomingStress = incoming.stressComputedAt,
+           let currentStress = current.stressComputedAt,
+           incomingStress > currentStress {
+            return true
+        }
+        if let incomingHealthMonitor = incoming.healthMonitorComputedAt,
+           let currentHealthMonitor = current.healthMonitorComputedAt,
+           incomingHealthMonitor > currentHealthMonitor {
+            return true
+        }
         return false
     }
+
+    private static let sleepPreferencesPayloadKey = "pulsar.sleepPreferences.payload.v1"
 }
 
 extension PulsarWatchConnectivitySyncStore: WCSessionDelegate {

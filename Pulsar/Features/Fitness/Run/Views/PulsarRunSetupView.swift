@@ -1,0 +1,312 @@
+//
+//  PulsarRunSetupView.swift
+//  Pulsar
+//
+
+import SwiftUI
+import UIKit
+
+struct PulsarRunSetupView: View {
+    @ObservedObject var coordinator: PulsarRunCoordinator
+    var onCancel: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var options = PulsarRunOptions.default
+    @State private var countdown: Int?
+    @State private var isShowingHistory = false
+
+    var body: some View {
+        ZStack {
+            PulsarRunSetupBackground()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    header
+                    sourceCard
+                    routeCard
+                    optionsCard
+                    permissionCard
+                    startButton
+                    historyButton
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 18)
+                .padding(.bottom, 34)
+            }
+
+            if let countdown {
+                countdownOverlay(countdown)
+                    .transition(.scale(scale: 0.72).combined(with: .opacity))
+            }
+        }
+        .onAppear {
+            coordinator.refreshAvailability()
+            options.prefersWatchRecorder = coordinator.preferredSource == .appleWatch
+        }
+        .sheet(isPresented: $isShowingHistory) {
+            PulsarRunHistoryView(coordinator: coordinator)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 7) {
+                Text("Outdoor Run")
+                    .font(.system(size: 38, weight: .bold, design: .rounded))
+                    .foregroundStyle(primaryText)
+                Text("GPS route, live pace, splits, heart rate, and HealthKit workout saving.")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+
+            Button(action: onCancel) {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(secondaryText)
+                    .frame(width: 36, height: 36)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().stroke(.white.opacity(colorScheme == .dark ? 0.16 : 0.72), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var sourceCard: some View {
+        PulsarRunGlassCard {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(sourceTint.opacity(0.16))
+                    Image(systemName: coordinator.preferredSource == .appleWatch ? "applewatch.radiowaves.left.and.right" : "iphone.gen3.radiowaves.left.and.right")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(sourceTint)
+                }
+                .frame(width: 50, height: 50)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(coordinator.preferredSource == .appleWatch ? "Watch-first recording" : "iPhone recording")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(primaryText)
+                    Text(coordinator.preferredSource == .appleWatch ? "Pulsar will launch Apple Watch and mirror live stats back here." : "No paired Watch recorder was found. Pulsar will record GPS from iPhone.")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private var routeCard: some View {
+        PulsarRunGlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Label("Route", systemImage: "map.fill")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(primaryText)
+                    Spacer()
+                    Text("Open")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.green)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.green.opacity(0.12), in: Capsule())
+                }
+
+                Text("Free run today. Route planning and saved routes are a good next layer once recording is battle-tested.")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(secondaryText)
+            }
+        }
+    }
+
+    private var optionsCard: some View {
+        PulsarRunGlassCard {
+            VStack(spacing: 10) {
+                Toggle(isOn: $options.autoPauseEnabled) {
+                    Label("Auto-pause", systemImage: "pause.circle.fill")
+                        .font(.headline.weight(.semibold))
+                }
+
+                Toggle(isOn: $options.audioCuesEnabled) {
+                    Label("Audio cues", systemImage: "speaker.wave.2.fill")
+                        .font(.headline.weight(.semibold))
+                }
+
+                Toggle(isOn: $options.prefersWatchRecorder) {
+                    Label("Prefer Apple Watch", systemImage: "applewatch")
+                        .font(.headline.weight(.semibold))
+                }
+                .disabled(!coordinator.isWatchAvailable)
+            }
+            .tint(.green)
+            .foregroundStyle(primaryText)
+        }
+    }
+
+    @ViewBuilder
+    private var permissionCard: some View {
+        if let message = coordinator.authorizationMessage {
+            PulsarRunGlassCard {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            PulsarRunGlassCard {
+                Label("HealthKit and Location are used only to record this run, route, and summary.", systemImage: "checkmark.shield.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.green)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var startButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            Task { await beginCountdownAndStart() }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "figure.run")
+                    .font(.title3.weight(.bold))
+                Text("Start Run")
+                    .font(.title3.weight(.bold))
+            }
+            .foregroundStyle(Color(red: 0.03, green: 0.14, blue: 0.08))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 18)
+            .background(
+                LinearGradient(
+                    colors: [Color.green.opacity(0.96), Color(red: 0.75, green: 1.0, blue: 0.55)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: Capsule(style: .continuous)
+            )
+            .overlay(Capsule().stroke(.white.opacity(0.56), lineWidth: 1))
+            .shadow(color: .green.opacity(0.28), radius: 22, y: 12)
+        }
+        .buttonStyle(PulsarRunPressStyle())
+    }
+
+    private var historyButton: some View {
+        Button {
+            isShowingHistory = true
+        } label: {
+            Label("Training Log", systemImage: "calendar.badge.clock")
+                .font(.headline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(.ultraThinMaterial, in: Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(primaryText)
+    }
+
+    private func countdownOverlay(_ value: Int) -> some View {
+        ZStack {
+            Color.black.opacity(0.34)
+                .background(.ultraThinMaterial)
+                .ignoresSafeArea()
+
+            VStack(spacing: 14) {
+                Text("\(value)")
+                    .font(.system(size: 104, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+                    .contentTransition(.numericText())
+                Text("Ready")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.72))
+            }
+        }
+    }
+
+    private func beginCountdownAndStart() async {
+        await coordinator.requestPermissions()
+        guard coordinator.authorizationMessage == nil else { return }
+
+        for value in [3, 2, 1] {
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.72)) {
+                countdown = value
+            }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            try? await Task.sleep(nanoseconds: 850_000_000)
+        }
+
+        withAnimation(.easeOut(duration: 0.18)) {
+            countdown = nil
+        }
+        await coordinator.startRun(options: options)
+    }
+
+    private var sourceTint: Color {
+        coordinator.preferredSource == .appleWatch ? .green : .cyan
+    }
+
+    private var primaryText: Color {
+        colorScheme == .dark ? .white.opacity(0.97) : Color(red: 0.08, green: 0.10, blue: 0.15)
+    }
+
+    private var secondaryText: Color {
+        colorScheme == .dark ? .white.opacity(0.64) : Color(red: 0.35, green: 0.39, blue: 0.47)
+    }
+}
+
+struct PulsarRunGlassCard<Content: View>: View {
+    @ViewBuilder var content: Content
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        content
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                LinearGradient(
+                    colors: colorScheme == .dark
+                        ? [Color.white.opacity(0.11), Color.white.opacity(0.045), Color.green.opacity(0.06)]
+                        : [Color.white.opacity(0.88), Color(red: 0.95, green: 0.98, blue: 1.00).opacity(0.76), Color.green.opacity(0.05)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 26, style: .continuous)
+            )
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .stroke(.white.opacity(colorScheme == .dark ? 0.16 : 0.78), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.22 : 0.09), radius: 16, y: 9)
+    }
+}
+
+private struct PulsarRunSetupBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        LinearGradient(
+            colors: colorScheme == .dark
+                ? [Color(red: 0.04, green: 0.07, blue: 0.07), Color(red: 0.03, green: 0.05, blue: 0.09), Color.black]
+                : [Color(.systemBackground), Color(red: 0.91, green: 0.98, blue: 0.95), Color(red: 0.95, green: 0.97, blue: 1.0)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
+    }
+}
+
+struct PulsarRunPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.975 : 1)
+            .brightness(configuration.isPressed ? 0.04 : 0)
+            .animation(.spring(response: 0.28, dampingFraction: 0.74), value: configuration.isPressed)
+    }
+}

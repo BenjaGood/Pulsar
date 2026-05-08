@@ -38,12 +38,30 @@ final class StrainCalendarViewModel: ObservableObject {
         self.validEndDate = calendar.startOfDay(for: today)
         let validEndDate = self.validEndDate
 
-        let normalizedRecords = records
+        let candidateRecords = records
             .filter { calendar.startOfDay(for: $0.date) <= validEndDate }
             .map { record in
                 DailyStrainRecord(
                     date: calendar.startOfDay(for: record.date),
+                    dateKey: record.dateKey,
+                    calendar: calendar,
+                    sleepScore: record.sleepScore,
+                    sleepMinutes: record.sleepMinutes,
+                    recoveryScore: record.recoveryScore,
+                    stressScore: record.stressScore,
+                    stressTimelineSamples: record.stressTimelineSamples,
                     strainScore: record.strainScore,
+                    respiratoryRate: record.respiratoryRate,
+                    respiratoryRateStatus: record.respiratoryRateStatus,
+                    restingHeartRate: record.restingHeartRate,
+                    restingHeartRateStatus: record.restingHeartRateStatus,
+                    hrv: record.hrv,
+                    hrvStatus: record.hrvStatus,
+                    oxygenSaturation: record.oxygenSaturation,
+                    oxygenSaturationStatus: record.oxygenSaturationStatus,
+                    wristTemperatureDeviation: record.wristTemperatureDeviation,
+                    wristTemperatureStatus: record.wristTemperatureStatus,
+                    sleepDurationStatus: record.sleepDurationStatus,
                     workoutMinutes: record.workoutMinutes,
                     steps: record.steps,
                     activeEnergyKilocalories: record.activeEnergyKilocalories,
@@ -52,9 +70,14 @@ final class StrainCalendarViewModel: ObservableObject {
                     syncedAt: record.syncedAt
                 )
             }
-            .sorted { $0.date < $1.date }
+        var recordsByDay: [Date: DailyStrainRecord] = [:]
+        for record in candidateRecords {
+            let day = calendar.startOfDay(for: record.date)
+            recordsByDay[day] = recordsByDay[day].map { $0.merged(with: record, calendar: calendar) } ?? record
+        }
+        let normalizedRecords = recordsByDay.values.sorted { $0.date < $1.date }
         self.records = normalizedRecords
-        self.recordsByDay = Dictionary(uniqueKeysWithValues: normalizedRecords.map { (calendar.startOfDay(for: $0.date), $0) })
+        self.recordsByDay = recordsByDay
 
         let safeSelectedDate = Self.clamp(
             calendar.startOfDay(for: selectedDate),
@@ -147,7 +170,12 @@ final class StrainCalendarViewModel: ObservableObject {
 
     func selectDate(_ date: Date) {
         guard isDateSelectable(date) else { return }
-        selectedDate = calendar.startOfDay(for: date)
+        let day = calendar.startOfDay(for: date)
+        selectedDate = day
+        if let month = calendar.dateInterval(of: .month, for: day)?.start,
+           !calendar.isDate(month, equalTo: displayedMonth, toGranularity: .month) {
+            displayedMonth = month
+        }
     }
 
     func goToPreviousMonth() {

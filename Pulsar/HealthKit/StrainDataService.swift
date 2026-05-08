@@ -44,7 +44,7 @@ struct StrainDataService: StrainSummaryProviding {
             refreshedAt: refreshedAt
         )
         var summary = StrainAnalyzer().analyze(analysis)
-        if let sharedMetric = sharedStrainMetric(activity: values.0, workouts: values.1, recentRawLoads: recent, computedAt: refreshedAt) {
+        if let sharedMetric = sharedStrainMetric(activity: values.0, workouts: values.1, heartSamples: values.2, restingHeartRate: values.3.restingHeartRateBPM, maxHeartRate: profile.resolvedMaxHeartRate(on: date, calendar: calendar)?.value, recentRawLoads: recent, computedAt: refreshedAt) {
             summary = summary.applying(sharedMetric: sharedMetric)
             PulsarSyncDebugLogger.log("canonical Strain payload built score=\(sharedMetric.score) dateKey=\(PulsarDailyMetricsDateKey.dateKey(for: date, calendar: calendar))")
         } else {
@@ -52,7 +52,7 @@ struct StrainDataService: StrainSummaryProviding {
         }
         PulsarSyncDebugLogger.log("calculated Strain value=\(summary.score) confidence=\(summary.confidence.rawValue) rawLoad=\(summary.rawLoad)")
         if summary.analyzedSampleCount == 0 && summary.workouts.isEmpty && summary.steps == 0 && summary.exerciseMinutes == 0 && (summary.activeEnergyKilocalories ?? 0) == 0 {
-            return .missing.withDetailsDate(date, interval: interval, refreshedAt: refreshedAt)
+            return summary.withDetailsDate(date, interval: interval, refreshedAt: refreshedAt)
         }
         return summary
     }
@@ -78,12 +78,33 @@ struct StrainDataService: StrainSummaryProviding {
         return values.map { max(0, $0.1 / 8) }
     }
 
-    private func sharedStrainMetric(activity: DailyActivityInput, workouts: [WorkoutLoadInput], recentRawLoads: [Double], computedAt: Date) -> PulsarStrainSyncMetric? {
-        PulsarSharedMetricCalculator.makeStrainMetric(
+    private func sharedStrainMetric(activity: DailyActivityInput, workouts: [WorkoutLoadInput], heartSamples: [HeartRateSample], restingHeartRate: Double?, maxHeartRate: Double?, recentRawLoads: [Double], computedAt: Date) -> PulsarStrainSyncMetric? {
+        let heartContext = PulsarSharedMetricCalculator.heartRateContext(
+            samples: heartSamples.map {
+                PulsarSharedHeartRateSample(start: $0.start, end: $0.end, bpm: $0.bpm)
+            },
+            restingHeartRate: restingHeartRate,
+            maxHeartRate: maxHeartRate
+        )
+        return PulsarSharedMetricCalculator.makeStrainMetric(
             activity: PulsarSharedActivityInput(
                 steps: activity.steps,
                 activeEnergyKilocalories: activity.activeEnergyKilocalories,
-                exerciseMinutes: activity.exerciseMinutes
+                basalEnergyKilocalories: activity.basalEnergyKilocalories,
+                distanceMeters: activity.distanceMeters,
+                exerciseMinutes: activity.exerciseMinutes,
+                elevatedHeartRateMinutes: heartContext.elevatedMinutes,
+                moderateHeartRateMinutes: heartContext.moderateMinutes,
+                vigorousHeartRateMinutes: heartContext.vigorousMinutes,
+                zone1Minutes: heartContext.zone1Minutes,
+                zone2Minutes: heartContext.zone2Minutes,
+                zone3Minutes: heartContext.zone3Minutes,
+                zone4Minutes: heartContext.zone4Minutes,
+                zone5Minutes: heartContext.zone5Minutes,
+                averageElevatedHeartRate: heartContext.averageElevatedHeartRate,
+                peakHeartRate: heartContext.peakHeartRate,
+                restingHeartRate: restingHeartRate,
+                maxHeartRate: maxHeartRate
             ),
             workouts: workouts.map { workout in
                 let heartRates = workout.heartRateSamples.map(\.bpm).filter { $0 > 0 }
@@ -91,6 +112,7 @@ struct StrainDataService: StrainSummaryProviding {
                     type: workout.type,
                     durationMinutes: workout.durationMinutes,
                     activeEnergyKilocalories: workout.activeEnergyKilocalories,
+                    distanceMeters: workout.distanceMeters,
                     averageHeartRate: heartRates.isEmpty ? nil : heartRates.reduce(0, +) / Double(heartRates.count),
                     peakHeartRate: heartRates.max(),
                     sourceName: workout.provenance.displayName

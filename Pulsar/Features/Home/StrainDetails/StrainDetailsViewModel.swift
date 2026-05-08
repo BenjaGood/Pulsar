@@ -73,20 +73,41 @@ final class StrainDetailsViewModel: ObservableObject {
     private let provider: StrainSummaryProviding
     private let profile: UserProfile
     private let date: Date
+    private let recoveryScore: Int?
+    private let recentStrainScores: [Int]
     private let calendar: Calendar
     private let canRequestHealthData: Bool
 
-    init(initialSummary: StrainSummary, profile: UserProfile, date: Date, provider: StrainSummaryProviding, calendar: Calendar = .current, canRequestHealthData: Bool = true) {
+    init(initialSummary: StrainSummary, profile: UserProfile, date: Date, recoveryScore: Int? = nil, recentStrainScores: [Int] = [], provider: StrainSummaryProviding, calendar: Calendar = .current, canRequestHealthData: Bool = true) {
         self.summary = initialSummary
         self.profile = profile
         self.date = calendar.startOfDay(for: date)
+        self.recoveryScore = recoveryScore
+        self.recentStrainScores = recentStrainScores
         self.provider = provider
         self.calendar = calendar
         self.canRequestHealthData = canRequestHealthData
         self.state = Self.state(for: initialSummary, canRequestHealthData: canRequestHealthData)
     }
 
-    var scoreText: String { summary.score > 0 ? "\(summary.score)" : "--" }
+    var hasCurrentStrainValue: Bool { Self.hasData(summary) }
+    var scoreText: String { hasCurrentStrainValue ? "\(summary.score)" : "--" }
+    var targetRange: PulsarSharedStrainTargetRange? {
+        PulsarSharedMetricCalculator.recommendedStrainTargetRange(
+            forRecoveryScore: recoveryScore,
+            recentStrainScores: recentStrainScores
+        )
+    }
+    var recommendedTarget: Int? { targetRange?.upperBound }
+    var recommendedTargetText: String { targetRange?.displayText ?? "--" }
+    var targetProgressText: String {
+        guard let targetRange, hasCurrentStrainValue else { return "Awaiting recovery target" }
+        if summary.score > targetRange.upperBound { return "Above recommended range" }
+        if summary.score >= targetRange.lowerBound { return "Within recommended range" }
+        return "\(Int((Double(summary.score) / Double(max(1, targetRange.lowerBound)) * 100).rounded()))% of lower target"
+    }
+    var activeStrainText: String { "\(Int(summary.workoutLoad.rounded()))" }
+    var passiveStrainText: String { "\(Int(summary.movementLoad.rounded()))" }
     var workoutsText: String { summary.workouts.isEmpty ? "--" : "\(summary.workouts.count)" }
     var trainingTimeText: String { Self.durationText(minutes: summary.workoutMinutes) }
     var exerciseMinutesText: String { Self.durationText(minutes: summary.exerciseMinutes) }
@@ -142,6 +163,8 @@ final class StrainDetailsViewModel: ObservableObject {
     }
 
     var statusText: String {
+        if let targetRange, hasCurrentStrainValue, summary.score > targetRange.upperBound { return "Above target" }
+        if let targetRange, hasCurrentStrainValue, targetRange.contains(summary.score) { return "In target range" }
         if summary.score >= 85 { return "Peak effort" }
         if summary.score >= 70 { return "High training load" }
         if summary.workoutMinutes >= 30 || summary.score >= 40 { return "Balanced effort" }
@@ -151,7 +174,10 @@ final class StrainDetailsViewModel: ObservableObject {
 
     var metricTiles: [StrainMetricTileModel] {
         [
-            StrainMetricTileModel(title: "Strain", value: scoreText, subtitle: "Daily load score", symbol: "bolt.heart.fill"),
+            StrainMetricTileModel(title: "Current Strain", value: scoreText, subtitle: "Accumulated today", symbol: "bolt.heart.fill"),
+            StrainMetricTileModel(title: "Target Range", value: recommendedTargetText, subtitle: targetProgressText, symbol: "scope"),
+            StrainMetricTileModel(title: "Active Strain", value: activeStrainText, subtitle: "Workout contribution", symbol: "figure.run"),
+            StrainMetricTileModel(title: "Passive Strain", value: passiveStrainText, subtitle: "Movement + elevated HR", symbol: "figure.walk.motion"),
             StrainMetricTileModel(title: "Workouts", value: workoutsText, subtitle: summary.workouts.isEmpty ? "No logged workouts" : "Logged today", symbol: "figure.run"),
             StrainMetricTileModel(title: "Training Time", value: trainingTimeText, subtitle: "Workout duration", symbol: "timer"),
             StrainMetricTileModel(title: "Exercise", value: exerciseMinutesText, subtitle: "Apple Exercise Time", symbol: "figure.walk.motion"),
@@ -166,10 +192,27 @@ final class StrainDetailsViewModel: ObservableObject {
 
     var insights: [StrainInsight] {
         var values: [String] = []
+        values.append(PulsarSharedMetricCalculator.strainGuidance(
+            currentStrain: hasCurrentStrainValue ? summary.score : nil,
+            targetRange: targetRange,
+            recoveryScore: recoveryScore,
+            activeStrain: summary.workoutLoad,
+            passiveStrain: summary.movementLoad,
+            workoutMinutes: summary.workoutMinutes,
+            exerciseMinutes: summary.exerciseMinutes,
+            steps: summary.steps,
+            isEarlyDay: calendar.isDateInToday(date) && calendar.component(.hour, from: Date()) < 11
+        ))
         if !summary.workouts.isEmpty {
             values.append("You completed \(summary.workouts.count) \(summary.workouts.count == 1 ? "workout" : "workouts") today for a total of \(Self.durationText(minutes: summary.workoutMinutes)).")
+            if summary.workoutLoad >= summary.movementLoad {
+                values.append("Most of today's load came from active strain: workouts, duration, and workout intensity.")
+            }
         } else if summary.exerciseMinutes < 20 {
             values.append("Today looks recovery-focused with light movement and no logged workouts.")
+        }
+        if summary.movementLoad > 0 {
+            values.append("Passive strain reflects walking, active calories, non-workout exercise, and sustained elevated heart rate.")
         }
         if let peak = summary.peakHeartRate {
             values.append("Your peak heart rate reached \(Int(peak.rounded())) bpm during your hardest observed effort.")
@@ -239,7 +282,7 @@ final class StrainDetailsViewModel: ObservableObject {
     }
 
     private static func hasData(_ summary: StrainSummary) -> Bool {
-        summary.analyzedSampleCount > 0 || !summary.workouts.isEmpty || summary.steps > 0 || summary.exerciseMinutes > 0 || (summary.activeEnergyKilocalories ?? 0) > 0 || summary.score > 0
+        summary.lastUpdated != nil || summary.confidence != .missing || summary.analyzedSampleCount > 0 || !summary.workouts.isEmpty || summary.steps > 0 || summary.exerciseMinutes > 0 || (summary.activeEnergyKilocalories ?? 0) > 0 || summary.score > 0
     }
 
     private func bpmText(_ value: Double?) -> String {

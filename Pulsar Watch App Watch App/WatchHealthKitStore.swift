@@ -9,6 +9,8 @@ import Combine
 
 @MainActor
 final class WatchHealthKitStore: ObservableObject {
+    private static let minimumActivationSyncInterval: TimeInterval = 90
+
     @Published private(set) var snapshot: WatchDailyHealthSnapshot = .empty
     @Published private(set) var isLoading = false
     @Published private(set) var message: String?
@@ -24,8 +26,13 @@ final class WatchHealthKitStore: ObservableObject {
     private var visiblePayloadFingerprint: String?
     private var visiblePayloadSyncedAt: Date?
     private var visibleDailyMetricsComputedAt: Date?
+    private var visibleStressComputedAt: Date?
+    private var visibleStressFingerprint: String?
+    private var visibleStressSourceDevice: PulsarSyncSourceDevice?
     private var deferredPayloadDuringSync: PulsarDailyMetricsSyncPayload?
     private var bannerDismissTask: Task<Void, Never>?
+    private var activeSyncShowsBanner = false
+    private var lastActivationSyncAt: Date?
 
     init(calendar: Calendar = .current, syncStore: PulsarWatchConnectivitySyncStore? = nil) {
         self.calendar = calendar
@@ -34,6 +41,9 @@ final class WatchHealthKitStore: ObservableObject {
         let dateKey = PulsarDailyMetricsDateKey.dateKey(for: Date(), calendar: calendar)
         if let cached = self.syncStore.cachedDailyPayload(forDateKey: dateKey) ?? self.syncStore.cachedPayload(for: Date(), calendar: calendar) {
             applySyncPayload(cached, state: snapshot.healthKitState, reason: "cached values loaded")
+        }
+        if let cachedSleepPreferences = self.syncStore.cachedSleepPreferences() {
+            applySleepPreferences(cachedSleepPreferences)
         }
     }
 
@@ -49,12 +59,24 @@ final class WatchHealthKitStore: ObservableObject {
         PulsarSyncDebugLogger.log("Watch view appeared")
     }
 
-    func load() async {
+    func refreshForAppActivation() async {
+        let now = Date()
+        if let lastActivationSyncAt,
+           now.timeIntervalSince(lastActivationSyncAt) < Self.minimumActivationSyncInterval {
+            PulsarSyncDebugLogger.log("watch activation sync skipped because this activation cycle already synced last=\(lastActivationSyncAt)")
+            return
+        }
+        lastActivationSyncAt = now
+        await load(reason: "watchActivation", showsBanner: true)
+    }
+
+    func load(reason: String = "manualRefresh", showsBanner: Bool = true) async {
         guard !isLoading else {
             PulsarSyncDebugLogger.log("watch sync request skipped because a sync is already running session=\(activeSyncSessionID?.uuidString ?? "none")")
             return
         }
 
+        // TODO: Promote this foreground refresh path to background refresh, complications, and richer profile/baseline sync.
         let sessionID = UUID()
         let startedAt = Date()
         let sleepDateKey = SleepWindowResolver.sleepDateKey(forWakeUpDate: startedAt, calendar: calendar)
@@ -66,7 +88,7 @@ final class WatchHealthKitStore: ObservableObject {
         if let cached {
             applySyncPayload(cached, state: snapshot.healthKitState, reason: "cached values loaded")
         }
-        beginSync(sessionID: sessionID, startedAt: startedAt)
+        beginSync(sessionID: sessionID, startedAt: startedAt, showsBanner: showsBanner, reason: reason)
 
         guard HKHealthStore.isHealthDataAvailable() else {
             if snapshot.strain.score == nil && snapshot.recovery.score == nil {
@@ -104,7 +126,7 @@ final class WatchHealthKitStore: ObservableObject {
 
         let sessionID = UUID()
         let startedAt = Date()
-        beginSync(sessionID: sessionID, startedAt: startedAt)
+        beginSync(sessionID: sessionID, startedAt: startedAt, showsBanner: true, reason: "authorization")
 
         guard HKHealthStore.isHealthDataAvailable() else {
             snapshot = emptySnapshot(state: .unavailable)
@@ -145,22 +167,43 @@ final class WatchHealthKitStore: ObservableObject {
         async let sleep = fetchSleepResult(now: now, targetSleepHours: targetSleepHours, computedAt: startedAt)
         async let activity = fetchActivity(interval: dayInterval)
         async let heart = fetchHeartMetrics(interval: dayInterval)
+        async let heartSamples = fetchHeartRateSamples(interval: dayInterval)
         async let workouts = fetchWorkouts(interval: dayInterval)
         async let recentLoads = fetchRecentRawLoads(endingAt: dayInterval.end)
-        let values = await (sleep, activity, heart, workouts, recentLoads)
+        let values = await (sleep, activity, heart, heartSamples, workouts, recentLoads)
         guard canCommitSync(sessionID: sessionID, startedAt: startedAt) else {
             PulsarSyncDebugLogger.log("older sync result ignored on watch session=\(sessionID.uuidString)")
             return false
         }
-        PulsarSyncDebugLogger.log("HealthKit query completed on watch session=\(sessionID.uuidString) workouts=\(values.3.count) steps=\(Int(values.1.steps.rounded())) activeEnergy=\(Int(values.1.activeEnergy.rounded())) hrv=\(values.2.hrvSDNN.map { String(Int($0.rounded())) } ?? "nil") rhr=\(values.2.restingHeartRate.map { String(Int($0.rounded())) } ?? "nil") sleepMinutes=\(Int(values.0.summary.totalSleepMinutes.rounded())) sleepDateKey=\(values.0.metric?.sleepDateKey ?? "none") recentLoadDays=\(values.4.count)")
+        let heartContext = PulsarSharedMetricCalculator.heartRateContext(samples: values.3, restingHeartRate: values.2.restingHeartRate)
+        let recentStressActivity = await fetchActivity(interval: recentStressActivityInterval(now: now, dayInterval: dayInterval))
+        let activeWorkout = values.4.first { workout in
+            workout.start <= now && workout.start.addingTimeInterval(workout.durationMinutes * 60) >= now
+        }
+        let lastWorkoutEnd = values.4
+            .map { $0.start.addingTimeInterval($0.durationMinutes * 60) }
+            .filter { $0 <= now }
+            .max()
+        PulsarSyncDebugLogger.log("HealthKit query completed on watch session=\(sessionID.uuidString) workouts=\(values.4.count) steps=\(Int(values.1.steps.rounded())) activeEnergy=\(Int(values.1.activeEnergy.rounded())) hrv=\(values.2.hrvSDNN.map { String(Int($0.rounded())) } ?? "nil") rhr=\(values.2.restingHeartRate.map { String(Int($0.rounded())) } ?? "nil") heartSamples=\(values.3.count) elevatedMinutes=\(Int(heartContext.elevatedMinutes.rounded())) sleepMinutes=\(Int(values.0.summary.totalSleepMinutes.rounded())) sleepDateKey=\(values.0.metric?.sleepDateKey ?? "none") recentLoadDays=\(values.5.count)")
 
         let strainMetric = PulsarSharedMetricCalculator.makeStrainMetric(
             activity: PulsarSharedActivityInput(
                 steps: values.1.steps,
                 activeEnergyKilocalories: values.1.activeEnergy,
-                exerciseMinutes: values.1.workoutMinutes
+                exerciseMinutes: values.1.workoutMinutes,
+                elevatedHeartRateMinutes: heartContext.elevatedMinutes,
+                moderateHeartRateMinutes: heartContext.moderateMinutes,
+                vigorousHeartRateMinutes: heartContext.vigorousMinutes,
+                zone1Minutes: heartContext.zone1Minutes,
+                zone2Minutes: heartContext.zone2Minutes,
+                zone3Minutes: heartContext.zone3Minutes,
+                zone4Minutes: heartContext.zone4Minutes,
+                zone5Minutes: heartContext.zone5Minutes,
+                averageElevatedHeartRate: heartContext.averageElevatedHeartRate,
+                peakHeartRate: heartContext.peakHeartRate,
+                restingHeartRate: values.2.restingHeartRate
             ),
-            workouts: values.3.map {
+            workouts: values.4.map {
                 PulsarSharedWorkoutInput(
                     type: $0.type,
                     durationMinutes: $0.durationMinutes,
@@ -170,7 +213,7 @@ final class WatchHealthKitStore: ObservableObject {
                     sourceName: $0.sourceName
                 )
             },
-            recentRawLoads: values.4,
+            recentRawLoads: values.5,
             computedAt: startedAt
         )
         let baselineDays = await fetchRecoveryBaselineDays(before: dayInterval.start)
@@ -188,16 +231,57 @@ final class WatchHealthKitStore: ObservableObject {
                 wristTemperatureDeviation: nil,
                 sleepPerformance: values.0.metric.map(\.sleepPerformance),
                 strainScore: strainMetric.map { Double($0.score) },
-                sourceNames: detectedSources(sleep: values.0.summary, workouts: values.3)
+                sourceNames: detectedSources(sleep: values.0.summary, workouts: values.4)
             ),
             baselineDays: baselineDays,
             computedAt: startedAt
         )
+        let recommendedStrainTargetRange = PulsarSharedMetricCalculator.recommendedStrainTargetRange(forRecoveryScore: recoveryMetric?.score)
+        PulsarSyncDebugLogger.log("strain validation context=AppleWatch workoutsToday=\(values.4.count) activeEnergy=\(Int(values.1.activeEnergy.rounded())) totalEnergy=nil exerciseMinutes=\(Int(values.1.workoutMinutes.rounded())) steps=\(Int(values.1.steps.rounded())) averageHeartRate=\(heartContext.averageElevatedHeartRate.map { String(Int($0.rounded())) } ?? "nil") maxHeartRate=\(heartContext.peakHeartRate.map { String(Int($0.rounded())) } ?? "nil") timeInZones=elevated:\(Int(heartContext.elevatedMinutes.rounded()))m,moderate:\(Int(heartContext.moderateMinutes.rounded()))m,vigorous:\(Int(heartContext.vigorousMinutes.rounded()))m,z1:\(Int(heartContext.zone1Minutes.rounded()))m,z2:\(Int(heartContext.zone2Minutes.rounded()))m,z3:\(Int(heartContext.zone3Minutes.rounded()))m,z4:\(Int(heartContext.zone4Minutes.rounded()))m,z5:\(Int(heartContext.zone5Minutes.rounded()))m activeLoad=\(strainMetric.map { String(format: "%.1f", $0.workoutLoad) } ?? "nil") passiveLoad=\(strainMetric.map { String(format: "%.1f", $0.movementLoad) } ?? "nil") rawLoad=\(strainMetric.map { String(format: "%.1f", $0.rawLoad) } ?? "nil") recoveryScore=\(recoveryMetric.map { String($0.score) } ?? "nil") finalCurrentStrain=\(strainMetric.map { String($0.score) } ?? "nil") targetStrainRange=\(recommendedStrainTargetRange?.displayText ?? "nil")")
+        let sources = detectedSources(sleep: values.0.summary, workouts: values.4)
+        let cachedDisplayPayload = syncStore.cachedDailyPayload(forDateKey: dateKey) ?? syncStore.cachedPayload(for: now, calendar: calendar)
+        let cachedIPhoneStress = cachedDisplayPayload?.sourceDevice == .iPhone && cachedDisplayPayload?.stress?.isValid == true
+        let hasVisibleStress = snapshot.stress.score != nil
+        let shouldUseLocalStressFallback = !cachedIPhoneStress && !hasVisibleStress
+        let stressMetric: PulsarStressSyncMetric?
+        if shouldUseLocalStressFallback {
+            stressMetric = PulsarSharedMetricCalculator.makeStressMetric(
+                today: PulsarSharedStressInput(
+                    date: calendar.startOfDay(for: now),
+                    hrvSDNN: values.2.hrvSDNN,
+                    hrvTimestamp: values.2.hrvTimestamp,
+                    restingHeartRate: values.2.restingHeartRate,
+                    respiratoryRate: values.2.respiratoryRate,
+                    recentHeartRate: values.2.latestHeartRate,
+                    heartRateTimestamp: values.2.latestHeartRateTimestamp,
+                    sleepDurationMinutes: values.0.metric?.totalSleepMinutes,
+                    sleepPerformance: values.0.metric?.sleepPerformance,
+                    strainScore: strainMetric.map { Double($0.score) },
+                    recentWorkoutLoad: strainMetric?.rawLoad,
+                    isWorkoutActive: activeWorkout != nil,
+                    lastWorkoutEnd: lastWorkoutEnd,
+                    recentSteps: recentStressActivity.steps,
+                    recentActiveEnergyKilocalories: recentStressActivity.activeEnergy,
+                    recentExerciseMinutes: recentStressActivity.workoutMinutes,
+                    sourceNames: sources
+                ),
+                baselineDays: baselineDays,
+                sleep: values.0.metric,
+                strain: strainMetric,
+                computedAt: startedAt
+            )
+        } else {
+            stressMetric = nil
+        }
+        if cachedIPhoneStress {
+            PulsarSyncDebugLogger.log("watch local Stress fallback skipped because cached iPhone Stress is available dateKey=\(dateKey) session=\(sessionID.uuidString)")
+        } else if hasVisibleStress {
+            PulsarSyncDebugLogger.log("watch local Stress fallback skipped because a visible Stress value is already cached dateKey=\(dateKey) session=\(sessionID.uuidString)")
+        }
         let hasCompleteDailyMetrics = strainMetric?.isValid == true && recoveryMetric?.isValid == true
         if (strainMetric != nil || recoveryMetric != nil) && !hasCompleteDailyMetrics {
             PulsarSyncDebugLogger.log("invalid or partial Recovery/Strain result ignored on watch dateKey=\(dateKey) strainValid=\(strainMetric?.isValid == true) recoveryValid=\(recoveryMetric?.isValid == true) session=\(sessionID.uuidString)")
         }
-        let sources = detectedSources(sleep: values.0.summary, workouts: values.3)
         let localPayload = PulsarDailyMetricsSyncPayload(
             date: calendar.startOfDay(for: now),
             dateKey: dateKey,
@@ -206,6 +290,7 @@ final class WatchHealthKitStore: ObservableObject {
             strain: hasCompleteDailyMetrics ? strainMetric : nil,
             recovery: hasCompleteDailyMetrics ? recoveryMetric : nil,
             sleep: values.0.metric,
+            stress: stressMetric,
             syncSessionID: sessionID,
             validityFlag: true
         )
@@ -214,12 +299,13 @@ final class WatchHealthKitStore: ObservableObject {
             didCommitPayload = syncStore.storeLocalPayload(localPayload, broadcast: true, reason: "watchHealthKitSync")
             PulsarSyncDebugLogger.log("calculated Strain value=\(localPayload.strain?.score ?? 0) session=\(sessionID.uuidString)")
             PulsarSyncDebugLogger.log("calculated Recovery value=\(localPayload.recovery?.score ?? 0) session=\(sessionID.uuidString)")
+            PulsarSyncDebugLogger.log("calculated Stress value=\(localPayload.stress?.score ?? 0) session=\(sessionID.uuidString)")
             PulsarSyncDebugLogger.log("Sleep Score calculated value=\(localPayload.sleep?.score ?? 0) sleepDateKey=\(localPayload.sleep?.sleepDateKey ?? "none") session=\(sessionID.uuidString)")
         } else {
             PulsarSyncDebugLogger.log("invalid/empty result ignored on watch session=\(sessionID.uuidString)")
         }
 
-        var displayPayload = syncStore.cachedDailyPayload(forDateKey: dateKey) ?? syncStore.cachedPayload(for: now, calendar: calendar)
+        var displayPayload = cachedDisplayPayload
         if let sleepPayload = syncStore.cachedSleepPayload(forSleepDateKey: SleepWindowResolver.sleepDateKey(forWakeUpDate: now, calendar: calendar)) {
             displayPayload = displayPayload.map { $0.merged(with: sleepPayload, calendar: calendar) } ?? sleepPayload
         }
@@ -245,11 +331,11 @@ final class WatchHealthKitStore: ObservableObject {
             payload: displayPayload,
             activity: values.1,
             heart: values.2,
-            workouts: values.3,
+            workouts: values.4,
             sources: sources,
             reason: "watchHealthKitSync"
         )
-        if didCommitPayload, displayPayload?.hasCompleteDailyScores == true {
+        if didCommitPayload, displayPayload?.hasValidData == true {
             message = nil
             PulsarSyncDebugLogger.log("sync finished on watch session=\(sessionID.uuidString)")
             return true
@@ -274,12 +360,13 @@ final class WatchHealthKitStore: ObservableObject {
     }
 
     private var hasVisibleMetrics: Bool {
-        snapshot.strain.score != nil || snapshot.recovery.score != nil || snapshot.sleep.score != nil
+        snapshot.strain.score != nil || snapshot.recovery.score != nil || snapshot.sleep.score != nil || snapshot.stress.score != nil
     }
 
     private func payloadFillsMissingVisibleMetric(_ payload: PulsarDailyMetricsSyncPayload) -> Bool {
         ((snapshot.strain.score == nil || snapshot.recovery.score == nil) && payload.hasCompleteDailyScores) ||
-        (snapshot.sleep.score == nil && payload.sleep?.isValid == true)
+        (snapshot.sleep.score == nil && payload.sleep?.isValid == true) ||
+        (snapshot.stress.score == nil && payload.stress?.isValid == true)
     }
 
     private func targetSleepHours(for date: Date) -> Double {
@@ -289,14 +376,18 @@ final class WatchHealthKitStore: ObservableObject {
             PulsarSharedSleepCalculator.defaultTargetSleepHours
     }
 
-    private func beginSync(sessionID: UUID, startedAt: Date) {
+    private func beginSync(sessionID: UUID, startedAt: Date, showsBanner: Bool, reason: String) {
         bannerDismissTask?.cancel()
         bannerDismissTask = nil
         activeSyncSessionID = sessionID
+        activeSyncShowsBanner = showsBanner
         deferredPayloadDuringSync = nil
         isLoading = true
-        syncBannerState = .syncing("Syncing health data…")
-        PulsarSyncDebugLogger.log("sync started on watch session=\(sessionID.uuidString) startedAt=\(startedAt)")
+        if showsBanner {
+            syncBannerState = .syncing("Syncing…")
+            PulsarSyncDebugLogger.log("watch sync pill shown session=\(sessionID.uuidString)")
+        }
+        PulsarSyncDebugLogger.log("sync started on watch session=\(sessionID.uuidString) startedAt=\(startedAt) reason=\(reason)")
     }
 
     private func finishSync(sessionID: UUID, startedAt: Date, result: WatchSyncCompletionResult) {
@@ -313,12 +404,19 @@ final class WatchHealthKitStore: ObservableObject {
         activeSyncSessionID = nil
         isLoading = false
 
+        guard activeSyncShowsBanner else {
+            activeSyncShowsBanner = false
+            syncBannerState = nil
+            return
+        }
+        activeSyncShowsBanner = false
+
         switch result {
         case .success:
-            syncBannerState = .success("Health data synced")
+            syncBannerState = .success("Synced")
             scheduleBannerDismiss(after: 1_450_000_000)
         case .failure:
-            syncBannerState = .failure("Unable to sync. Showing latest data.")
+            syncBannerState = .failure("Showing latest data")
             scheduleBannerDismiss(after: 2_100_000_000)
         case .hidden:
             syncBannerState = nil
@@ -330,6 +428,7 @@ final class WatchHealthKitStore: ObservableObject {
         bannerDismissTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: nanoseconds)
             guard !Task.isCancelled else { return }
+            PulsarSyncDebugLogger.log("watch sync pill dismissed")
             syncBannerState = nil
         }
     }
@@ -363,6 +462,7 @@ final class WatchHealthKitStore: ObservableObject {
         let nextSleep = validPayload.flatMap { watchSleep(from: $0.sleep) } ?? (sleep.score != nil ? sleep : snapshot.sleep)
         let nextRecovery: WatchRecoverySummary
         let nextStrain: WatchStrainSummary
+        let nextStress: WatchStressSummary
         if let validPayload, validPayload.hasCompleteDailyScores, canApplyDailyMetrics(from: validPayload) {
             nextRecovery = watchRecovery(from: validPayload.recovery) ?? snapshot.recovery
             nextStrain = watchStrain(from: validPayload.strain, workouts: workouts, activity: activity) ?? snapshot.strain
@@ -374,6 +474,17 @@ final class WatchHealthKitStore: ObservableObject {
         } else {
             nextRecovery = snapshot.recovery
             nextStrain = snapshot.strain
+        }
+        if let validPayload, validPayload.hasValidStress, canApplyStress(from: validPayload) {
+            nextStress = watchStress(from: validPayload.stress) ?? snapshot.stress
+            visibleStressComputedAt = validPayload.stressComputedAt
+            visibleStressFingerprint = stressFingerprint(in: validPayload)
+            visibleStressSourceDevice = stressSourceDevice(for: validPayload)
+        } else if let validPayload, validPayload.hasValidStress {
+            PulsarSyncDebugLogger.log("older Stress result ignored on watch reason=\(reason) session=\(validPayload.syncSessionID?.uuidString ?? "none") incoming=\(validPayload.stressComputedAt ?? .distantPast) visible=\(visibleStressComputedAt ?? .distantPast)")
+            nextStress = snapshot.stress
+        } else {
+            nextStress = snapshot.stress
         }
         if let validPayload {
             if visiblePayloadFingerprint == validPayload.resolvedDataFingerprint {
@@ -388,9 +499,12 @@ final class WatchHealthKitStore: ObservableObject {
         snapshot = WatchDailyHealthSnapshot(
             date: date,
             healthKitState: state,
+            source: payloadSource(validPayload, fallback: .watchHealthKit),
             sleep: nextSleep,
+            alarm: watchAlarm(from: syncStore.cachedSleepPreferences()) ?? snapshot.alarm,
             recovery: nextRecovery,
             strain: nextStrain,
+            stress: nextStress,
             activity: activity,
             heart: heart,
             workouts: workouts,
@@ -479,13 +593,46 @@ final class WatchHealthKitStore: ObservableObject {
         return WatchActivitySummary(steps: values.0, activeEnergy: values.1, workoutMinutes: values.2)
     }
 
+    private func recentStressActivityInterval(now: Date, dayInterval: DateInterval) -> DateInterval {
+        let end = min(max(now, dayInterval.start), dayInterval.end)
+        let start = max(dayInterval.start, end.addingTimeInterval(-15 * 60))
+        return DateInterval(start: start, end: max(start, end))
+    }
+
     private func fetchHeartMetrics(interval: DateInterval) async -> WatchHeartMetricsSummary {
-        async let latest = mostRecentQuantity(.heartRate, unit: HKUnit.count().unitDivided(by: .minute()), start: interval.start, end: interval.end)
+        async let latest = mostRecentQuantitySample(.heartRate, unit: HKUnit.count().unitDivided(by: .minute()), start: interval.start, end: interval.end)
         async let resting = mostRecentQuantity(.restingHeartRate, unit: HKUnit.count().unitDivided(by: .minute()), start: interval.start, end: interval.end)
-        async let hrv = mostRecentQuantity(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), start: interval.start, end: interval.end)
+        async let hrv = mostRecentQuantitySample(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), start: interval.start, end: interval.end)
         async let respiratory = mostRecentQuantity(.respiratoryRate, unit: HKUnit.count().unitDivided(by: .minute()), start: interval.start, end: interval.end)
         let values = await (latest, resting, hrv, respiratory)
-        return WatchHeartMetricsSummary(latestHeartRate: values.0, restingHeartRate: values.1, hrvSDNN: values.2, respiratoryRate: values.3)
+        return WatchHeartMetricsSummary(
+            latestHeartRate: values.0?.value,
+            latestHeartRateTimestamp: values.0?.end,
+            restingHeartRate: values.1,
+            hrvSDNN: values.2?.value,
+            hrvTimestamp: values.2?.end,
+            respiratoryRate: values.3
+        )
+    }
+
+    private func fetchHeartRateSamples(interval: DateInterval) async -> [PulsarSharedHeartRateSample] {
+        guard let type = HKObjectType.quantityType(forIdentifier: .heartRate) else { return [] }
+        let predicate = HKQuery.predicateForSamples(withStart: interval.start, end: interval.end, options: .strictStartDate)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, samples, _ in
+                let unit = HKUnit.count().unitDivided(by: .minute())
+                let mapped = (samples as? [HKQuantitySample] ?? []).map { sample in
+                    PulsarSharedHeartRateSample(
+                        start: sample.startDate,
+                        end: sample.endDate,
+                        bpm: sample.quantity.doubleValue(for: unit)
+                    )
+                }
+                continuation.resume(returning: mapped)
+            }
+            healthStore.execute(query)
+        }
     }
 
     private func fetchWorkouts(interval: DateInterval) async -> [WatchWorkoutSummary] {
@@ -522,6 +669,7 @@ final class WatchHealthKitStore: ObservableObject {
         var snapshot = WatchDailyHealthSnapshot.empty
         snapshot.date = Date()
         snapshot.healthKitState = state
+        snapshot.alarm = watchAlarm(from: syncStore.cachedSleepPreferences()) ?? .empty
         return snapshot
     }
 
@@ -544,6 +692,22 @@ final class WatchHealthKitStore: ObservableObject {
             let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: 1, sortDescriptors: [sort]) { _, samples, _ in
                 guard let sample = samples?.first as? HKQuantitySample else { continuation.resume(returning: nil); return }
                 continuation.resume(returning: sample.quantity.doubleValue(for: unit))
+            }
+            healthStore.execute(query)
+        }
+    }
+
+    private func mostRecentQuantitySample(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit, start: Date, end: Date) async -> (value: Double, end: Date)? {
+        guard let type = HKObjectType.quantityType(forIdentifier: identifier) else { return nil }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictEndDate)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: 1, sortDescriptors: [sort]) { _, samples, _ in
+                guard let sample = samples?.first as? HKQuantitySample else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: (sample.quantity.doubleValue(for: unit), sample.endDate))
             }
             healthStore.execute(query)
         }
@@ -674,6 +838,14 @@ final class WatchHealthKitStore: ObservableObject {
                 self.applySyncPayload(payload, state: self.snapshot.healthKitState, reason: "WatchConnectivity payload received")
             }
             .store(in: &cancellables)
+
+        syncStore.$latestSleepPreferences
+            .receive(on: RunLoop.main)
+            .sink { [weak self] payload in
+                guard let self, let payload else { return }
+                self.applySleepPreferences(payload)
+            }
+            .store(in: &cancellables)
     }
 
     private func applySyncPayload(_ payload: PulsarDailyMetricsSyncPayload, state: WatchHealthKitState, reason: String) {
@@ -712,6 +884,7 @@ final class WatchHealthKitStore: ObservableObject {
         let nextSleep = watchSleep(from: payload.sleep) ?? snapshot.sleep
         let nextStrain: WatchStrainSummary
         let nextRecovery: WatchRecoverySummary
+        let nextStress: WatchStressSummary
         if payload.hasCompleteDailyScores, canApplyDailyMetrics(from: payload) {
             nextStrain = watchStrain(from: payload.strain, workouts: snapshot.workouts, activity: snapshot.activity) ?? snapshot.strain
             nextRecovery = watchRecovery(from: payload.recovery) ?? snapshot.recovery
@@ -724,20 +897,43 @@ final class WatchHealthKitStore: ObservableObject {
             nextStrain = snapshot.strain
             nextRecovery = snapshot.recovery
         }
-        guard nextSleep.score != nil || nextStrain.score != nil || nextRecovery.score != nil else {
+        if payload.hasValidStress, canApplyStress(from: payload) {
+            nextStress = watchStress(from: payload.stress) ?? snapshot.stress
+            visibleStressComputedAt = payload.stressComputedAt
+            visibleStressFingerprint = stressFingerprint(in: payload)
+            visibleStressSourceDevice = stressSourceDevice(for: payload)
+        } else if payload.hasValidStress {
+            PulsarSyncDebugLogger.log("WatchConnectivity Stress payload rejected on watch because it was older session=\(payload.syncSessionID?.uuidString ?? "none") incoming=\(payload.stressComputedAt ?? .distantPast) visible=\(visibleStressComputedAt ?? .distantPast)")
+            nextStress = snapshot.stress
+        } else {
+            nextStress = snapshot.stress
+        }
+        guard nextSleep.score != nil || nextStrain.score != nil || nextRecovery.score != nil || nextStress.score != nil else {
             PulsarSyncDebugLogger.log("WatchConnectivity payload rejected on watch because it had no visible values session=\(payload.syncSessionID?.uuidString ?? "none")")
             return
         }
 
         snapshot.sleep = nextSleep
+        snapshot.alarm = watchAlarm(from: syncStore.cachedSleepPreferences()) ?? snapshot.alarm
         snapshot.strain = nextStrain
         snapshot.recovery = nextRecovery
+        snapshot.stress = nextStress
         snapshot.date = max(snapshot.date, payload.syncedAt)
         snapshot.healthKitState = state
+        snapshot.source = payloadSource(payload, fallback: snapshot.source)
         visiblePayloadFingerprint = payload.resolvedDataFingerprint
         visiblePayloadSyncedAt = payload.syncedAt
         message = nil
         PulsarSyncDebugLogger.log("WatchConnectivity payload accepted on watch reason=\(reason) source=\(payload.sourceDevice.rawValue) sleepDateKey=\(payload.sleep?.sleepDateKey ?? "none") session=\(payload.syncSessionID?.uuidString ?? "none") fingerprint=\(payload.resolvedDataFingerprint)")
+    }
+
+    private func applySleepPreferences(_ payload: PulsarSleepPreferencesSyncPayload) {
+        guard let alarm = watchAlarm(from: payload) else {
+            PulsarSyncDebugLogger.log("Sleep preferences rejected on watch because payload was invalid")
+            return
+        }
+        snapshot.alarm = alarm
+        PulsarSyncDebugLogger.log("Sleep preferences applied on watch alarmEnabled=\(alarm.isEnabled) syncedAt=\(payload.syncedAt)")
     }
 
     private func canApplyDailyMetrics(from payload: PulsarDailyMetricsSyncPayload) -> Bool {
@@ -750,6 +946,90 @@ final class WatchHealthKitStore: ObservableObject {
     private func dailyMetricsComputedAt(in payload: PulsarDailyMetricsSyncPayload) -> Date? {
         guard let strain = payload.strain, let recovery = payload.recovery, strain.isValid, recovery.isValid else { return nil }
         return max(strain.computedAt, recovery.computedAt)
+    }
+
+    private func canApplyStress(from payload: PulsarDailyMetricsSyncPayload) -> Bool {
+        guard payload.hasValidStress,
+              let incomingComputedAt = payload.stressComputedAt else { return false }
+        let incomingFingerprint = stressFingerprint(in: payload)
+        if snapshot.stress.score != nil,
+           incomingFingerprint != nil,
+           incomingFingerprint == visibleStressFingerprint {
+            return false
+        }
+        if stressSourceDevice(for: payload) == .appleWatch,
+           visibleStressSourceDevice == .iPhone,
+           snapshot.stress.score != nil {
+            PulsarSyncDebugLogger.log("watch Stress fallback rejected to preserve canonical iPhone Stress value session=\(payload.syncSessionID?.uuidString ?? "none")")
+            return false
+        }
+        if snapshot.stress.score == nil { return true }
+        return visibleStressComputedAt.map { incomingComputedAt >= $0 } ?? true
+    }
+
+    private func stressSourceDevice(for payload: PulsarDailyMetricsSyncPayload) -> PulsarSyncSourceDevice {
+        guard let incomingFingerprint = stressFingerprint(in: payload) else { return payload.sourceDevice }
+        if payload.sourceDevice == .iPhone { return .iPhone }
+        if let cached = syncStore.cachedDailyPayload(forDateKey: payload.resolvedDateKey),
+           cached.sourceDevice == .iPhone,
+           stressFingerprint(in: cached) == incomingFingerprint {
+            return .iPhone
+        }
+        return payload.sourceDevice
+    }
+
+    private func stressFingerprint(in payload: PulsarDailyMetricsSyncPayload) -> String? {
+        guard let stress = payload.stress, stress.isValid else { return nil }
+        let samples = stress.timelineSamples.prefix(12).map { sample in
+            [
+                rounded(sample.timestamp.timeIntervalSinceReferenceDate),
+                rounded(sample.score),
+                sample.context ?? "none"
+            ].joined(separator: "/")
+        }.joined(separator: ",")
+        return [
+            "\(stress.score)",
+            stress.confidence.rawValue,
+            stress.levelText,
+            stress.driverInsights.prefix(2).joined(separator: ","),
+            rounded(stress.hrvSDNN),
+            rounded(stress.hrvBaseline),
+            rounded(stress.restingHeartRate),
+            rounded(stress.restingHeartRateBaseline),
+            rounded(stress.respiratoryRate),
+            rounded(stress.recentHeartRate),
+            rounded(stress.daytimeHeartRateBaseline),
+            rounded(stress.heartRateDeviation),
+            rounded(stress.hrvDeviation),
+            rounded(stress.nonActivityStress),
+            rounded(stress.activityAdjustedStress),
+            rounded(stress.rawStressScore),
+            rounded(stress.activityAdjustment),
+            stress.movementState ?? "nil",
+            stress.calculationState ?? "nil",
+            stress.isWorkoutActive ? "workout" : "noWorkout",
+            stress.cooldownActive ? "cooldown" : "noCooldown",
+            rounded(stress.sleepDurationMinutes),
+            rounded(stress.strainScore),
+            "\(stress.availableSignalCount)",
+            "\(stress.baselineWindowDays)",
+            samples
+        ].joined(separator: ":")
+    }
+
+    private func rounded(_ value: Double?) -> String {
+        guard let value, value.isFinite else { return "nil" }
+        return String(format: "%.3f", value)
+    }
+
+    private func payloadSource(_ payload: PulsarDailyMetricsSyncPayload?, fallback: WatchSnapshotSource) -> WatchSnapshotSource {
+        guard let payload else { return fallback }
+        switch payload.sourceDevice {
+        case .iPhone:
+            return .iPhoneSync
+        case .appleWatch:
+            return .watchHealthKit
+        }
     }
 
     private func watchSleep(from metric: PulsarSleepSyncMetric?) -> WatchSleepSummary? {
@@ -769,6 +1049,21 @@ final class WatchHealthKitStore: ObservableObject {
         )
     }
 
+    private func watchAlarm(from payload: PulsarSleepPreferencesSyncPayload?) -> WatchSleepAlarmSummary? {
+        guard let payload, payload.isValid else { return nil }
+        return WatchSleepAlarmSummary(
+            isEnabled: payload.alarmEnabled,
+            timeMinutesFromMidnight: payload.alarmEnabled ? payload.resolvedAlarmTimeMinutesFromMidnight : nil,
+            hapticsEnabled: payload.alarmHapticsEnabled,
+            snoozeEnabled: payload.snoozeEnabled,
+            smartWakeEnabled: payload.smartWakeEnabled,
+            usesWakeTime: payload.alarmUsesWakeTime,
+            soundName: payload.alarmSoundName,
+            sleepGoalDaysLabel: payload.sleepGoalDaysLabel,
+            syncedAt: payload.syncedAt
+        )
+    }
+
     private func watchRecovery(from metric: PulsarRecoverySyncMetric?) -> WatchRecoverySummary? {
         guard let metric, metric.isValid else { return nil }
         return WatchRecoverySummary(
@@ -784,12 +1079,43 @@ final class WatchHealthKitStore: ObservableObject {
     private func watchStrain(from metric: PulsarStrainSyncMetric?, workouts: [WatchWorkoutSummary], activity: WatchActivitySummary) -> WatchStrainSummary? {
         guard let metric, metric.isValid else { return nil }
         return WatchStrainSummary(
-            score: metric.score > 0 ? metric.score : nil,
+            score: metric.score,
+            activeStrain: metric.workoutLoad,
+            passiveStrain: metric.movementLoad,
             workoutMinutes: max(metric.workoutMinutes, activity.workoutMinutes),
             activeEnergy: metric.activeEnergyKilocalories ?? activity.activeEnergy,
             steps: Double(metric.steps),
             zoneMinutes: [],
             lastWorkout: workouts.first
+        )
+    }
+
+    private func watchStress(from metric: PulsarStressSyncMetric?) -> WatchStressSummary? {
+        guard let metric, metric.isValid else { return nil }
+        return WatchStressSummary(
+            score: metric.isPaused ? nil : metric.score,
+            level: metric.isPaused ? metric.sharedCalculationState.displayText : PulsarSharedMetricCalculator.stressLevelText(score: metric.score),
+            confidence: metric.confidence,
+            driverInsights: metric.driverInsights.isEmpty ? ["Based on wearable signals"] : metric.driverInsights,
+            hrv: metric.hrvSDNN,
+            hrvTimestamp: metric.hrvTimestamp,
+            recentHeartRate: metric.recentHeartRate,
+            heartRateTimestamp: metric.heartRateTimestamp,
+            restingHeartRate: metric.restingHeartRate,
+            respiratoryRate: metric.respiratoryRate,
+            nonActivityStress: metric.nonActivityStress,
+            activityAdjustedStress: metric.activityAdjustedStress,
+            movementState: metric.movementState.flatMap(PulsarSharedStressMovementState.init(rawValue:))?.displayText ?? metric.movementState,
+            calculationState: metric.sharedCalculationState,
+            isPaused: metric.isPaused,
+            sleepDurationMinutes: metric.sleepDurationMinutes,
+            strainScore: metric.strainScore,
+            availableSignalCount: metric.availableSignalCount,
+            baselineWindowDays: metric.baselineWindowDays,
+            timelineSamples: metric.timelineSamples.map {
+                WatchStressSample(timestamp: $0.timestamp, score: $0.score, context: $0.context)
+            },
+            sourceName: metric.sourceNames.first
         )
     }
 }
