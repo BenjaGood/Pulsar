@@ -8,12 +8,18 @@ import SwiftUI
 struct FitnessView: View {
     @EnvironmentObject private var runCoordinator: PulsarRunCoordinator
     @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var profileStore: ProfileStore
     @StateObject private var weekViewModel = FitnessWeekViewModel()
     @State private var isShowingWorkoutPicker = false
     @State private var isShowingWeekHistory = false
     @State private var isActivityLogExpanded = false
     @State private var selectedPersonalizedWorkout: PersonalizedWorkoutKind?
     @State private var isShowingRunExperience = false
+
+    @MainActor
+    init(profileStore: ProfileStore) {
+        self.profileStore = profileStore
+    }
 
     var body: some View {
         NavigationStack {
@@ -45,7 +51,10 @@ struct FitnessView: View {
                             Task { await weekViewModel.selectWeek(week) }
                         }
 
-                        FitnessBodyMapSection(analysis: weekViewModel.bodyMapAnalysis)
+                        FitnessBodyMapSection(
+                            analysis: weekViewModel.bodyMapAnalysis,
+                            avatarType: BodyMapAvatarType(profile: profileStore.profile)
+                        )
 
                         FitnessActivityLogSection(
                             week: weekViewModel.selectedWeek,
@@ -85,6 +94,9 @@ struct FitnessView: View {
                 guard newPhase == .active else { return }
                 Task { await weekViewModel.refreshCurrentWeekIfNeeded() }
             }
+            .onReceive(NotificationCenter.default.publisher(for: PulsarGymWorkoutHistoryStore.didChangeNotification)) { _ in
+                Task { await weekViewModel.refreshCurrentWeekIfNeeded() }
+            }
             .onChange(of: weekViewModel.selectedWeek.id) { _, _ in
                 isActivityLogExpanded = false
             }
@@ -118,7 +130,11 @@ struct FitnessView: View {
             .fullScreenCover(item: $selectedPersonalizedWorkout, onDismiss: {
                 Task { await weekViewModel.refresh() }
             }) { workout in
-                PersonalizedWorkoutStartView(workout: workout)
+                if workout == .gym {
+                    GymWorkoutLaunchFlowView()
+                } else {
+                    PersonalizedWorkoutStartView(workout: workout)
+                }
             }
             .fullScreenCover(isPresented: $isShowingRunExperience, onDismiss: {
                 Task { await weekViewModel.refresh() }
@@ -130,6 +146,6 @@ struct FitnessView: View {
 }
 
 #Preview {
-    FitnessView()
+    FitnessView(profileStore: ProfileStore(sideEffectsEnabled: false))
         .environmentObject(PulsarRunCoordinator())
 }

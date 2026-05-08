@@ -18,17 +18,20 @@ final class FitnessWeekViewModel: ObservableObject {
 
     private let healthKit: HealthKitGateway
     private let runHistoryStore: PulsarRunHistoryStore
+    private let gymHistoryStore: PulsarGymWorkoutHistoryStore
     private let calendar: Calendar
     private var rolloverTask: Task<Void, Never>?
 
     init(
         healthKit: HealthKitGateway = HealthKitGateway(),
         runHistoryStore: PulsarRunHistoryStore = PulsarRunHistoryStore(),
+        gymHistoryStore: PulsarGymWorkoutHistoryStore? = nil,
         calendar: Calendar = .autoupdatingCurrent,
         now: Date = .now
     ) {
         self.healthKit = healthKit
         self.runHistoryStore = runHistoryStore
+        self.gymHistoryStore = gymHistoryStore ?? PulsarGymWorkoutHistoryStore()
         self.calendar = calendar
         let generatedWeeks = FitnessWeekCalculator.getWeekPeriodsAroundCurrentWeek(calendar: calendar, now: now)
         self.weeks = generatedWeeks
@@ -171,9 +174,11 @@ final class FitnessWeekViewModel: ObservableObject {
         async let cachedRuns = runHistoryStore.loadCachedRuns()
 
         let runs = await cachedRuns
-        let localActivities = runs
+        let localRunActivities = runs
             .filter { FitnessWeekCalculator.contains($0.startedAt, in: week, calendar: calendar) }
             .map(localRunActivity)
+        let localGymActivities = gymHistoryStore.sessions(start: week.startDate, end: fetchEnd).map(localGymActivity)
+        let localActivities = localRunActivities + localGymActivities
 
         let healthKitActivities = await healthActivities
         let mergedActivities = mergeActivities(healthKit: healthKitActivities, local: localActivities)
@@ -261,7 +266,8 @@ final class FitnessWeekViewModel: ObservableObject {
 
         let healthDates = await healthWorkoutDates
         let runs = await cachedRuns
-        return healthDates + runs.map(\.startedAt)
+        let gymDates = gymHistoryStore.sessions(start: start, end: end).map(\.startedAt)
+        return healthDates + runs.map(\.startedAt) + gymDates
     }
 
     private func localRunActivity(_ run: PulsarRunSummary) -> WeeklyActivity {
@@ -283,11 +289,47 @@ final class FitnessWeekViewModel: ObservableObject {
         )
     }
 
+    private func localGymActivity(_ session: PulsarGymWorkoutSession) -> WeeklyActivity {
+        let trimmedRoutineName = session.routineName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName = trimmedRoutineName.isEmpty ? "Gym Workout" : trimmedRoutineName
+        let endedAt = session.finishedAt ?? session.startedAt.addingTimeInterval(TimeInterval(max(session.elapsedSeconds, 0)))
+        let duration = session.elapsedSeconds > 0
+            ? TimeInterval(session.elapsedSeconds)
+            : max(0, endedAt.timeIntervalSince(session.startedAt))
+        let muscleSummary = MuscleTrainingAnalyticsService.summary(for: session)
+
+        return WeeklyActivity(
+            id: "local-gym-\(session.id.uuidString)",
+            workoutUUID: session.healthKitWorkoutUUID,
+            workoutType: "Gym",
+            displayName: displayName,
+            category: .gym,
+            startDate: session.startedAt,
+            endDate: endedAt,
+            duration: duration,
+            calories: session.activeEnergyKilocalories,
+            distanceMeters: nil,
+            averageHeartRate: session.averageHeartRate,
+            maxHeartRate: session.maxHeartRate,
+            source: .localGym,
+            sourceName: WeeklyActivitySource.localGym.rawValue,
+            completedSets: muscleSummary.completedSets,
+            totalSets: muscleSummary.totalSets,
+            mainMuscleGroups: muscleSummary.mainMuscleGroupNames,
+            muscleLoadByBodyZone: muscleSummary.loadByBodyMapRegion,
+            muscleExercisesByBodyZone: muscleSummary.exercisesByBodyMapRegion
+        )
+    }
+
     private func mergeActivities(healthKit healthActivities: [WeeklyActivity], local localActivities: [WeeklyActivity]) -> [WeeklyActivity] {
         var merged = healthActivities
 
         for localActivity in localActivities {
-            if !merged.contains(where: { isDuplicate(localActivity, of: $0) }) {
+            if localActivity.source == .localGym,
+               merged.contains(where: { isDuplicate(localActivity, of: $0) }) {
+                merged.removeAll { isDuplicate(localActivity, of: $0) }
+                merged.append(localActivity)
+            } else if !merged.contains(where: { isDuplicate(localActivity, of: $0) }) {
                 merged.append(localActivity)
             }
         }
@@ -307,6 +349,15 @@ final class FitnessWeekViewModel: ObservableObject {
         let bothRunning = local.category == .running && healthActivity.category == .running
         let distanceDelta = abs((local.distanceMeters ?? 0) - (healthActivity.distanceMeters ?? 0))
         let distanceLooksSame = (local.distanceMeters == nil || healthActivity.distanceMeters == nil) || distanceDelta < 120
+        let healthSearchText = "\(healthActivity.workoutType) \(healthActivity.displayName)".lowercased()
+        let healthLooksLikeStrength = healthActivity.category == .gym ||
+            healthActivity.category == .strength ||
+            healthSearchText.contains("strength") ||
+            healthSearchText.contains("gym")
+
+        if local.category == .gym {
+            return healthLooksLikeStrength && startDelta < 300 && durationDelta < 600
+        }
 
         return bothRunning && startDelta < 180 && durationDelta < 300 && distanceLooksSame
     }

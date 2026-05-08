@@ -478,6 +478,14 @@ private struct FitnessActivityRow: View {
                     if let heartRate = activity.averageHeartRate, heartRate > 0 {
                         FitnessActivityMetricChip(symbolName: "heart.fill", value: "Avg \(Int(heartRate.rounded())) bpm")
                     }
+
+                    if let completedSets = activity.completedSets, completedSets > 0 {
+                        FitnessActivityMetricChip(symbolName: "checkmark.circle.fill", value: "\(completedSets) sets")
+                    }
+
+                    if !activity.mainMuscleGroups.isEmpty {
+                        FitnessActivityMetricChip(symbolName: "figure.strengthtraining.traditional", value: activity.mainMuscleGroups.prefix(3).joined(separator: ", "))
+                    }
                 }
             }
         }

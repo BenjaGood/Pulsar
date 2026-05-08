@@ -3,40 +3,65 @@
 //  Pulsar
 //
 
-import SceneKit
 import SwiftUI
+
+private let showBodyZoneDebugOutlines = false
 
 struct FitnessBodyMapSection: View {
     var analysis: BodyMapAnalysis
+    var avatarType: BodyMapAvatarType = .male
 
     @Environment(\.colorScheme) private var colorScheme
+    @State private var selectedBodySide: BodyViewSide = .front
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
 
-            ZStack(alignment: .bottom) {
-                HumanBodyTrainingSceneView(analysis: analysis)
-                    .frame(height: 318)
-                    .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 30, style: .continuous)
-                            .stroke(modelBorder, lineWidth: 1)
+            ZStack(alignment: .topTrailing) {
+                RoundedRectangle(cornerRadius: 30, style: .continuous)
+                    .fill(viewportBackground)
+                    .overlay(alignment: .bottom) {
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .fill(.white.opacity(colorScheme == .dark ? 0.035 : 0.055))
+                            .frame(height: 1)
+                            .padding(.horizontal, 48)
+                            .padding(.bottom, 30)
                     }
 
-                HStack(spacing: 8) {
-                    Image(systemName: "hand.draw.fill")
-                        .font(.caption.weight(.bold))
-                    Text("Drag to rotate")
-                        .font(.caption.weight(.bold))
+                BodyMapAnimatedScanView(analysis: analysis, side: selectedBodySide, avatarType: avatarType)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+
+                VStack(alignment: .trailing, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "waveform.path.ecg")
+                            .font(.caption.weight(.bold))
+                        Text(selectedBodySide.scanLabel)
+                            .font(.caption.weight(.bold))
+                    }
+                    .foregroundStyle(.white.opacity(0.74))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.black.opacity(0.24), in: Capsule(style: .continuous))
+                    .background(.ultraThinMaterial, in: Capsule(style: .continuous))
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .stroke(.white.opacity(0.12), lineWidth: 1)
+                    }
+
+                    BodyMapPerspectiveToggle(selection: $selectedBodySide)
                 }
-                .foregroundStyle(secondaryText)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(.black.opacity(colorScheme == .dark ? 0.24 : 0.10), in: Capsule(style: .continuous))
-                .background(.ultraThinMaterial, in: Capsule(style: .continuous))
-                .padding(.bottom, 12)
+                .padding(12)
             }
+            .frame(height: 384)
+            .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 30, style: .continuous)
+                    .stroke(modelBorder, lineWidth: 1)
+            }
+
+            BodyMapLegendRow()
 
             insightCard
         }
@@ -49,6 +74,7 @@ struct FitnessBodyMapSection: View {
         }
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.24 : 0.08), radius: 22, y: 12)
         .animation(.spring(response: 0.42, dampingFraction: 0.84), value: analysis)
+        .animation(.spring(response: 0.38, dampingFraction: 0.86), value: avatarType)
     }
 
     private var header: some View {
@@ -67,14 +93,14 @@ struct FitnessBodyMapSection: View {
 
             HStack(spacing: 7) {
                 Circle()
-                    .fill(analysis.isCardioActive ? BodyZone.heart.accent : secondaryText.opacity(0.42))
+                    .fill(analysis.isTrainingActive ? Color.green : secondaryText.opacity(0.42))
                     .frame(width: 8, height: 8)
-                    .shadow(color: (analysis.isCardioActive ? BodyZone.heart.accent : .clear).opacity(0.55), radius: 8)
+                    .shadow(color: (analysis.isTrainingActive ? Color.green : .clear).opacity(0.55), radius: 8)
 
-                Text(analysis.isCardioActive ? "Active" : "Inactive")
+                Text(analysis.isTrainingActive ? "Active" : "Inactive")
                     .font(.caption.weight(.bold))
             }
-            .foregroundStyle(analysis.isCardioActive ? BodyZone.heart.accent : secondaryText)
+            .foregroundStyle(analysis.isTrainingActive ? Color.green : secondaryText)
             .padding(.horizontal, 11)
             .padding(.vertical, 8)
             .background(statusBackground, in: Capsule(style: .continuous))
@@ -89,16 +115,16 @@ struct FitnessBodyMapSection: View {
         HStack(alignment: .top, spacing: 13) {
             ZStack {
                 Circle()
-                    .fill(BodyZone.heart.accent.opacity(analysis.isCardioActive ? 0.18 : 0.08))
+                    .fill(insightAccent.opacity(analysis.isTrainingActive ? 0.18 : 0.08))
                     .frame(width: 46, height: 46)
 
-                Image(systemName: analysis.isCardioActive ? "heart.fill" : "heart")
+                Image(systemName: insightSymbol)
                     .font(.system(size: 19, weight: .bold))
-                    .foregroundStyle(analysis.isCardioActive ? BodyZone.heart.accent : secondaryText)
+                    .foregroundStyle(analysis.isTrainingActive ? insightAccent : secondaryText)
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(analysis.isCardioActive ? "Cardio active" : "No cardio logged")
+                Text(insightTitle)
                     .font(.headline.weight(.bold))
                     .foregroundStyle(primaryText)
 
@@ -119,13 +145,59 @@ struct FitnessBodyMapSection: View {
     }
 
     private var insightText: String {
+        let strengthZones = analysis.topStrengthZones.prefix(3).map { trainedZone in
+            "\(trainedZone.zone.displayName) \(WeeklyMuscleLoadCalculator.intensityLabel(for: trainedZone.score).lowercased())"
+        }
+
+        if !strengthZones.isEmpty, analysis.cardioSessions > 0 {
+            let duration = FitnessWeekFormatters.duration(analysis.cardioDuration)
+            return "Strength focus: \(strengthZones.joined(separator: ", ")). Cardio adds \(duration) this week."
+        }
+
+        if !strengthZones.isEmpty {
+            return "Strength focus: \(strengthZones.joined(separator: ", "))."
+        }
+
         guard analysis.cardioSessions > 0 else {
-            return "Start a cardio workout to activate your heart zone."
+            return "Finish a workout to light up the muscles trained this week."
         }
 
         let sessionCopy = analysis.cardioSessions == 1 ? "session" : "sessions"
         let duration = FitnessWeekFormatters.duration(analysis.cardioDuration)
         return "You completed \(analysis.cardioSessions) cardio \(sessionCopy) this week - \(duration) total."
+    }
+
+    private var insightTitle: String {
+        if !analysis.strengthZones.isEmpty { return "Muscles trained" }
+        return analysis.isCardioActive ? "Cardio active" : "No training logged"
+    }
+
+    private var insightSymbol: String {
+        if !analysis.strengthZones.isEmpty { return "figure.strengthtraining.traditional" }
+        return analysis.isCardioActive ? "heart.fill" : "heart"
+    }
+
+    private var insightAccent: Color {
+        if !analysis.strengthZones.isEmpty { return Color(red: 0.72, green: 0.66, blue: 1.0) }
+        return BodyZone.heart.accent
+    }
+
+    private var viewportBackground: LinearGradient {
+        LinearGradient(
+            colors: colorScheme == .dark
+                ? [
+                    Color(red: 0.030, green: 0.035, blue: 0.048),
+                    Color(red: 0.018, green: 0.024, blue: 0.036),
+                    Color.black.opacity(0.90)
+                ]
+                : [
+                    Color(red: 0.075, green: 0.095, blue: 0.125),
+                    Color(red: 0.052, green: 0.064, blue: 0.090),
+                    Color(red: 0.030, green: 0.038, blue: 0.055)
+                ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 
     private var sectionBackground: LinearGradient {
@@ -134,12 +206,12 @@ struct FitnessBodyMapSection: View {
                 ? [
                     Color.white.opacity(0.10),
                     Color(red: 0.06, green: 0.08, blue: 0.12).opacity(0.86),
-                    BodyZone.heart.accent.opacity(analysis.isCardioActive ? 0.10 : 0.035)
+                    insightAccent.opacity(analysis.isTrainingActive ? 0.10 : 0.035)
                 ]
                 : [
                     Color.white.opacity(0.92),
                     Color(red: 0.95, green: 0.98, blue: 1.00).opacity(0.76),
-                    BodyZone.heart.accent.opacity(analysis.isCardioActive ? 0.08 : 0.025)
+                    insightAccent.opacity(analysis.isTrainingActive ? 0.08 : 0.025)
                 ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -149,8 +221,8 @@ struct FitnessBodyMapSection: View {
     private var insightBackground: LinearGradient {
         LinearGradient(
             colors: colorScheme == .dark
-                ? [Color.white.opacity(0.09), Color.white.opacity(0.035), BodyZone.heart.accent.opacity(analysis.isCardioActive ? 0.09 : 0.025)]
-                : [Color.white.opacity(0.86), Color(red: 0.96, green: 0.98, blue: 1.00).opacity(0.68), BodyZone.heart.accent.opacity(analysis.isCardioActive ? 0.06 : 0.02)],
+                ? [Color.white.opacity(0.09), Color.white.opacity(0.035), insightAccent.opacity(analysis.isTrainingActive ? 0.09 : 0.025)]
+                : [Color.white.opacity(0.86), Color(red: 0.96, green: 0.98, blue: 1.00).opacity(0.68), insightAccent.opacity(analysis.isTrainingActive ? 0.06 : 0.02)],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -159,8 +231,8 @@ struct FitnessBodyMapSection: View {
     private var statusBackground: LinearGradient {
         LinearGradient(
             colors: colorScheme == .dark
-                ? [Color.white.opacity(0.11), Color.white.opacity(0.04), BodyZone.heart.accent.opacity(analysis.isCardioActive ? 0.10 : 0)]
-                : [Color.white.opacity(0.84), Color(red: 0.95, green: 0.98, blue: 1.00).opacity(0.62), BodyZone.heart.accent.opacity(analysis.isCardioActive ? 0.06 : 0)],
+                ? [Color.white.opacity(0.11), Color.white.opacity(0.04), insightAccent.opacity(analysis.isTrainingActive ? 0.10 : 0)]
+                : [Color.white.opacity(0.84), Color(red: 0.95, green: 0.98, blue: 1.00).opacity(0.62), insightAccent.opacity(analysis.isTrainingActive ? 0.06 : 0)],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -170,7 +242,7 @@ struct FitnessBodyMapSection: View {
         LinearGradient(
             colors: [
                 .white.opacity(colorScheme == .dark ? 0.18 : 0.82),
-                BodyZone.heart.accent.opacity(analysis.isCardioActive ? 0.24 : 0.08),
+                insightAccent.opacity(analysis.isTrainingActive ? 0.24 : 0.08),
                 .black.opacity(colorScheme == .dark ? 0.22 : 0.04)
             ],
             startPoint: .topLeading,
@@ -179,8 +251,8 @@ struct FitnessBodyMapSection: View {
     }
 
     private var statusBorder: Color {
-        analysis.isCardioActive
-            ? BodyZone.heart.accent.opacity(colorScheme == .dark ? 0.30 : 0.22)
+        analysis.isTrainingActive
+            ? insightAccent.opacity(colorScheme == .dark ? 0.30 : 0.22)
             : .white.opacity(colorScheme == .dark ? 0.12 : 0.68)
     }
 
@@ -188,8 +260,8 @@ struct FitnessBodyMapSection: View {
         LinearGradient(
             colors: [
                 .white.opacity(colorScheme == .dark ? 0.13 : 0.70),
-                BodyZone.heart.accent.opacity(analysis.isCardioActive ? 0.20 : 0.06),
-                .cyan.opacity(colorScheme == .dark ? 0.10 : 0.08)
+                insightAccent.opacity(analysis.isTrainingActive ? 0.24 : 0.06),
+                .cyan.opacity(colorScheme == .dark ? 0.18 : 0.12)
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -205,349 +277,420 @@ struct FitnessBodyMapSection: View {
     }
 }
 
-struct HumanBodyTrainingSceneView: UIViewRepresentable {
-    var analysis: BodyMapAnalysis
+private struct BodyMapLegendRow: View {
+    private let items: [(title: String, color: Color, opacity: Double)] = [
+        ("Not trained", .white, 0.18),
+        ("Light", Color(red: 0.72, green: 0.66, blue: 1.0), 0.34),
+        ("Medium", Color(red: 0.72, green: 0.66, blue: 1.0), 0.68),
+        ("High", Color(red: 0.72, green: 0.66, blue: 1.0), 1.0)
+    ]
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    func makeUIView(context: Context) -> SCNView {
-        context.coordinator.makeView(initialAnalysis: analysis)
-    }
-
-    func updateUIView(_ view: SCNView, context: Context) {
-        context.coordinator.update(analysis: analysis, in: view)
-    }
-
-    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        private let bodyRoot = SCNNode()
-        private let cameraNode = SCNNode()
-        private var zoneNodes: [BodyZone: [SCNNode]] = [:]
-        private var heartPulseNode: SCNNode?
-        private var rotationX: Float = -0.08
-        private var rotationY: Float = -0.28
-        private var cameraDistance: Float = 5.5
-
-        func makeView(initialAnalysis: BodyMapAnalysis) -> SCNView {
-            let view = SCNView(frame: .zero)
-            let scene = SCNScene()
-
-            view.scene = scene
-            view.backgroundColor = .clear
-            view.isOpaque = false
-            view.antialiasingMode = .multisampling4X
-            view.rendersContinuously = initialAnalysis.isCardioActive
-            view.isPlaying = initialAnalysis.isCardioActive
-            view.preferredFramesPerSecond = 60
-
-            configureCamera(in: scene)
-            configureLighting(in: scene)
-            configureBody(in: scene)
-            configureGestures(for: view)
-            update(analysis: initialAnalysis, in: view)
-
-            return view
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+            ForEach(items, id: \.title) { item in
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(item.color.opacity(item.opacity))
+                        .frame(width: 8, height: 8)
+                        .overlay {
+                            Circle()
+                                .stroke(.white.opacity(0.18), lineWidth: 1)
+                        }
+                    Text(item.title)
+                        .font(.caption2.weight(.bold))
+                }
+                .foregroundStyle(.white.opacity(0.62))
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.white.opacity(0.055), in: Capsule(style: .continuous))
+            }
         }
+    }
+}
 
-        func update(analysis: BodyMapAnalysis, in view: SCNView) {
-            view.rendersContinuously = analysis.isCardioActive
-            view.isPlaying = analysis.isCardioActive
+private struct BodyMapAnimatedScanView: View {
+    var analysis: BodyMapAnalysis
+    var side: BodyViewSide
+    var avatarType: BodyMapAvatarType
 
-            for zone in BodyZone.allCases {
-                let trainedZone = analysis.trainedZone(for: zone)
-                let isActive = trainedZone != nil
-                let intensity = trainedZone?.intensity ?? 0
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            GeometryReader { proxy in
+                let time = timeline.date.timeIntervalSinceReferenceDate
+                let scanProgress = time.truncatingRemainder(dividingBy: 3.4) / 3.4
+                let scanY = proxy.size.height * scanProgress
 
-                zoneNodes[zone]?.forEach { node in
-                    node.geometry?.materials = [material(for: zone, isActive: isActive, intensity: intensity)]
+                ZStack {
+                    BodyMapGrid(time: time)
+                        .opacity(0.72)
+
+                    BodyMapAnatomyPlateView(analysis: analysis, side: side, avatarType: avatarType, time: time)
+                        .padding(.top, 10)
+                        .padding(.bottom, 8)
+                        .id("\(avatarType.id)-\(side.id)")
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.96)),
+                            removal: .opacity.combined(with: .scale(scale: 1.02))
+                        ))
+
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    .clear,
+                                    .cyan.opacity(0.00),
+                                    .cyan.opacity(0.34),
+                                    .white.opacity(0.40),
+                                    .cyan.opacity(0.18),
+                                    .clear
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(height: 1)
+                        .shadow(color: .cyan.opacity(0.32), radius: 10)
+                        .offset(y: scanY - proxy.size.height / 2)
+
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(analysis.isTrainingActive ? scanAccent : .white.opacity(0.35))
+                                .frame(width: 6, height: 6)
+                                .shadow(color: (analysis.isTrainingActive ? scanAccent : .clear).opacity(0.65), radius: 8)
+
+                            Text(analysis.isTrainingActive ? "Active zones glow" : "Weekly body scan")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.white.opacity(0.62))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(.black.opacity(0.18), in: Capsule(style: .continuous))
+                        .overlay {
+                            Capsule(style: .continuous)
+                                .stroke(.white.opacity(0.09), lineWidth: 1)
+                        }
+                    }
+                    .padding(.bottom, 12)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .drawingGroup()
+                .animation(.spring(response: 0.42, dampingFraction: 0.86), value: side)
+            }
+        }
+    }
+
+    private var scanAccent: Color {
+        if !analysis.strengthZones.isEmpty { return Color(red: 0.72, green: 0.66, blue: 1.0) }
+        return BodyZone.heart.accent
+    }
+}
+
+private struct BodyMapPerspectiveToggle: View {
+    @Binding var selection: BodyViewSide
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(BodyViewSide.allCases) { side in
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                        selection = side
+                    }
+                } label: {
+                    Text(side.title)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(selection == side ? .white : .white.opacity(0.58))
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 7)
+                        .background {
+                            if selection == side {
+                                Capsule(style: .continuous)
+                                    .fill(.white.opacity(0.16))
+                                    .overlay {
+                                        Capsule(style: .continuous)
+                                            .stroke(.cyan.opacity(0.26), lineWidth: 1)
+                                    }
+                                    .shadow(color: .cyan.opacity(0.18), radius: 10)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background(.black.opacity(0.22), in: Capsule(style: .continuous))
+        .background(.ultraThinMaterial, in: Capsule(style: .continuous))
+        .overlay {
+            Capsule(style: .continuous)
+                .stroke(.white.opacity(0.11), lineWidth: 1)
+        }
+        .accessibilityLabel("Body map view")
+    }
+}
+
+private struct BodyMapGrid: View {
+    var time: TimeInterval
+
+    var body: some View {
+        Canvas { context, size in
+            let step: CGFloat = 28
+            let drift = CGFloat(time.truncatingRemainder(dividingBy: 2.8) / 2.8) * step
+            var path = Path()
+
+            var x = -step + drift
+            while x <= size.width + step {
+                path.move(to: CGPoint(x: x, y: 0))
+                path.addLine(to: CGPoint(x: x, y: size.height))
+                x += step
+            }
+
+            var y = -step + drift * 0.55
+            while y <= size.height + step {
+                path.move(to: CGPoint(x: 0, y: y))
+                path.addLine(to: CGPoint(x: size.width, y: y))
+                y += step
+            }
+
+            context.stroke(path, with: .color(.cyan.opacity(0.045)), lineWidth: 0.7)
+
+            var centerLine = Path()
+            centerLine.move(to: CGPoint(x: size.width / 2, y: 20))
+            centerLine.addLine(to: CGPoint(x: size.width / 2, y: size.height - 20))
+            context.stroke(centerLine, with: .color(.white.opacity(0.035)), style: StrokeStyle(lineWidth: 1, dash: [5, 8]))
+        }
+    }
+}
+
+private struct BodyMapAnatomyPlateView: View {
+    var analysis: BodyMapAnalysis
+    var side: BodyViewSide
+    var avatarType: BodyMapAvatarType
+    var time: TimeInterval
+
+    private let plateHeight: CGFloat = 336
+
+    var body: some View {
+        GeometryReader { proxy in
+            let aspectRatio = avatarType.aspectRatio(for: side)
+            let availableHeight = min(plateHeight, proxy.size.height - 30)
+            let availableWidth = proxy.size.width * 0.80
+            let figureHeight = min(availableHeight, availableWidth / aspectRatio)
+            let figureWidth = figureHeight * aspectRatio
+            let overlays = BodyMapOverlayCatalog.overlays(for: avatarType, side: side)
+
+            ZStack {
+                bodyGlow(width: figureWidth, height: figureHeight)
+
+                Image(avatarType.imageName(for: side))
+                    .resizable()
+                    .scaledToFit()
+                    .opacity(0.95)
+                    .shadow(color: .white.opacity(0.16), radius: 12)
+                    .shadow(color: .cyan.opacity(0.16), radius: 20)
+
+                BodyMapImageOverlayLayer(
+                    analysis: analysis,
+                    overlays: overlays,
+                    side: side,
+                    time: time
+                )
+                .frame(width: figureWidth, height: figureHeight)
+            }
+            .frame(width: figureWidth, height: figureHeight)
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+    }
+
+    private func bodyGlow(width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 120, style: .continuous)
+            .fill(
+                RadialGradient(
+                    colors: [
+                        .white.opacity(0.11),
+                        .cyan.opacity(0.12),
+                        .cyan.opacity(0.03),
+                        .clear
+                    ],
+                    center: .center,
+                    startRadius: 6,
+                    endRadius: 170
+                )
+            )
+            .frame(width: width * 1.22, height: height * 0.96)
+            .blur(radius: 20)
+            .opacity(0.80)
+    }
+}
+
+private struct BodyMapImageOverlayLayer: View {
+    var analysis: BodyMapAnalysis
+    var overlays: [BodyZoneOverlay]
+    var side: BodyViewSide
+    var time: TimeInterval
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                ForEach(visibleOverlays) { overlay in
+                    let frame = overlayFrame(overlay, in: proxy.size)
+
+                    if overlay.zone == .heart, side == .front {
+                        HeartZonePulse(
+                            isActive: analysis.isCardioActive,
+                            intensity: analysis.trainedZone(matching: .heart)?.intensity ?? 0.2,
+                            time: time
+                        )
+                        .frame(width: frame.width * 2.2, height: frame.height * 2.2)
+                        .position(x: frame.midX, y: frame.midY)
+                    } else if let trainedZone = analysis.trainedZone(matching: overlay.zone) {
+                        BodyZoneImageHighlight(overlay: overlay, intensity: trainedZone.intensity, time: time)
+                            .frame(width: frame.width, height: frame.height)
+                            .position(x: frame.midX, y: frame.midY)
+                    }
+                }
+
+                if showBodyZoneDebugOutlines {
+                    ForEach(overlays) { overlay in
+                        let frame = overlayFrame(overlay, in: proxy.size)
+
+                        BodyZoneDebugOverlay(overlay: overlay)
+                            .frame(width: frame.width, height: frame.height)
+                            .position(x: frame.midX, y: frame.midY)
+                    }
                 }
             }
-
-            updateHeartPulse(isActive: analysis.isCardioActive, intensity: analysis.trainedZone(for: .heart)?.intensity ?? 0)
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
+        .allowsHitTesting(false)
+    }
 
-        private func configureCamera(in scene: SCNScene) {
-            let camera = SCNCamera()
-            camera.fieldOfView = 34
-            camera.wantsHDR = true
-            camera.wantsExposureAdaptation = true
-            cameraNode.camera = camera
-            cameraNode.position = SCNVector3(0, 0.45, cameraDistance)
-            cameraNode.look(at: SCNVector3(0, 0.35, 0))
-            scene.rootNode.addChildNode(cameraNode)
+    private var visibleOverlays: [BodyZoneOverlay] {
+        overlays.filter { overlay in
+            overlay.zone == .heart || analysis.isZoneActive(overlay.zone)
         }
+    }
 
-        private func configureLighting(in scene: SCNScene) {
-            scene.lightingEnvironment.intensity = 1.0
+    private func overlayFrame(_ overlay: BodyZoneOverlay, in size: CGSize) -> CGRect {
+        CGRect(
+            x: overlay.normalizedFrame.minX * size.width,
+            y: overlay.normalizedFrame.minY * size.height,
+            width: overlay.normalizedFrame.width * size.width,
+            height: overlay.normalizedFrame.height * size.height
+        )
+    }
+}
 
-            let keyLight = SCNNode()
-            keyLight.light = SCNLight()
-            keyLight.light?.type = .omni
-            keyLight.light?.intensity = 740
-            keyLight.light?.color = UIColor(red: 0.70, green: 0.86, blue: 1.00, alpha: 1)
-            keyLight.position = SCNVector3(-1.9, 2.8, 2.4)
-            scene.rootNode.addChildNode(keyLight)
+private struct BodyZoneImageHighlight: View {
+    var overlay: BodyZoneOverlay
+    var intensity: Double
+    var time: TimeInterval
 
-            let rimLight = SCNNode()
-            rimLight.light = SCNLight()
-            rimLight.light?.type = .omni
-            rimLight.light?.intensity = 540
-            rimLight.light?.color = UIColor(red: 1.00, green: 0.33, blue: 0.46, alpha: 1)
-            rimLight.position = SCNVector3(1.8, 1.4, -1.8)
-            scene.rootNode.addChildNode(rimLight)
+    private var shimmer: Double {
+        (sin(time * 2.2) + 1) / 2
+    }
 
-            let ambient = SCNNode()
-            ambient.light = SCNLight()
-            ambient.light?.type = .ambient
-            ambient.light?.intensity = 110
-            ambient.light?.color = UIColor(white: 0.85, alpha: 1)
-            scene.rootNode.addChildNode(ambient)
-        }
+    private var clampedIntensity: Double {
+        min(max(intensity, 0.24), 1)
+    }
 
-        private func configureBody(in scene: SCNScene) {
-            bodyRoot.eulerAngles = SCNVector3(rotationX, rotationY, 0)
-            scene.rootNode.addChildNode(bodyRoot)
-
-            addNeutralNode(geometry: SCNSphere(radius: 0.24), position: SCNVector3(0, 1.88, 0), scale: SCNVector3(0.88, 1.05, 0.82))
-            addNeutralNode(geometry: SCNCapsule(capRadius: 0.065, height: 0.24), position: SCNVector3(0, 1.58, 0))
-
-            addZone(.shoulders, geometry: SCNCapsule(capRadius: 0.105, height: 1.08), position: SCNVector3(0, 1.40, 0), eulerAngles: SCNVector3(0, 0, Float.pi / 2))
-            addZone(.chest, geometry: SCNSphere(radius: 0.36), position: SCNVector3(0, 1.05, 0.13), scale: SCNVector3(1.14, 0.82, 0.48))
-            addZone(.back, geometry: SCNSphere(radius: 0.34), position: SCNVector3(0, 0.98, -0.16), scale: SCNVector3(1.05, 0.96, 0.42))
-            addZone(.core, geometry: SCNCapsule(capRadius: 0.235, height: 0.60), position: SCNVector3(0, 0.48, 0.08), scale: SCNVector3(0.92, 1.0, 0.55))
-
-            addZone(.biceps, geometry: SCNCapsule(capRadius: 0.095, height: 0.74), position: SCNVector3(-0.65, 0.86, 0.10), eulerAngles: SCNVector3(0, 0, 0.12))
-            addZone(.biceps, geometry: SCNCapsule(capRadius: 0.095, height: 0.74), position: SCNVector3(0.65, 0.86, 0.10), eulerAngles: SCNVector3(0, 0, -0.12))
-            addZone(.triceps, geometry: SCNCapsule(capRadius: 0.087, height: 0.72), position: SCNVector3(-0.69, 0.86, -0.10), eulerAngles: SCNVector3(0, 0, 0.10))
-            addZone(.triceps, geometry: SCNCapsule(capRadius: 0.087, height: 0.72), position: SCNVector3(0.69, 0.86, -0.10), eulerAngles: SCNVector3(0, 0, -0.10))
-
-            addZone(.glutes, geometry: SCNSphere(radius: 0.19), position: SCNVector3(-0.16, 0.10, -0.17), scale: SCNVector3(1.0, 0.75, 0.78))
-            addZone(.glutes, geometry: SCNSphere(radius: 0.19), position: SCNVector3(0.16, 0.10, -0.17), scale: SCNVector3(1.0, 0.75, 0.78))
-            addZone(.quads, geometry: SCNCapsule(capRadius: 0.125, height: 0.78), position: SCNVector3(-0.18, -0.42, 0.10))
-            addZone(.quads, geometry: SCNCapsule(capRadius: 0.125, height: 0.78), position: SCNVector3(0.18, -0.42, 0.10))
-            addZone(.hamstrings, geometry: SCNCapsule(capRadius: 0.118, height: 0.76), position: SCNVector3(-0.18, -0.42, -0.11))
-            addZone(.hamstrings, geometry: SCNCapsule(capRadius: 0.118, height: 0.76), position: SCNVector3(0.18, -0.42, -0.11))
-            addZone(.calves, geometry: SCNCapsule(capRadius: 0.098, height: 0.66), position: SCNVector3(-0.18, -1.12, 0.01))
-            addZone(.calves, geometry: SCNCapsule(capRadius: 0.098, height: 0.66), position: SCNVector3(0.18, -1.12, 0.01))
-
-            addHeartZone()
-            addScanRings()
-        }
-
-        private func addZone(
-            _ zone: BodyZone,
-            geometry: SCNGeometry,
-            position: SCNVector3,
-            eulerAngles: SCNVector3 = SCNVector3Zero,
-            scale: SCNVector3 = SCNVector3(1, 1, 1)
-        ) {
-            let node = SCNNode(geometry: geometry)
-            node.name = zone.rawValue
-            node.position = position
-            node.eulerAngles = eulerAngles
-            node.scale = scale
-            node.geometry?.materials = [material(for: zone, isActive: false, intensity: 0)]
-            bodyRoot.addChildNode(node)
-            zoneNodes[zone, default: []].append(node)
-        }
-
-        private func addNeutralNode(
-            geometry: SCNGeometry,
-            position: SCNVector3,
-            eulerAngles: SCNVector3 = SCNVector3Zero,
-            scale: SCNVector3 = SCNVector3(1, 1, 1)
-        ) {
-            let node = SCNNode(geometry: geometry)
-            node.position = position
-            node.eulerAngles = eulerAngles
-            node.scale = scale
-            node.geometry?.materials = [neutralMaterial(alpha: 0.32)]
-            bodyRoot.addChildNode(node)
-        }
-
-        private func addHeartZone() {
-            addZone(.heart, geometry: SCNSphere(radius: 0.105), position: SCNVector3(0.105, 1.12, 0.42), scale: SCNVector3(1.0, 1.08, 0.78))
-
-            let pulse = SCNNode(geometry: SCNSphere(radius: 0.18))
-            pulse.name = "heartPulse"
-            pulse.position = SCNVector3(0.105, 1.12, 0.42)
-            pulse.scale = SCNVector3(1.0, 1.08, 0.78)
-            pulse.opacity = 0.18
-            pulse.geometry?.materials = [pulseMaterial(isActive: false, intensity: 0)]
-            bodyRoot.addChildNode(pulse)
-            heartPulseNode = pulse
-        }
-
-        private func addScanRings() {
-            for (index, yPosition) in [-1.46, -0.05, 0.72, 1.32].enumerated() {
-                let torus = SCNTorus(ringRadius: index == 0 ? 0.88 : 0.62, pipeRadius: 0.004)
-                let ring = SCNNode(geometry: torus)
-                ring.position = SCNVector3(0, Float(yPosition), 0)
-                ring.eulerAngles = SCNVector3(Float.pi / 2, 0, 0)
-                ring.opacity = index == 0 ? 0.46 : 0.25
-                ring.geometry?.materials = [scanMaterial]
-                bodyRoot.addChildNode(ring)
+    var body: some View {
+        Capsule(style: .continuous)
+            .fill(
+                RadialGradient(
+                    colors: [
+                        overlay.zone.accent.opacity(0.16 + clampedIntensity * 0.28 + shimmer * 0.08),
+                        overlay.zone.accent.opacity(0.08 + clampedIntensity * 0.16),
+                        .clear
+                    ],
+                    center: .center,
+                    startRadius: 1,
+                    endRadius: 64
+                )
+            )
+            .overlay {
+                Capsule(style: .continuous)
+                    .stroke(overlay.zone.accent.opacity(0.12 + clampedIntensity * 0.24), lineWidth: 1)
+                    .blur(radius: 0.5)
             }
+            .shadow(color: overlay.zone.accent.opacity(0.18 + clampedIntensity * 0.24), radius: 8 + clampedIntensity * 10)
+            .blendMode(.screen)
+            .opacity(0.55 + clampedIntensity * 0.35)
+    }
+}
+
+private struct BodyZoneDebugOverlay: View {
+    var overlay: BodyZoneOverlay
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(overlay.zone.accent.opacity(0.90), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+
+            Text(overlay.displayName)
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(overlay.zone.accent)
+                .padding(3)
+                .background(.black.opacity(0.55), in: Capsule(style: .continuous))
         }
+    }
+}
 
-        private func configureGestures(for view: SCNView) {
-            let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
-            pan.delegate = self
-            view.addGestureRecognizer(pan)
+private struct HeartZonePulse: View {
+    var isActive: Bool
+    var intensity: Double
+    var time: TimeInterval
 
-            let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
-            pinch.delegate = self
-            view.addGestureRecognizer(pinch)
+    private var pulse: Double {
+        (sin(time * 2.8) + 1) / 2
+    }
 
-            let doubleTap = UITapGestureRecognizer(target: self, action: #selector(resetCamera))
-            doubleTap.numberOfTapsRequired = 2
-            view.addGestureRecognizer(doubleTap)
+    private var secondaryPulse: Double {
+        (sin(time * 1.55 + 1.2) + 1) / 2
+    }
+
+    private var heartColor: Color {
+        BodyZone.heart.accent
+    }
+
+    var body: some View {
+        let activeOpacity = 0.22 + intensity * 0.22 + pulse * 0.10
+
+        ZStack {
+            Circle()
+                .stroke(heartColor.opacity(isActive ? 0.16 * (1 - pulse) : 0), lineWidth: 1)
+                .frame(width: 12 + CGFloat(pulse) * 36, height: 12 + CGFloat(pulse) * 36)
+
+            Circle()
+                .stroke(heartColor.opacity(isActive ? 0.10 * (1 - secondaryPulse) : 0), lineWidth: 1)
+                .frame(width: 15 + CGFloat(secondaryPulse) * 30, height: 15 + CGFloat(secondaryPulse) * 30)
+
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            heartColor.opacity(isActive ? activeOpacity : 0.035),
+                            heartColor.opacity(isActive ? 0.11 + intensity * 0.08 : 0.018),
+                            .clear
+                        ],
+                        center: .center,
+                        startRadius: 1,
+                        endRadius: 30
+                    )
+                )
+                .frame(width: isActive ? 40 + CGFloat(pulse) * 6 : 24, height: isActive ? 40 + CGFloat(pulse) * 6 : 24)
+                .blur(radius: 5)
+                .blendMode(.screen)
+
+            Image(systemName: "heart.fill")
+                .font(.system(size: 7, weight: .bold))
+                .foregroundStyle(heartColor.opacity(isActive ? 0.52 : 0.14))
+                .scaleEffect(isActive ? 0.94 + CGFloat(pulse) * 0.12 : 0.92)
+                .shadow(color: heartColor.opacity(isActive ? 0.44 : 0.05), radius: 6)
         }
-
-        @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
-            guard let view = gesture.view else { return }
-            let translation = gesture.translation(in: view)
-
-            rotationY += Float(translation.x) * 0.008
-            rotationX = clamp(rotationX + Float(translation.y) * 0.004, min: -0.42, max: 0.34)
-            bodyRoot.eulerAngles = SCNVector3(rotationX, rotationY, 0)
-            gesture.setTranslation(.zero, in: view)
-
-            guard gesture.state == .ended else { return }
-            let velocity = gesture.velocity(in: view)
-            let inertialTurn = clamp(Float(velocity.x) * 0.00018, min: -0.42, max: 0.42)
-            rotationY += inertialTurn
-
-            SCNTransaction.begin()
-            SCNTransaction.animationDuration = 0.45
-            SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeOut)
-            bodyRoot.eulerAngles = SCNVector3(rotationX, rotationY, 0)
-            SCNTransaction.commit()
-        }
-
-        @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-            guard gesture.state == .changed else { return }
-            cameraDistance = clamp(cameraDistance / Float(gesture.scale), min: 4.35, max: 6.8)
-            cameraNode.position.z = cameraDistance
-            gesture.scale = 1
-        }
-
-        @objc private func resetCamera() {
-            rotationX = -0.08
-            rotationY = -0.28
-            cameraDistance = 5.5
-
-            SCNTransaction.begin()
-            SCNTransaction.animationDuration = 0.52
-            SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            bodyRoot.eulerAngles = SCNVector3(rotationX, rotationY, 0)
-            cameraNode.position.z = cameraDistance
-            SCNTransaction.commit()
-        }
-
-        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            guard let pan = gestureRecognizer as? UIPanGestureRecognizer,
-                  let view = gestureRecognizer.view else {
-                return true
-            }
-
-            let velocity = pan.velocity(in: view)
-            return abs(velocity.x) > abs(velocity.y) * 0.85
-        }
-
-        private func updateHeartPulse(isActive: Bool, intensity: Double) {
-            guard let heartPulseNode else { return }
-
-            heartPulseNode.geometry?.materials = [pulseMaterial(isActive: isActive, intensity: intensity)]
-            heartPulseNode.removeAllActions()
-
-            if isActive {
-                heartPulseNode.opacity = CGFloat(0.26 + intensity * 0.22)
-                let expand = SCNAction.group([
-                    .scale(to: CGFloat(1.22 + intensity * 0.24), duration: 1.08),
-                    .fadeOpacity(to: CGFloat(0.10 + intensity * 0.08), duration: 1.08)
-                ])
-                let reset = SCNAction.group([
-                    .scale(to: 0.96, duration: 0.01),
-                    .fadeOpacity(to: CGFloat(0.30 + intensity * 0.22), duration: 0.01)
-                ])
-                let wait = SCNAction.wait(duration: 0.24)
-                heartPulseNode.runAction(.repeatForever(.sequence([reset, expand, wait])))
-            } else {
-                heartPulseNode.opacity = 0.16
-                heartPulseNode.scale = SCNVector3(1.0, 1.08, 0.78)
-            }
-        }
-
-        private func material(for zone: BodyZone, isActive: Bool, intensity: Double) -> SCNMaterial {
-            let material = SCNMaterial()
-            let zoneColor = uiColor(for: zone)
-            material.lightingModel = .physicallyBased
-            material.blendMode = .alpha
-            material.isDoubleSided = true
-            material.diffuse.contents = isActive
-                ? zoneColor.withAlphaComponent(CGFloat(0.58 + intensity * 0.26))
-                : UIColor(red: 0.58, green: 0.70, blue: 0.82, alpha: 0.24)
-            material.emission.contents = isActive
-                ? zoneColor.withAlphaComponent(CGFloat(0.20 + intensity * 0.38))
-                : UIColor(red: 0.35, green: 0.48, blue: 0.58, alpha: 0.07)
-            material.metalness.contents = isActive ? 0.20 : 0.08
-            material.roughness.contents = isActive ? 0.34 : 0.58
-            material.transparency = isActive ? CGFloat(0.78 + intensity * 0.16) : 0.38
-            return material
-        }
-
-        private func neutralMaterial(alpha: CGFloat) -> SCNMaterial {
-            let material = SCNMaterial()
-            material.lightingModel = .physicallyBased
-            material.blendMode = .alpha
-            material.isDoubleSided = true
-            material.diffuse.contents = UIColor(red: 0.64, green: 0.74, blue: 0.84, alpha: alpha)
-            material.emission.contents = UIColor(red: 0.30, green: 0.42, blue: 0.52, alpha: 0.05)
-            material.metalness.contents = 0.10
-            material.roughness.contents = 0.56
-            material.transparency = alpha
-            return material
-        }
-
-        private func pulseMaterial(isActive: Bool, intensity: Double) -> SCNMaterial {
-            let material = SCNMaterial()
-            let color = uiColor(for: .heart)
-            material.lightingModel = .constant
-            material.blendMode = .add
-            material.isDoubleSided = true
-            material.diffuse.contents = color.withAlphaComponent(isActive ? CGFloat(0.18 + intensity * 0.22) : 0.08)
-            material.emission.contents = color.withAlphaComponent(isActive ? CGFloat(0.35 + intensity * 0.38) : 0.07)
-            material.transparency = isActive ? CGFloat(0.32 + intensity * 0.28) : 0.14
-            return material
-        }
-
-        private var scanMaterial: SCNMaterial {
-            let material = SCNMaterial()
-            material.lightingModel = .constant
-            material.blendMode = .add
-            material.diffuse.contents = UIColor(red: 0.44, green: 0.92, blue: 0.96, alpha: 0.18)
-            material.emission.contents = UIColor(red: 0.44, green: 0.92, blue: 0.96, alpha: 0.32)
-            return material
-        }
-
-        private func uiColor(for zone: BodyZone) -> UIColor {
-            switch zone {
-            case .heart:
-                UIColor(red: 1.00, green: 0.24, blue: 0.36, alpha: 1)
-            case .chest, .back, .shoulders, .biceps, .triceps:
-                UIColor(red: 0.55, green: 0.62, blue: 1.00, alpha: 1)
-            case .core:
-                UIColor(red: 1.00, green: 0.70, blue: 0.26, alpha: 1)
-            case .glutes, .quads, .hamstrings, .calves:
-                UIColor(red: 0.24, green: 0.86, blue: 0.72, alpha: 1)
-            }
-        }
-
-        private func clamp<T: Comparable>(_ value: T, min minimum: T, max maximum: T) -> T {
-            Swift.min(Swift.max(value, minimum), maximum)
-        }
+        .frame(width: 52, height: 52)
+        .animation(.easeInOut(duration: 0.28), value: isActive)
     }
 }
 
@@ -573,7 +716,8 @@ struct HumanBodyTrainingSceneView: UIViewRepresentable {
                         sourceName: "Preview"
                     )
                 ]
-            )
+            ),
+            avatarType: .male
         )
         .padding(18)
     }

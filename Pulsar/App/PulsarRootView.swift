@@ -18,7 +18,7 @@ struct PulsarRootView: View {
                 .tag(PulsarTab.home)
                 .accessibilityLabel(PulsarTab.home.title)
 
-            FitnessView()
+            FitnessView(profileStore: homeViewModel.profileStore)
                 .environmentObject(runCoordinator)
                 .tabItem { Label(PulsarTab.fitness.title, systemImage: PulsarTab.fitness.symbol) }
                 .tag(PulsarTab.fitness)
@@ -36,10 +36,16 @@ struct PulsarRootView: View {
         }
         .tint(.accentColor)
         .pulsarTabBarAppearance()
-        .task { await homeViewModel.requestInitialAppEntrySync() }
+        .task {
+            await homeViewModel.requestInitialAppEntrySync()
+            await GymLiveActivityManager.endStaleActivitiesIfNeeded(activeState: PulsarWatchConnectivitySyncStore.shared.activeGymState)
+        }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
-            Task { await homeViewModel.appDidBecomeActive() }
+            Task {
+                await homeViewModel.appDidBecomeActive()
+                await GymLiveActivityManager.endStaleActivitiesIfNeeded(activeState: PulsarWatchConnectivitySyncStore.shared.activeGymState)
+            }
         }
     }
 }

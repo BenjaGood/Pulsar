@@ -8,15 +8,18 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
 
     @Published private(set) var latestPayload: PulsarDailyMetricsSyncPayload?
     @Published private(set) var latestSleepPreferences: PulsarSleepPreferencesSyncPayload?
+    @Published private(set) var activeGymState: ActiveGymWorkoutState?
 
     private let defaults: UserDefaults
     private let cacheKey = "pulsar.sync.cachedDailyMetricsPayload.v1"
     private let dailyCacheKey = "pulsar.sync.cachedDailyMetricPayloadsByDateKey.v1"
     private let sleepCacheKey = "pulsar.sync.cachedSleepPayloadsByDateKey.v1"
     private let sleepPreferencesCacheKey = "pulsar.sync.cachedSleepPreferencesPayload.v1"
+    private let activeGymCacheKey = "pulsar.sync.activeGymWorkoutState.v1"
     private let session: WCSession?
     private var dailyPayloadsByDateKey: [String: PulsarDailyMetricsSyncPayload]
     private var sleepPayloadsByDateKey: [String: PulsarDailyMetricsSyncPayload]
+    private var gymActionHandler: ((ActiveGymWorkoutAction) -> Void)?
 
     private override init() {
         self.defaults = .standard
@@ -48,6 +51,12 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             self.latestSleepPreferences = payload
         } else {
             self.latestSleepPreferences = nil
+        }
+        if let data = defaults.data(forKey: activeGymCacheKey),
+           let state = ActiveGymWorkoutCodec.decodeState(data) {
+            self.activeGymState = state
+        } else {
+            self.activeGymState = nil
         }
         super.init()
         activateSessionIfNeeded()
@@ -95,6 +104,39 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     func cachedSleepPreferences() -> PulsarSleepPreferencesSyncPayload? {
         guard let latestSleepPreferences, latestSleepPreferences.isValid else { return nil }
         return latestSleepPreferences
+    }
+
+    func registerGymActionHandler(_ handler: @escaping (ActiveGymWorkoutAction) -> Void) {
+        gymActionHandler = handler
+    }
+
+    func unregisterGymActionHandler() {
+        gymActionHandler = nil
+    }
+
+    @discardableResult
+    func storeActiveGymState(_ state: ActiveGymWorkoutState, broadcast: Bool, reason: String) -> Bool {
+        activeGymState = state
+        persistActiveGymState(state)
+        PulsarSyncDebugLogger.log("Active Gym state updated via \(reason) session=\(state.sessionId.uuidString) progress=\(state.completedSets)/\(state.totalSets) finished=\(state.isFinished)")
+
+        if broadcast {
+            sendGymStateToCounterpart(state)
+        }
+        return true
+    }
+
+    func sendGymAction(_ action: ActiveGymWorkoutAction) {
+        guard let session,
+              let data = ActiveGymWorkoutCodec.encodeAction(action) else { return }
+        let payload = [Self.activeGymActionPayloadKey: data]
+        if session.isReachable {
+            session.sendMessage(payload, replyHandler: nil) { error in
+                PulsarSyncDebugLogger.log("Active Gym action sendMessage failed kind=\(action.kind.rawValue) error=\(error.localizedDescription)")
+            }
+        }
+        session.transferUserInfo(payload)
+        PulsarSyncDebugLogger.log("Active Gym action queued kind=\(action.kind.rawValue) session=\(action.sessionId?.uuidString ?? "none")")
     }
 
     @discardableResult
@@ -266,19 +308,21 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         defaults.set(data, forKey: sleepPreferencesCacheKey)
     }
 
+    private func persistActiveGymState(_ state: ActiveGymWorkoutState) {
+        guard let data = ActiveGymWorkoutCodec.encodeState(state) else { return }
+        defaults.set(data, forKey: activeGymCacheKey)
+    }
+
     private func sendToCounterpart(metricPayload: PulsarDailyMetricsSyncPayload? = nil, sleepPreferences: PulsarSleepPreferencesSyncPayload? = nil) {
         guard let session else { return }
         let metric = metricPayload ?? latestPayload
         let sleepPreferences = sleepPreferences ?? latestSleepPreferences
-        var applicationContext: [String: Any] = [:]
+        let applicationContext = makeApplicationContext(
+            metricPayload: metric,
+            sleepPreferences: sleepPreferences,
+            activeGymState: activeGymState
+        )
 
-        if let metric, let data = PulsarSyncPayloadCodec.encode(metric) {
-            applicationContext[PulsarSyncPayloadCodec.payloadKey] = data
-        }
-        if let sleepPreferences,
-           let data = try? JSONEncoder().encode(sleepPreferences) {
-            applicationContext[Self.sleepPreferencesPayloadKey] = data
-        }
         guard !applicationContext.isEmpty else { return }
 
         do {
@@ -290,6 +334,50 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
 
         session.transferUserInfo(applicationContext)
         PulsarSyncDebugLogger.log("WatchConnectivity payload queued for transfer metricSession=\(metric?.syncSessionID?.uuidString ?? "none") alarmEnabled=\(sleepPreferences?.alarmEnabled == true)")
+    }
+
+    private func sendGymStateToCounterpart(_ state: ActiveGymWorkoutState) {
+        guard let session,
+              let data = ActiveGymWorkoutCodec.encodeState(state) else { return }
+
+        let realtimePayload = [Self.activeGymStatePayloadKey: data]
+        if session.isReachable {
+            session.sendMessage(realtimePayload, replyHandler: nil) { error in
+                PulsarSyncDebugLogger.log("Active Gym state sendMessage failed session=\(state.sessionId.uuidString) error=\(error.localizedDescription)")
+            }
+        }
+
+        let applicationContext = makeApplicationContext(
+            metricPayload: latestPayload,
+            sleepPreferences: latestSleepPreferences,
+            activeGymState: state
+        )
+        do {
+            try session.updateApplicationContext(applicationContext)
+            PulsarSyncDebugLogger.log("Active Gym state applicationContext updated session=\(state.sessionId.uuidString)")
+        } catch {
+            PulsarSyncDebugLogger.log("Failed to update Active Gym applicationContext: \(error.localizedDescription)")
+        }
+    }
+
+    private func makeApplicationContext(
+        metricPayload: PulsarDailyMetricsSyncPayload?,
+        sleepPreferences: PulsarSleepPreferencesSyncPayload?,
+        activeGymState: ActiveGymWorkoutState?
+    ) -> [String: Any] {
+        var applicationContext: [String: Any] = [:]
+        if let metricPayload, let data = PulsarSyncPayloadCodec.encode(metricPayload) {
+            applicationContext[PulsarSyncPayloadCodec.payloadKey] = data
+        }
+        if let sleepPreferences,
+           let data = try? JSONEncoder().encode(sleepPreferences) {
+            applicationContext[Self.sleepPreferencesPayloadKey] = data
+        }
+        if let activeGymState,
+           let data = ActiveGymWorkoutCodec.encodeState(activeGymState) {
+            applicationContext[Self.activeGymStatePayloadKey] = data
+        }
+        return applicationContext
     }
 
     private func receive(dictionary: [String: Any], reason: String) {
@@ -307,6 +395,25 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             didApplyAnyPayload = apply(sleepPreferences: payload, broadcast: false, reason: reason) || didApplyAnyPayload
         } else if dictionary[Self.sleepPreferencesPayloadKey] != nil {
             PulsarSyncDebugLogger.log("Skipped \(reason) sleep preferences because decoding failed")
+        }
+
+        if let data = dictionary[Self.activeGymStatePayloadKey] as? Data,
+           let state = ActiveGymWorkoutCodec.decodeState(data) {
+            activeGymState = state
+            persistActiveGymState(state)
+            didApplyAnyPayload = true
+            PulsarSyncDebugLogger.log("Active Gym state received via \(reason) session=\(state.sessionId.uuidString) progress=\(state.completedSets)/\(state.totalSets) finished=\(state.isFinished)")
+        } else if dictionary[Self.activeGymStatePayloadKey] != nil {
+            PulsarSyncDebugLogger.log("Skipped \(reason) Active Gym state because decoding failed")
+        }
+
+        if let data = dictionary[Self.activeGymActionPayloadKey] as? Data,
+           let action = ActiveGymWorkoutCodec.decodeAction(data) {
+            didApplyAnyPayload = true
+            PulsarSyncDebugLogger.log("Active Gym action received via \(reason) kind=\(action.kind.rawValue) session=\(action.sessionId?.uuidString ?? "none")")
+            gymActionHandler?(action)
+        } else if dictionary[Self.activeGymActionPayloadKey] != nil {
+            PulsarSyncDebugLogger.log("Skipped \(reason) Active Gym action because decoding failed")
         }
 
         if !didApplyAnyPayload {
@@ -346,6 +453,8 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     }
 
     private static let sleepPreferencesPayloadKey = "pulsar.sleepPreferences.payload.v1"
+    private static let activeGymStatePayloadKey = "pulsar.activeGymWorkout.state.v1"
+    private static let activeGymActionPayloadKey = "pulsar.activeGymWorkout.action.v1"
 }
 
 extension PulsarWatchConnectivitySyncStore: WCSessionDelegate {
@@ -362,6 +471,12 @@ extension PulsarWatchConnectivitySyncStore: WCSessionDelegate {
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
         Task { @MainActor in
             receive(dictionary: userInfo, reason: "receivedUserInfo")
+        }
+    }
+
+    nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        Task { @MainActor in
+            receive(dictionary: message, reason: "receivedMessage")
         }
     }
 

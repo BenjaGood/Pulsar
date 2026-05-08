@@ -32,6 +32,11 @@ struct WeeklyActivity: Identifiable, Hashable {
     var maxHeartRate: Double?
     var source: WeeklyActivitySource
     var sourceName: String
+    var completedSets: Int? = nil
+    var totalSets: Int? = nil
+    var mainMuscleGroups: [String] = []
+    var muscleLoadByBodyZone: [BodyZone: Double] = [:]
+    var muscleExercisesByBodyZone: [BodyZone: [String]] = [:]
 
     var durationMinutes: Double { max(0, duration / 60) }
 }
@@ -39,6 +44,7 @@ struct WeeklyActivity: Identifiable, Hashable {
 enum WeeklyActivitySource: String, Hashable {
     case healthKit = "HealthKit"
     case localRun = "Pulsar"
+    case localGym = "Pulsar Gym"
 }
 
 enum WeeklyActivityCategory: String, Hashable {

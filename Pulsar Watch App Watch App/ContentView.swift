@@ -30,11 +30,20 @@ struct ContentView: View {
 
 struct WatchHomeView: View {
     @StateObject private var store = WatchHealthKitStore()
+    @StateObject private var syncStore = PulsarWatchConnectivitySyncStore.shared
     @EnvironmentObject private var runManager: WatchRunSessionManager
     @Environment(\.scenePhase) private var scenePhase
     @State private var isShowingWorkoutPicker = false
 
     var body: some View {
+        if let activeGymState = syncStore.activeGymState, !activeGymState.isFinished {
+            WatchActiveGymWorkoutView(syncStore: syncStore, state: activeGymState)
+        } else {
+            homeContent
+        }
+    }
+
+    private var homeContent: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {

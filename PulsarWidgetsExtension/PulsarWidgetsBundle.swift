@@ -6,6 +6,9 @@ struct PulsarWidgetsBundle: WidgetBundle {
     var body: some Widget {
         PulsarMainMetricsWidget()
         PulsarStressWidget()
+        if #available(iOSApplicationExtension 16.1, *) {
+            PulsarGymLiveActivityWidget()
+        }
     }
 }
 

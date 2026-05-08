@@ -12,11 +12,13 @@ import WatchKit
 struct Pulsar_Watch_App_Watch_AppApp: App {
     @WKApplicationDelegateAdaptor(WatchRunAppDelegate.self) private var appDelegate
     @StateObject private var runManager = WatchRunSessionManager.shared
+    @StateObject private var gymManager = WatchGymSessionManager.shared
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(runManager)
+                .environmentObject(gymManager)
         }
     }
 }
