@@ -391,7 +391,6 @@ struct FitnessActivityLogSection: View {
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
-        .animation(.spring(response: 0.38, dampingFraction: 0.86), value: activities)
         .animation(.spring(response: 0.38, dampingFraction: 0.86), value: isExpanded)
     }
 
@@ -868,7 +867,101 @@ struct FitnessWeeklyBackground: View {
     }
 }
 
-private struct FitnessWeekPressStyle: ButtonStyle {
+struct FitnessSectionHeader<Trailing: View>: View {
+    var title: String
+    var subtitle: String
+    var titleFont: Font = .title2.weight(.bold)
+    @ViewBuilder var trailing: () -> Trailing
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    init(
+        title: String,
+        subtitle: String,
+        titleFont: Font = .title2.weight(.bold),
+        @ViewBuilder trailing: @escaping () -> Trailing
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.titleFont = titleFont
+        self.trailing = trailing
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(titleFont)
+                    .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+
+                Text(subtitle)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            trailing()
+        }
+    }
+}
+
+extension FitnessSectionHeader where Trailing == EmptyView {
+    init(
+        title: String,
+        subtitle: String,
+        titleFont: Font = .title2.weight(.bold)
+    ) {
+        self.init(title: title, subtitle: subtitle, titleFont: titleFont) {
+            EmptyView()
+        }
+    }
+}
+
+struct FitnessGlassCard<Content: View>: View {
+    var cornerRadius: CGFloat = 34
+    var padding: CGFloat = 16
+    @ViewBuilder var content: () -> Content
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        content()
+            .padding(padding)
+            .background(PulsarTheme.glassCardBackground(for: colorScheme), in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(PulsarTheme.glassCardBorder(for: colorScheme), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.26 : 0.10), radius: 24, y: 14)
+    }
+}
+
+struct FitnessPanel<Content: View>: View {
+    var cornerRadius: CGFloat = 24
+    var padding: CGFloat = 14
+    var borderOpacity: Double = 1
+    @ViewBuilder var content: () -> Content
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        content()
+            .padding(padding)
+            .background(PulsarTheme.matrixPanelBackground(for: colorScheme), in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(.white.opacity((colorScheme == .dark ? 0.12 : 0.72) * borderOpacity), lineWidth: 1)
+            }
+    }
+}
+
+struct FitnessWeekPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.965 : 1)

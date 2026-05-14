@@ -7,12 +7,39 @@ import SwiftUI
 import UIKit
 
 struct GymWorkoutSessionView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var viewModel: GymWorkoutSessionViewModel
+    @State private var selectedExerciseProgressTarget: ExerciseProgressLookup?
+    var onMinimize: (() -> Void)?
     var onFinish: () -> Void
 
     @MainActor
-    init(routine: PulsarRoutine, onFinish: @escaping () -> Void) {
-        _viewModel = StateObject(wrappedValue: GymWorkoutSessionViewModel(routine: routine))
+    init(
+        routine: PulsarRoutine,
+        workoutWeightUnit: PulsarWeightUnit? = nil,
+        historyStore: PulsarGymWorkoutHistoryStore? = nil,
+        onMinimize: (() -> Void)? = nil,
+        onFinish: @escaping () -> Void
+    ) {
+        _viewModel = StateObject(
+            wrappedValue: GymWorkoutSessionViewModel(
+                routine: routine,
+                workoutWeightUnit: workoutWeightUnit,
+                historyStore: historyStore
+            )
+        )
+        self.onMinimize = onMinimize
+        self.onFinish = onFinish
+    }
+
+    @MainActor
+    init(
+        viewModel: GymWorkoutSessionViewModel,
+        onMinimize: (() -> Void)? = nil,
+        onFinish: @escaping () -> Void
+    ) {
+        _viewModel = StateObject(wrappedValue: viewModel)
+        self.onMinimize = onMinimize
         self.onFinish = onFinish
     }
 
@@ -52,8 +79,19 @@ struct GymWorkoutSessionView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
         }
+        .sheet(item: $selectedExerciseProgressTarget) { target in
+            ExerciseProgressHistorySheet(target: target, displayUnit: target.displayUnit)
+        }
         .task {
             await viewModel.startWorkoutIfNeeded()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                viewModel.refreshRestCountdown()
+            }
+        }
+        .onChange(of: viewModel.supersetRoundCompletionPulse) { _, _ in
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.84), value: viewModel.completedSetsCount)
         .animation(.spring(response: 0.34, dampingFraction: 0.84), value: viewModel.restCountdownSeconds)
@@ -64,13 +102,11 @@ struct GymWorkoutSessionView: View {
         HStack(alignment: .top, spacing: 14) {
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                Task {
-                    await viewModel.finishWorkout()
-                }
+                openNowPlaying()
             } label: {
-                Image(systemName: "xmark")
+                Image(systemName: "music.note")
                     .font(.caption.weight(.black))
-                    .foregroundStyle(.white.opacity(0.78))
+                    .foregroundStyle(.white.opacity(0.84))
                     .frame(width: 36, height: 36)
                     .background(.white.opacity(0.08), in: Circle())
                     .overlay {
@@ -79,12 +115,38 @@ struct GymWorkoutSessionView: View {
                     }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Close workout")
+            .accessibilityLabel("Now Playing")
+
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                if let onMinimize {
+                    onMinimize()
+                } else {
+                    Task {
+                        await viewModel.finishWorkout()
+                    }
+                }
+            } label: {
+                Image(systemName: onMinimize == nil ? "xmark" : "chevron.down")
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .frame(width: 36, height: 36)
+                    .background(.white.opacity(0.08), in: Circle())
+                    .overlay {
+                        Circle()
+                            .stroke(.white.opacity(0.11), lineWidth: 1)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(onMinimize == nil ? "Close workout" : "Minimize workout")
 
             VStack(alignment: .leading, spacing: 7) {
-                Text("Workout in progress")
-                    .font(.caption.weight(.black))
-                    .foregroundStyle(.white.opacity(0.56))
+                HStack(spacing: 7) {
+                    Text(viewModel.session.routineEmoji)
+                    Text("Workout in progress")
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(.white.opacity(0.56))
+                }
 
                 Text(viewModel.session.routineName)
                     .font(.system(size: 28, weight: .bold, design: .rounded))
@@ -123,18 +185,44 @@ struct GymWorkoutSessionView: View {
     }
 
     private var exerciseList: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 12) {
-                if viewModel.session.exercises.isEmpty {
-                    GymEmptySessionExerciseView()
-                        .padding(.top, 12)
-                } else {
-                    ForEach(viewModel.session.exercises.sorted { $0.orderIndex < $1.orderIndex }) { exercise in
-                        GymSessionExerciseCard(exercise: exercise, viewModel: viewModel)
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 12) {
+                    if viewModel.session.exercises.isEmpty {
+                        GymEmptySessionExerciseView()
+                            .padding(.top, 12)
+                    } else {
+                        ForEach(viewModel.session.exercises.sorted { $0.orderIndex < $1.orderIndex }) { exercise in
+                            if let groupID = exercise.supersetGroupId,
+                               let group = viewModel.supersetGroup(id: groupID) {
+                                if viewModel.isFirstSupersetMember(exercise) {
+                                    GymSupersetSessionPairView(
+                                        group: group,
+                                        exercises: viewModel.supersetMembers(for: group),
+                                        viewModel: viewModel,
+                                        onShowProgress: { showProgress(for: $0) }
+                                    )
+                                }
+                            } else {
+                                GymSessionExerciseCard(
+                                    exercise: exercise,
+                                    viewModel: viewModel,
+                                    supersetBadge: nil,
+                                    allowsSetEditing: true,
+                                    onShowProgress: { showProgress(for: $0) }
+                                )
+                            }
+                        }
                     }
                 }
+                .padding(.bottom, 118)
             }
-            .padding(.bottom, 118)
+            .onChange(of: viewModel.focusTarget?.id) { _, _ in
+                guard let target = viewModel.focusTarget else { return }
+                withAnimation(.spring(response: 0.48, dampingFraction: 0.86)) {
+                    proxy.scrollTo(target.setID, anchor: .center)
+                }
+            }
         }
     }
 
@@ -142,6 +230,7 @@ struct GymWorkoutSessionView: View {
         VStack(spacing: 10) {
             if let restCountdown = viewModel.restCountdownSeconds {
                 GymRestTimerCard(
+                    title: viewModel.restContext?.title ?? "Rest",
                     remainingSeconds: restCountdown,
                     progress: viewModel.restProgressFraction
                 ) {
@@ -187,6 +276,17 @@ struct GymWorkoutSessionView: View {
             .buttonStyle(PulsarGymPressButtonStyle())
             .disabled(viewModel.isFinishing)
         }
+    }
+
+    private func showProgress(for exercise: PulsarGymWorkoutExerciseSession) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        selectedExerciseProgressTarget = ExerciseProgressLookup(exercise: exercise, displayUnit: exercise.weightUnit)
+    }
+
+    private func openNowPlaying() {
+        let urls = ["music://nowplaying", "music://"].compactMap(URL.init(string:))
+        guard let url = urls.first else { return }
+        UIApplication.shared.open(url)
     }
 }
 
@@ -321,9 +421,114 @@ private struct GymWorkoutProgressCard: View {
     }
 }
 
+private struct GymSupersetSessionPairView: View {
+    var group: PulsarSupersetGroup
+    var exercises: [PulsarGymWorkoutExerciseSession]
+    @ObservedObject var viewModel: GymWorkoutSessionViewModel
+    var onShowProgress: (PulsarGymWorkoutExerciseSession) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 9) {
+                HStack(spacing: 7) {
+                    Image(systemName: "link")
+                        .font(.caption.weight(.black))
+                    Text(viewModel.supersetLabel(for: group.id))
+                        .font(.caption.weight(.black))
+                }
+                .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
+                .padding(.horizontal, 11)
+                .padding(.vertical, 7)
+                .background(
+                    LinearGradient(
+                        colors: [.white.opacity(0.98), Color(red: 0.84, green: 0.78, blue: 1.0)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    in: Capsule(style: .continuous)
+                )
+
+                Text("\(group.sharedSetCount) shared sets / \(group.restTimeSeconds.formattedRestLabel) rest")
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.76)
+
+                Spacer(minLength: 0)
+
+                HStack(spacing: 7) {
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        if let firstExerciseID = group.exerciseIds.first {
+                            viewModel.removeLastSet(from: firstExerciseID)
+                        }
+                    } label: {
+                        Image(systemName: "minus")
+                            .font(.caption.weight(.black))
+                            .frame(width: 28, height: 28)
+                            .background(.white.opacity(0.075), in: Circle())
+                    }
+                    .disabled(group.sharedSetCount <= 1)
+                    .accessibilityLabel("Remove superset set")
+
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        if let firstExerciseID = group.exerciseIds.first {
+                            viewModel.addSet(to: firstExerciseID)
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.caption.weight(.black))
+                            .frame(width: 28, height: 28)
+                            .background(.white.opacity(0.095), in: Circle())
+                    }
+                    .accessibilityLabel("Add superset set")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white.opacity(0.78))
+            }
+            .padding(.horizontal, 4)
+
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.84, green: 0.78, blue: 1.0).opacity(0.72),
+                                Color(red: 0.70, green: 1.0, blue: 0.76).opacity(0.44)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 3)
+                    .padding(.leading, 19)
+                    .padding(.vertical, 20)
+
+                VStack(spacing: 10) {
+                    ForEach(exercises) { exercise in
+                        GymSessionExerciseCard(
+                            exercise: exercise,
+                            viewModel: viewModel,
+                            supersetBadge: viewModel.supersetBadge(for: exercise),
+                            allowsSetEditing: false,
+                            onShowProgress: onShowProgress
+                        )
+                        .padding(.leading, 12)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
 private struct GymSessionExerciseCard: View {
     var exercise: PulsarGymWorkoutExerciseSession
     @ObservedObject var viewModel: GymWorkoutSessionViewModel
+    var supersetBadge: String?
+    var allowsSetEditing: Bool
+    var onShowProgress: (PulsarGymWorkoutExerciseSession) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
@@ -339,6 +544,19 @@ private struct GymSessionExerciseCard: View {
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
+                    if let supersetBadge {
+                        Text(supersetBadge)
+                            .font(.system(size: 10, weight: .black, design: .rounded))
+                            .foregroundStyle(Color(red: 0.78, green: 0.72, blue: 1.0))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(red: 0.72, green: 0.66, blue: 1.0).opacity(0.13), in: Capsule(style: .continuous))
+                            .overlay {
+                                Capsule(style: .continuous)
+                                    .stroke(Color(red: 0.78, green: 0.72, blue: 1.0).opacity(0.20), lineWidth: 1)
+                            }
+                    }
+
                     Text(exercise.exerciseName)
                         .font(.headline.weight(.bold))
                         .foregroundStyle(.white)
@@ -349,7 +567,7 @@ private struct GymSessionExerciseCard: View {
                         .foregroundStyle(.white.opacity(0.58))
                         .lineLimit(1)
 
-                    Text("\(exercise.planSummary) / \(exercise.plannedRestSeconds)s rest")
+                    Text(planCaption)
                         .font(.caption.weight(.black))
                         .foregroundStyle(Color(red: 0.75, green: 0.70, blue: 1.0))
                         .lineLimit(2)
@@ -357,12 +575,67 @@ private struct GymSessionExerciseCard: View {
 
                 Spacer(minLength: 0)
 
-                Text("\(exercise.completedSetCount)/\(exercise.sets.count)")
-                    .font(.caption.weight(.black))
-                    .foregroundStyle(exercise.isCompleted ? Color(red: 0.70, green: 1.0, blue: 0.76) : .white.opacity(0.58))
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 6)
-                    .background(.white.opacity(0.08), in: Capsule(style: .continuous))
+                VStack(alignment: .trailing, spacing: 7) {
+                    HStack(spacing: 7) {
+                        Button {
+                            onShowProgress(exercise)
+                        } label: {
+                            Image(systemName: "chart.line.uptrend.xyaxis")
+                                .font(.caption.weight(.black))
+                                .foregroundStyle(Color(red: 0.78, green: 0.72, blue: 1.0))
+                                .frame(width: 28, height: 28)
+                                .background(.white.opacity(0.075), in: Circle())
+                                .overlay {
+                                    Circle().stroke(.white.opacity(0.10), lineWidth: 1)
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Open \(exercise.exerciseName) progress")
+
+                        Text("\(exercise.completedSetCount)/\(exercise.sets.count)")
+                            .font(.caption.weight(.black))
+                            .foregroundStyle(exercise.isCompleted ? Color(red: 0.70, green: 1.0, blue: 0.76) : .white.opacity(0.58))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 6)
+                            .background(.white.opacity(0.08), in: Capsule(style: .continuous))
+                    }
+
+                    if allowsSetEditing {
+                        HStack(spacing: 7) {
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                viewModel.removeLastSet(from: exercise.id)
+                            } label: {
+                                Image(systemName: "minus")
+                                    .font(.caption.weight(.black))
+                                    .foregroundStyle(.white.opacity(0.76))
+                                    .frame(width: 28, height: 28)
+                                    .background(.white.opacity(0.065), in: Circle())
+                                    .overlay {
+                                        Circle().stroke(.white.opacity(0.10), lineWidth: 1)
+                                    }
+                            }
+                            .disabled(exercise.sets.count <= 1)
+                            .accessibilityLabel("Remove set from \(exercise.exerciseName)")
+
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                viewModel.addSet(to: exercise.id)
+                            } label: {
+                                Image(systemName: "plus")
+                                    .font(.caption.weight(.black))
+                                    .foregroundStyle(.white.opacity(0.76))
+                                    .frame(width: 28, height: 28)
+                                    .background(.white.opacity(0.075), in: Circle())
+                                    .overlay {
+                                        Circle().stroke(.white.opacity(0.10), lineWidth: 1)
+                                    }
+                            }
+                            .accessibilityLabel("Add set to \(exercise.exerciseName)")
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
             }
 
             if let notes = exercise.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -374,13 +647,18 @@ private struct GymSessionExerciseCard: View {
                     .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
 
+            if let snapshot = viewModel.previousPerformance(for: exercise) {
+                GymPerformanceMemoryStrip(snapshot: snapshot)
+            }
+
             VStack(spacing: 8) {
                 ForEach(exercise.sets) { set in
                     GymWorkoutSetRow(
                         set: set,
                         weightUnit: exercise.weightUnit,
                         exerciseID: exercise.id,
-                        viewModel: viewModel
+                        viewModel: viewModel,
+                        isHighlighted: viewModel.highlightedSetID == set.id
                     )
                 }
             }
@@ -389,8 +667,15 @@ private struct GymSessionExerciseCard: View {
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(exercise.isCompleted ? Color(red: 0.72, green: 1.0, blue: 0.78).opacity(0.32) : .white.opacity(0.10), lineWidth: 1)
+                .stroke(cardBorder, lineWidth: 1)
         }
+    }
+
+    private var planCaption: String {
+        if supersetBadge != nil {
+            return "\(exercise.planSummary) / Shared superset sets"
+        }
+        return "\(exercise.planSummary) / Rest: \(exercise.plannedRestSeconds.formattedRestLabel)"
     }
 
     private var cardBackground: LinearGradient {
@@ -402,6 +687,81 @@ private struct GymSessionExerciseCard: View {
             endPoint: .bottomTrailing
         )
     }
+
+    private var cardBorder: Color {
+        if exercise.isCompleted {
+            return Color(red: 0.72, green: 1.0, blue: 0.78).opacity(0.32)
+        }
+        if supersetBadge != nil {
+            return Color(red: 0.78, green: 0.72, blue: 1.0).opacity(0.26)
+        }
+        return .white.opacity(0.10)
+    }
+}
+
+private struct GymPerformanceMemoryStrip: View {
+    var snapshot: RoutinePerformanceSnapshot
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                GymPerformanceMemoryChip(symbol: "clock.arrow.circlepath", text: "Last: \(snapshot.lastPerformanceText)")
+                GymPerformanceMemoryChip(symbol: "crown.fill", text: "Best: \(snapshot.bestPerformanceText)")
+            }
+
+            if let suggestion = snapshot.suggestion {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: suggestionIcon(for: suggestion.kind))
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(Color(red: 0.73, green: 1.0, blue: 0.78))
+                    Text(suggestion.detail)
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(.white.opacity(0.76))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 9)
+                .background(Color(red: 0.62, green: 1.0, blue: 0.76).opacity(0.105), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                        .stroke(Color(red: 0.70, green: 1.0, blue: 0.78).opacity(0.16), lineWidth: 1)
+                }
+            }
+        }
+    }
+
+    private func suggestionIcon(for kind: RoutineProgressionSuggestionKind) -> String {
+        switch kind {
+        case .addLoad:
+            "plus.forwardslash.minus"
+        case .repeatLoad:
+            "repeat"
+        case .easeBackIn:
+            "leaf.fill"
+        case .holdForm:
+            "checkmark.seal.fill"
+        }
+    }
+}
+
+private struct GymPerformanceMemoryChip: View {
+    var symbol: String
+    var text: String
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: symbol)
+                .font(.caption2.weight(.black))
+            Text(text)
+                .font(.caption2.weight(.black))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .foregroundStyle(.white.opacity(0.72))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(.white.opacity(0.070), in: Capsule(style: .continuous))
+    }
 }
 
 private struct GymWorkoutSetRow: View {
@@ -409,6 +769,8 @@ private struct GymWorkoutSetRow: View {
     var weightUnit: PulsarWeightUnit
     var exerciseID: UUID
     @ObservedObject var viewModel: GymWorkoutSessionViewModel
+    var isHighlighted: Bool
+    @State private var isShowingEditor = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -417,20 +779,48 @@ private struct GymWorkoutSetRow: View {
                 .foregroundStyle(set.isCompleted ? Color(red: 0.70, green: 1.0, blue: 0.76) : .white.opacity(0.70))
                 .frame(width: 54, alignment: .leading)
 
-            Text("\(set.targetReps) reps")
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                isShowingEditor = true
+            } label: {
+                HStack(spacing: 10) {
+                    Text("\(displayReps) reps")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text("\(set.targetWeight.formattedGymDecimal) \(weightUnit.displayName)")
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(.white.opacity(0.84))
-                .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("\(displayWeight.formattedGymDecimal) \(weightUnit.displayName)")
+                        .font(.subheadline.weight(.bold))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.84))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(.white.opacity(0.42))
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Edit set \(set.setNumber)")
+            .sheet(isPresented: $isShowingEditor) {
+                GymSetEditorSheet(
+                    setNumber: set.setNumber,
+                    reps: displayReps,
+                    weight: displayWeight,
+                    weightUnit: weightUnit
+                ) { reps, weight in
+                    viewModel.updateSetValues(exerciseID: exerciseID, setID: set.id, reps: reps, weight: weight)
+                }
+                .presentationDetents([.height(340)])
+                .presentationDragIndicator(.visible)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Button {
-                UIImpactFeedbackGenerator(style: set.isCompleted ? .light : .medium).impactOccurred()
+                let feedbackStyle: UIImpactFeedbackGenerator.FeedbackStyle = set.isCompleted ? .light : .medium
+                UIImpactFeedbackGenerator(style: feedbackStyle).impactOccurred()
                 withAnimation(.spring(response: 0.28, dampingFraction: 0.76)) {
-                    viewModel.toggleSet(exerciseID: exerciseID, setID: set.id)
+                    _ = viewModel.toggleSet(exerciseID: exerciseID, setID: set.id)
                 }
             } label: {
                 Image(systemName: set.isCompleted ? "checkmark.circle.fill" : "circle")
@@ -444,15 +834,173 @@ private struct GymWorkoutSetRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(set.isCompleted ? Color(red: 0.66, green: 1.0, blue: 0.78).opacity(0.12) : .white.opacity(0.055), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .id(set.id)
+        .background(rowBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(set.isCompleted ? Color(red: 0.70, green: 1.0, blue: 0.76).opacity(0.28) : .white.opacity(0.08), lineWidth: 1)
+                .stroke(rowBorder, lineWidth: isHighlighted ? 1.5 : 1)
+        }
+    }
+
+    private var displayReps: Int {
+        self.set.completedReps ?? self.set.targetReps
+    }
+
+    private var displayWeight: Double {
+        self.set.completedWeight ?? self.set.targetWeight
+    }
+
+    private var rowBackground: Color {
+        if isHighlighted {
+            return Color(red: 0.84, green: 0.78, blue: 1.0).opacity(0.20)
+        }
+        return set.isCompleted ? Color(red: 0.66, green: 1.0, blue: 0.78).opacity(0.12) : .white.opacity(0.055)
+    }
+
+    private var rowBorder: Color {
+        if isHighlighted {
+            return Color(red: 0.84, green: 0.78, blue: 1.0).opacity(0.60)
+        }
+        return set.isCompleted ? Color(red: 0.70, green: 1.0, blue: 0.76).opacity(0.28) : .white.opacity(0.08)
+    }
+}
+
+private struct GymSetEditorSheet: View {
+    var setNumber: Int
+    var reps: Int
+    var weight: Double
+    var weightUnit: PulsarWeightUnit
+    var onSave: (Int, Double) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var draftReps: Int
+    @State private var draftWeight: Double
+
+    init(
+        setNumber: Int,
+        reps: Int,
+        weight: Double,
+        weightUnit: PulsarWeightUnit,
+        onSave: @escaping (Int, Double) -> Void
+    ) {
+        self.setNumber = setNumber
+        self.reps = reps
+        self.weight = weight
+        self.weightUnit = weightUnit
+        self.onSave = onSave
+        _draftReps = State(initialValue: reps)
+        _draftWeight = State(initialValue: weight)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Set \(setNumber)")
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(.white.opacity(0.54))
+                    .textCase(.uppercase)
+
+                Text("Adjust performance")
+                    .font(.system(size: 25, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+            }
+
+            VStack(spacing: 12) {
+                GymSetEditorStepper(
+                    title: "Reps",
+                    value: "\(draftReps)",
+                    onMinus: { draftReps = max(1, draftReps - 1) },
+                    onPlus: { draftReps = min(200, draftReps + 1) }
+                )
+
+                GymSetEditorStepper(
+                    title: "Weight",
+                    value: "\(draftWeight.formattedGymDecimal) \(weightUnit.displayName)",
+                    onMinus: { draftWeight = max(0, draftWeight - weightStep) },
+                    onPlus: { draftWeight += weightStep }
+                )
+            }
+
+            Button {
+                onSave(draftReps, draftWeight)
+                dismiss()
+            } label: {
+                Text("Save Set Values")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 15)
+                    .background(
+                        LinearGradient(
+                            colors: [.white.opacity(0.98), Color(red: 0.74, green: 1.0, blue: 0.78)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        in: Capsule(style: .continuous)
+                    )
+            }
+            .buttonStyle(PulsarGymPressButtonStyle())
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(GymGlassBackground().ignoresSafeArea())
+        .preferredColorScheme(.dark)
+    }
+
+    private var weightStep: Double {
+        weightUnit == .pounds ? 5 : 2.5
+    }
+}
+
+private struct GymSetEditorStepper: View {
+    var title: String
+    var value: String
+    var onMinus: () -> Void
+    var onPlus: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(.white.opacity(0.54))
+                Text(value)
+                    .font(.title3.weight(.black))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+            }
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 8) {
+                Button(action: onMinus) {
+                    Image(systemName: "minus")
+                        .font(.subheadline.weight(.black))
+                        .frame(width: 38, height: 38)
+                        .background(.white.opacity(0.08), in: Circle())
+                }
+
+                Button(action: onPlus) {
+                    Image(systemName: "plus")
+                        .font(.subheadline.weight(.black))
+                        .frame(width: 38, height: 38)
+                        .background(.white.opacity(0.12), in: Circle())
+                }
+            }
+            .foregroundStyle(.white.opacity(0.88))
+            .buttonStyle(.plain)
+        }
+        .padding(14)
+        .background(.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(.white.opacity(0.10), lineWidth: 1)
         }
     }
 }
 
 private struct GymRestTimerCard: View {
+    var title: String
     var remainingSeconds: Int
     var progress: Double
     var onSkip: () -> Void
@@ -465,7 +1013,7 @@ private struct GymRestTimerCard: View {
                     .foregroundStyle(Color(red: 0.84, green: 0.78, blue: 1.0))
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Rest")
+                    Text("\(title) \(remainingSeconds.formattedRestLabel)")
                         .font(.caption.weight(.black))
                         .foregroundStyle(.white.opacity(0.56))
 
@@ -582,11 +1130,14 @@ private struct GymWorkoutSummaryOverlay: View {
                         .font(.system(size: 27, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
 
-                    Text(summary.routineName)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.62))
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
+                    HStack(spacing: 6) {
+                        Text(summary.routineEmoji)
+                        Text(summary.routineName)
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
                 }
 
                 VStack(spacing: 10) {

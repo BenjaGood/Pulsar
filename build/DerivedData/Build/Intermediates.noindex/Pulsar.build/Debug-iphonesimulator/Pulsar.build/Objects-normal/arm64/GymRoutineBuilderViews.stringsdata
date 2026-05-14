@@ -1,0 +1,344 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Fitness/Gym/Views/GymRoutineBuilderViews.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Choose Exercises",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 101
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancel",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 105
+        }
+      },
+      {
+        "comment": "",
+        "key": "Refresh exercise catalog",
+        "location": {
+          "startingColumn": 37,
+          "startingLine": 122
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 194
+        }
+      },
+      {
+        "comment": "",
+        "key": "%@, %@",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 261
+        }
+      },
+      {
+        "comment": "",
+        "key": "Search exercises",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 415
+        }
+      },
+      {
+        "comment": "",
+        "key": "Clear search",
+        "location": {
+          "startingColumn": 37,
+          "startingLine": 435
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 491
+        }
+      },
+      {
+        "comment": "",
+        "key": "Edit Routine",
+        "location": {
+          "startingColumn": 42,
+          "startingLine": 561
+        }
+      },
+      {
+        "comment": "",
+        "key": "Create Routine",
+        "location": {
+          "startingColumn": 59,
+          "startingLine": 561
+        }
+      },
+      {
+        "comment": "",
+        "key": "Done",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 566
+        }
+      },
+      {
+        "comment": "",
+        "key": "Routine Identity",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 662
+        }
+      },
+      {
+        "comment": "",
+        "key": "Choose routine icon",
+        "location": {
+          "startingColumn": 37,
+          "startingLine": 681
+        }
+      },
+      {
+        "comment": "",
+        "key": "Gym Routine",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 683
+        }
+      },
+      {
+        "comment": "",
+        "key": "Planning",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 701
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 705
+        }
+      },
+      {
+        "comment": "",
+        "key": "Saved",
+        "location": {
+          "startingColumn": 36,
+          "startingLine": 780
+        }
+      },
+      {
+        "comment": "",
+        "key": "Save Routine",
+        "location": {
+          "startingColumn": 46,
+          "startingLine": 780
+        }
+      },
+      {
+        "comment": "",
+        "key": "Start Workout",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 801
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 840
+        }
+      },
+      {
+        "comment": "",
+        "key": "Create superset",
+        "location": {
+          "startingColumn": 60,
+          "startingLine": 887
+        }
+      },
+      {
+        "comment": "",
+        "key": "Edit superset",
+        "location": {
+          "startingColumn": 80,
+          "startingLine": 887
+        }
+      },
+      {
+        "comment": "",
+        "key": "Remove %@",
+        "location": {
+          "startingColumn": 37,
+          "startingLine": 897
+        }
+      },
+      {
+        "comment": "",
+        "key": "Collapse exercise plan",
+        "location": {
+          "startingColumn": 54,
+          "startingLine": 909
+        }
+      },
+      {
+        "comment": "",
+        "key": "Expand exercise plan",
+        "location": {
+          "startingColumn": 81,
+          "startingLine": 909
+        }
+      },
+      {
+        "comment": "",
+        "key": "Rest between sets",
+        "location": {
+          "startingColumn": 53,
+          "startingLine": 966
+        }
+      },
+      {
+        "comment": "",
+        "key": "Superset rest",
+        "location": {
+          "startingColumn": 75,
+          "startingLine": 966
+        }
+      },
+      {
+        "comment": "",
+        "key": "Notes",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 1007
+        }
+      },
+      {
+        "comment": "",
+        "key": "Add coaching notes",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 1012
+        }
+      },
+      {
+        "comment": "",
+        "key": "Pair with",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 1106
+        }
+      },
+      {
+        "comment": "",
+        "key": "Create Superset",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 1153
+        }
+      },
+      {
+        "comment": "",
+        "key": "Done",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 1190
+        }
+      },
+      {
+        "comment": "",
+        "key": "Done",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 1253
+        }
+      },
+      {
+        "comment": "",
+        "key": "Remove from Superset",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 1292
+        }
+      },
+      {
+        "comment": "",
+        "key": "Delete Superset",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 1306
+        }
+      },
+      {
+        "comment": "",
+        "key": "Superset rest",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 1329
+        }
+      },
+      {
+        "comment": "",
+        "key": "Done",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 1558
+        }
+      },
+      {
+        "comment": "",
+        "key": "Routine Icon",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 1549
+        }
+      },
+      {
+        "comment": "",
+        "key": "Choose an emoji that makes this plan instantly recognizable.",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 1552
+        }
+      },
+      {
+        "comment": "",
+        "key": "Custom emoji",
+        "location": {
+          "startingColumn": 35,
+          "startingLine": 1593
+        }
+      },
+      {
+        "comment": "",
+        "key": "Use",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 1615
+        }
+      },
+      {
+        "comment": "",
+        "key": "Done",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 1638
+        }
+      }
+    ]
+  },
+  "version": 1
+}

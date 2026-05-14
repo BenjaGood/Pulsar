@@ -1,0 +1,96 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Home/RecoveryDetails/RecoveryDetailsView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Recovery",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 84
+        }
+      },
+      {
+        "comment": "",
+        "key": "Wellness observations only. Pulsar does not diagnose medical conditions.",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 125
+        }
+      },
+      {
+        "comment": "",
+        "key": "Recovery Balance",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 117
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 46,
+          "startingLine": 151
+        }
+      },
+      {
+        "comment": "",
+        "key": "--",
+        "location": {
+          "startingColumn": 67,
+          "startingLine": 151
+        }
+      },
+      {
+        "comment": "",
+        "key": "7-Day Trend",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 195
+        }
+      },
+      {
+        "comment": "",
+        "key": "Based on available HealthKit data",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 197
+        }
+      },
+      {
+        "comment": "",
+        "key": "Components",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 342
+        }
+      },
+      {
+        "comment": "",
+        "key": "Insights",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 380
+        }
+      },
+      {
+        "comment": "",
+        "key": "Data Quality",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 414
+        }
+      },
+      {
+        "comment": "",
+        "key": "Loading recovery details",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 437
+        }
+      }
+    ]
+  },
+  "version": 1
+}

@@ -1,0 +1,192 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Home/StrainDetails/StrainDetailsView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Current Strain",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 81
+        }
+      },
+      {
+        "comment": "",
+        "key": "Current strain %@, target range %@",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 221
+        }
+      },
+      {
+        "comment": "",
+        "key": "Heart Load",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 235
+        }
+      },
+      {
+        "comment": "",
+        "key": "Heart rate and workout intensity across the day",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 237
+        }
+      },
+      {
+        "comment": "",
+        "key": "Heart load timeline",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 316
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld bpm",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 380
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 502
+        }
+      },
+      {
+        "comment": "",
+        "key": "Movement recorded without workout heart rate",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 570
+        }
+      },
+      {
+        "comment": "",
+        "key": "Workouts",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 668
+        }
+      },
+      {
+        "comment": "",
+        "key": "%@ · %@",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 684
+        }
+      },
+      {
+        "comment": "",
+        "key": "Heart Signal",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 715
+        }
+      },
+      {
+        "comment": "",
+        "key": "Training Zones",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 724
+        }
+      },
+      {
+        "comment": "",
+        "key": "--",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 748
+        }
+      },
+      {
+        "comment": "",
+        "key": "bpm",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 751
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 748
+        }
+      },
+      {
+        "comment": "",
+        "key": "--",
+        "location": {
+          "startingColumn": 58,
+          "startingLine": 748
+        }
+      },
+      {
+        "comment": "",
+        "key": "Movement",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 778
+        }
+      },
+      {
+        "comment": "",
+        "key": "%@ of your step goal",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 799
+        }
+      },
+      {
+        "comment": "",
+        "key": "Not enough step data",
+        "location": {
+          "startingColumn": 104,
+          "startingLine": 799
+        }
+      },
+      {
+        "comment": "",
+        "key": "Goal %@",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 786
+        }
+      },
+      {
+        "comment": "",
+        "key": "Insights",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 814
+        }
+      },
+      {
+        "comment": "",
+        "key": "Data Quality",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 855
+        }
+      },
+      {
+        "comment": "",
+        "key": "Loading strain details",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 901
+        }
+      }
+    ]
+  },
+  "version": 1
+}

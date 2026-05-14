@@ -1,0 +1,72 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Fitness/Views/WeeklyMuscleMatrixView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Active",
+        "location": {
+          "startingColumn": 53,
+          "startingLine": 55
+        }
+      },
+      {
+        "comment": "",
+        "key": "Archived",
+        "location": {
+          "startingColumn": 64,
+          "startingLine": 55
+        }
+      },
+      {
+        "comment": "",
+        "key": "Area",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 220
+        }
+      },
+      {
+        "comment": "",
+        "key": "%@, %@, %@",
+        "location": {
+          "startingColumn": 37,
+          "startingLine": 293
+        }
+      },
+      {
+        "comment": "",
+        "key": "Intensity legend, low, medium, high",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 419
+        }
+      },
+      {
+        "comment": "",
+        "key": "Intensity",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 400
+        }
+      },
+      {
+        "comment": "",
+        "key": "Exercises",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 650
+        }
+      },
+      {
+        "comment": "",
+        "key": "No exercises logged for this selection.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 655
+        }
+      }
+    ]
+  },
+  "version": 1
+}

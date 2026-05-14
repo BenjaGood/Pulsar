@@ -1,0 +1,80 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/Workouts/WatchWorkoutPickerView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Open workout picker",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 102
+        }
+      },
+      {
+        "comment": "",
+        "key": "",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 131
+        }
+      },
+      {
+        "comment": "",
+        "key": "Close workout picker",
+        "location": {
+          "startingColumn": 41,
+          "startingLine": 143
+        }
+      },
+      {
+        "comment": "",
+        "key": "Choose training",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 183
+        }
+      },
+      {
+        "comment": "",
+        "key": "Add a workout or jump into Run or Walk.",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 186
+        }
+      },
+      {
+        "comment": "",
+        "key": "%@, %@",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 300
+        }
+      },
+      {
+        "comment": "",
+        "key": "Dedicated recording for this workout is coming soon. Running and Walking are ready today.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 342
+        }
+      },
+      {
+        "comment": "",
+        "key": "Back",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 348
+        }
+      },
+      {
+        "comment": "",
+        "key": "Workout mode",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 337
+        }
+      }
+    ]
+  },
+  "version": 1
+}

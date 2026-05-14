@@ -7,6 +7,7 @@ import SwiftUI
 
 struct StressDetailView: View {
     var summary: StressSummary
+    var selectedDate: Date? = nil
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -37,6 +38,9 @@ struct StressDetailView: View {
                     Text("Stress")
                         .font(.largeTitle.weight(.bold))
                         .foregroundStyle(primaryText)
+                    Text(dateSubtitle)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(secondaryText)
                     Text("Estimated from available HealthKit signals. Not a medical diagnosis.")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(secondaryText)
@@ -207,6 +211,14 @@ struct StressDetailView: View {
         ]
     }
 
+    private var dateSubtitle: String {
+        let date = selectedDate ?? summary.date ?? summary.queryStart ?? Date()
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return "Today" }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        return date.formatted(.dateTime.weekday(.wide).month(.wide).day())
+    }
+
     private var heartRateText: String {
         summary.lastHeartRate.map { "\(Int($0.rounded())) bpm" } ?? "No data"
     }
@@ -344,7 +356,7 @@ private struct StressSnapshotTile: View {
 
 #Preview("Stress Detail - Full Day") {
     NavigationStack {
-        StressDetailView(summary: MockHealthData.stressDetailSummary)
+        StressDetailView(summary: MockHealthData.stressDetailSummary, selectedDate: MockHealthData.stressDetailSummary.date)
     }
 }
 

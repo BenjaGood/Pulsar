@@ -123,7 +123,14 @@ private extension SleepSummary {
             continuity: continuity,
             targetSleepHours: targetSleepHours,
             sourceNames: sourceBadges.map(\.displayName),
-            computedAt: lastUpdated ?? Date()
+            computedAt: lastUpdated ?? Date(),
+            stageIntervals: intervals.map {
+                PulsarSleepStageSyncInterval(
+                    stage: $0.stage.rawValue,
+                    start: $0.startDate,
+                    end: $0.endDate
+                )
+            }
         )
         return metric.isValid ? metric : nil
     }
@@ -145,6 +152,7 @@ private extension SleepSummary {
         copy.regularity = syncMetric.regularity
         copy.continuity = syncMetric.continuity
         copy.stageBreakdown = stageBreakdown(from: syncMetric)
+        copy.intervals = stageIntervals(from: syncMetric)
         copy.sleepStart = syncMetric.sleepStart
         copy.wakeTime = syncMetric.sleepEnd
         copy.awakenings = syncMetric.awakenings
@@ -155,6 +163,60 @@ private extension SleepSummary {
         copy.sourceBadges = mergeSources(existing: copy.sourceBadges, names: syncMetric.sourceNames, sourceDevice: sourceDevice)
         copy.notes = mergeNotes(copy.notes, sourceDevice: sourceDevice, title: "Synced sleep from \(sourceDevice == .appleWatch ? "Apple Watch" : "iPhone") while local HealthKit data refreshes.")
         return copy
+    }
+
+    func stageIntervals(from metric: PulsarSleepSyncMetric) -> [SleepStageInterval] {
+        let syncedIntervals = metric.stageIntervals?
+            .compactMap { interval -> SleepStageInterval? in
+                guard let stage = SleepStage(rawValue: interval.stage),
+                      interval.start < interval.end else { return nil }
+                return SleepStageInterval(stage: stage, startDate: interval.start, endDate: interval.end)
+            }
+            .sorted { $0.startDate < $1.startDate } ?? []
+
+        if !syncedIntervals.isEmpty {
+            return syncedIntervals
+        }
+
+        return synthesizedStageIntervals(from: metric)
+    }
+
+    func synthesizedStageIntervals(from metric: PulsarSleepSyncMetric) -> [SleepStageInterval] {
+        let sleepDuration = max(0, metric.totalSleepMinutes)
+        let stageMinutes: [(SleepStage, Double)] = [
+            (.awake, max(0, metric.awakeMinutes * 0.35)),
+            (.core, max(0, metric.coreMinutes * 0.45)),
+            (.deep, max(0, metric.deepMinutes)),
+            (.core, max(0, metric.coreMinutes * 0.55)),
+            (.rem, max(0, metric.remMinutes * 0.55)),
+            (.asleepUnspecified, max(0, metric.asleepUnspecifiedMinutes)),
+            (.rem, max(0, metric.remMinutes * 0.45)),
+            (.awake, max(0, metric.awakeMinutes * 0.65))
+        ]
+        let positiveStages = stageMinutes.filter { $0.1 > 0 }
+        let fallbackStages: [(SleepStage, Double)] = positiveStages.isEmpty && sleepDuration > 0
+            ? [(.asleepUnspecified, sleepDuration)]
+            : positiveStages
+
+        let totalMinutes = fallbackStages.reduce(0) { $0 + $1.1 }
+        let availableSeconds = max(60, metric.sleepEnd.timeIntervalSince(metric.sleepStart))
+        let scale = totalMinutes > 0 ? availableSeconds / (totalMinutes * 60) : 1
+        var cursor = metric.sleepStart
+        var intervals: [SleepStageInterval] = []
+
+        for (stage, minutes) in fallbackStages {
+            let duration = max(30, minutes * 60 * scale)
+            let end = min(metric.sleepEnd, cursor.addingTimeInterval(duration))
+            guard end > cursor else { continue }
+            intervals.append(SleepStageInterval(stage: stage, startDate: cursor, endDate: end))
+            cursor = end
+        }
+
+        if intervals.isEmpty, metric.sleepStart < metric.sleepEnd {
+            intervals.append(SleepStageInterval(stage: .asleepUnspecified, startDate: metric.sleepStart, endDate: metric.sleepEnd))
+        }
+
+        return intervals
     }
 
     func stageMinutes(_ stage: SleepStage) -> Double {

@@ -1,0 +1,72 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Home/SleepDetails/SleepDetailsView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Sleep",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 74
+        }
+      },
+      {
+        "comment": "",
+        "key": "Sleep Flow",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 115
+        }
+      },
+      {
+        "comment": "",
+        "key": "Normalized HealthKit stages",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 117
+        }
+      },
+      {
+        "comment": "",
+        "key": "Sleep stage timeline",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 158
+        }
+      },
+      {
+        "comment": "",
+        "key": "Stage Breakdown",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 311
+        }
+      },
+      {
+        "comment": "",
+        "key": "Insights",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 345
+        }
+      },
+      {
+        "comment": "",
+        "key": "Data Quality",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 387
+        }
+      },
+      {
+        "comment": "",
+        "key": "Loading sleep details",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 410
+        }
+      }
+    ]
+  },
+  "version": 1
+}

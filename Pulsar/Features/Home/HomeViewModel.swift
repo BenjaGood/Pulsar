@@ -536,11 +536,27 @@ final class HomeViewModel: ObservableObject {
 
         var sleep = SleepSummary.missing
         if let sleepScore = record.sleepScore {
+            let sleepMinutes = Double(record.sleepMinutes ?? 0)
+            let sleepWindow = SleepWindowResolver.window(forWakeUpDate: normalizedDay, calendar: calendar)
+            let inferredWakeTime = sleepWindow.end
+            let inferredSleepStart = sleepMinutes > 0 ? max(sleepWindow.start, inferredWakeTime.addingTimeInterval(-sleepMinutes * 60)) : nil
             sleep.score = sleepScore
-            sleep.totalSleepMinutes = Double(record.sleepMinutes ?? 0)
+            sleep.totalSleepMinutes = sleepMinutes
+            sleep.timeInBedMinutes = sleepMinutes
+            sleep.sleepEfficiency = sleepMinutes > 0 ? 1 : 0
             sleep.confidence = record.confidence
             sleep.wakeUpDate = normalizedDay
+            sleep.stageBreakdown = sleepMinutes > 0 ? [StageMetric(stage: .asleepUnspecified, minutes: sleepMinutes, percentOfSleep: 1)] : []
+            sleep.intervals = inferredSleepStart.map {
+                [SleepStageInterval(stage: .asleepUnspecified, startDate: $0, endDate: inferredWakeTime)]
+            } ?? []
+            sleep.sleepStart = inferredSleepStart
+            sleep.wakeTime = sleepMinutes > 0 ? inferredWakeTime : nil
+            sleep.analyzedSampleCount = sleepMinutes > 0 ? 1 : 0
+            sleep.queryStart = sleepWindow.start
+            sleep.queryEnd = sleepWindow.end
             sleep.lastUpdated = record.syncedAt
+            sleep.notes = ["Saved daily sleep history. Stage-level detail refreshes from HealthKit when available."]
         }
 
         var recovery = RecoverySummary.missing

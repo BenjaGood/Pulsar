@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "EDF329C92FA7FABC00359606"
-               BuildableName = "Pulsar Watch App Watch App.app"
+               BuildableName = "Pulsar Watch App.app"
                BlueprintName = "Pulsar Watch App Watch App"
                ReferencedContainer = "container:Pulsar.xcodeproj">
             </BuildableReference>
@@ -60,7 +60,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "EDF329C92FA7FABC00359606"
-            BuildableName = "Pulsar Watch App Watch App.app"
+            BuildableName = "Pulsar Watch App.app"
             BlueprintName = "Pulsar Watch App Watch App"
             ReferencedContainer = "container:Pulsar.xcodeproj">
          </BuildableReference>
@@ -77,7 +77,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "EDF329C92FA7FABC00359606"
-            BuildableName = "Pulsar Watch App Watch App.app"
+            BuildableName = "Pulsar Watch App.app"
             BlueprintName = "Pulsar Watch App Watch App"
             ReferencedContainer = "container:Pulsar.xcodeproj">
          </BuildableReference>

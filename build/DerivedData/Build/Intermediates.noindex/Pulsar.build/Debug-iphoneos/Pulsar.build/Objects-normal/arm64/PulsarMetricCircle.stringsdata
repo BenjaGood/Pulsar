@@ -1,0 +1,16 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Home/Views/PulsarMetricCircle.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "%@ score %@%@",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 162
+        }
+      }
+    ]
+  },
+  "version": 1
+}

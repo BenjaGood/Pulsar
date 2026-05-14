@@ -7,16 +7,16 @@ import Foundation
 
 struct WeeklyMuscleTrainingSummary: Hashable {
     var loadByGroup: [PulsarMuscleGroup: Double]
-    var loadByBodyMapRegion: [BodyZone: Double]
-    var exercisesByBodyMapRegion: [BodyZone: [String]]
+    var loadByMatrixGroup: [MuscleMatrixGroup: Double]
+    var exercisesByMatrixGroup: [MuscleMatrixGroup: [String]]
     var completedSets: Int
     var totalSets: Int
     var completedExercises: Int
 
     static let empty = WeeklyMuscleTrainingSummary(
         loadByGroup: [:],
-        loadByBodyMapRegion: [:],
-        exercisesByBodyMapRegion: [:],
+        loadByMatrixGroup: [:],
+        exercisesByMatrixGroup: [:],
         completedSets: 0,
         totalSets: 0,
         completedExercises: 0
@@ -55,8 +55,8 @@ enum MuscleTrainingAnalyticsService {
 enum WeeklyMuscleLoadCalculator {
     static func calculate(sessions: [PulsarGymWorkoutSession]) -> WeeklyMuscleTrainingSummary {
         var loadByGroup: [PulsarMuscleGroup: Double] = [:]
-        var loadByBodyMapRegion: [BodyZone: Double] = [:]
-        var exercisesByRegion: [BodyZone: Set<String>] = [:]
+        var loadByMatrixGroup: [MuscleMatrixGroup: Double] = [:]
+        var exercisesByMatrixGroup: [MuscleMatrixGroup: Set<String>] = [:]
         var completedSets = 0
         var totalSets = 0
         var completedExercises = 0
@@ -76,8 +76,8 @@ enum WeeklyMuscleLoadCalculator {
                     fallbackGroup: exercise.primaryMuscleGroup,
                     score: setScore,
                     loadByGroup: &loadByGroup,
-                    loadByBodyMapRegion: &loadByBodyMapRegion,
-                    exercisesByRegion: &exercisesByRegion
+                    loadByMatrixGroup: &loadByMatrixGroup,
+                    exercisesByMatrixGroup: &exercisesByMatrixGroup
                 )
 
                 if !exercise.secondaryMuscles.isEmpty {
@@ -87,8 +87,8 @@ enum WeeklyMuscleLoadCalculator {
                         fallbackGroup: nil,
                         score: setScore * 0.5,
                         loadByGroup: &loadByGroup,
-                        loadByBodyMapRegion: &loadByBodyMapRegion,
-                        exercisesByRegion: &exercisesByRegion
+                        loadByMatrixGroup: &loadByMatrixGroup,
+                        exercisesByMatrixGroup: &exercisesByMatrixGroup
                     )
                 }
             }
@@ -96,8 +96,8 @@ enum WeeklyMuscleLoadCalculator {
 
         return WeeklyMuscleTrainingSummary(
             loadByGroup: loadByGroup,
-            loadByBodyMapRegion: loadByBodyMapRegion,
-            exercisesByBodyMapRegion: exercisesByRegion.mapValues { Array($0).sorted() },
+            loadByMatrixGroup: loadByMatrixGroup,
+            exercisesByMatrixGroup: exercisesByMatrixGroup.mapValues { Array($0).sorted() },
             completedSets: completedSets,
             totalSets: totalSets,
             completedExercises: completedExercises
@@ -136,34 +136,34 @@ enum WeeklyMuscleLoadCalculator {
         fallbackGroup: PulsarMuscleGroup?,
         score: Double,
         loadByGroup: inout [PulsarMuscleGroup: Double],
-        loadByBodyMapRegion: inout [BodyZone: Double],
-        exercisesByRegion: inout [BodyZone: Set<String>]
+        loadByMatrixGroup: inout [MuscleMatrixGroup: Double],
+        exercisesByMatrixGroup: inout [MuscleMatrixGroup: Set<String>]
     ) {
         guard score > 0 else { return }
 
         if muscles.isEmpty, let fallbackGroup {
             loadByGroup[fallbackGroup, default: 0] += score
-            for zone in WgerMuscleToPulsarBodyMapRegionMapper.zones(for: fallbackGroup) {
-                loadByBodyMapRegion[zone, default: 0] += score
-                exercisesByRegion[zone, default: []].insert(exerciseName)
+            for group in PulsarMuscleMatrixGroupMapper.groups(for: fallbackGroup) {
+                loadByMatrixGroup[group, default: 0] += score
+                exercisesByMatrixGroup[group, default: []].insert(exerciseName)
             }
             return
         }
 
         for muscle in muscles {
             loadByGroup[muscle.group, default: 0] += score
-            let zones = WgerMuscleToPulsarBodyMapRegionMapper.zones(for: muscle)
-            for zone in zones {
-                loadByBodyMapRegion[zone, default: 0] += score
-                exercisesByRegion[zone, default: []].insert(exerciseName)
+            let groups = PulsarMuscleMatrixGroupMapper.groups(for: muscle)
+            for group in groups {
+                loadByMatrixGroup[group, default: 0] += score
+                exercisesByMatrixGroup[group, default: []].insert(exerciseName)
             }
         }
     }
 }
 
-enum WgerMuscleToPulsarBodyMapRegionMapper {
-    static func zones(for muscle: PulsarMuscle) -> [BodyZone] {
-        if let wgerID = muscle.wgerID, let mapped = zonesByWgerID[wgerID] {
+enum PulsarMuscleMatrixGroupMapper {
+    static func groups(for muscle: PulsarMuscle) -> [MuscleMatrixGroup] {
+        if let wgerID = muscle.wgerID, let mapped = legacyGroupsByWgerID[wgerID] {
             return mapped
         }
 
@@ -172,112 +172,115 @@ enum WgerMuscleToPulsarBodyMapRegionMapper {
             .lowercased()
 
         if name.contains("pector") || name.contains("chest") || name.contains("serratus") {
-            return BodyZone.chest.expandedZones
+            return [.chest]
         }
         if name.contains("latissimus") || name.contains("lat ") || name.contains("lats") {
-            return [.latsLeft, .latsRight]
+            return [.back]
         }
-        if name.contains("trapezius") || name.contains("trap") {
-            return [.upperBack]
-        }
-        if name.contains("deltoid") || name.contains("shoulder") {
-            return BodyZone.shoulders.expandedZones
-        }
-        if name.contains("biceps") || name.contains("brachialis") {
-            return BodyZone.biceps.expandedZones
-        }
-        if name.contains("triceps") {
-            return BodyZone.triceps.expandedZones
-        }
-        if name.contains("forearm") || name.contains("brachioradialis") {
-            return [.forearmsLeft, .forearmsRight]
-        }
-        if name.contains("oblique") {
-            return [.obliquesLeft, .obliquesRight]
-        }
-        if name.contains("abdom") || name.contains("core") {
-            return [.abs]
-        }
-        if name.contains("glute") || name.contains("abductor") {
-            return BodyZone.glutes.expandedZones
-        }
-        if name.contains("quadriceps") || name.contains("quad") {
-            return BodyZone.quads.expandedZones
-        }
-        if name.contains("hamstring") || name.contains("femoris") {
-            return BodyZone.hamstrings.expandedZones
-        }
-        if name.contains("gastrocnemius") || name.contains("soleus") || name.contains("calf") {
-            return BodyZone.calves.expandedZones
-        }
-        if name.contains("adductor") {
-            return [.adductorsLeft, .adductorsRight]
+        if name.contains("middle back") {
+            return [.back]
         }
         if name.contains("lower back") || name.contains("erector") || name.contains("lumbar") {
-            return [.lowerBack]
+            return [.back]
         }
-
-        return zones(for: muscle.group)
+        if name.contains("trapezius") || name.contains("trap") {
+            return [.back, .shoulders]
+        }
+        if name.contains("neck") {
+            return [.shoulders]
+        }
+        if name.contains("deltoid") || name.contains("shoulder") {
+            return [.shoulders]
+        }
+        if name.contains("biceps") || name.contains("brachialis") {
+            return [.biceps]
+        }
+        if name.contains("triceps") {
+            return [.triceps]
+        }
+        if name.contains("forearm") || name.contains("brachioradialis") {
+            return [.biceps]
+        }
+        if name.contains("oblique") {
+            return [.core]
+        }
+        if name.contains("abdom") || name.contains("core") {
+            return [.core]
+        }
+        if name.contains("glute") || name.contains("abductor") {
+            return [.glutes]
+        }
+        if name.contains("quadriceps") || name.contains("quad") {
+            return [.quads]
+        }
+        if name.contains("hamstring") || name.contains("femoris") {
+            return [.hamstrings]
+        }
+        if name.contains("gastrocnemius") || name.contains("soleus") || name.contains("calf") {
+            return [.calves]
+        }
+        if name.contains("adductor") {
+            return [.glutes, .quads]
+        }
+        return groups(for: muscle.group)
     }
 
-    static func zones(for group: PulsarMuscleGroup) -> [BodyZone] {
+    static func groups(for group: PulsarMuscleGroup) -> [MuscleMatrixGroup] {
         switch group {
         case .chest:
-            return BodyZone.chest.expandedZones
-        case .back:
-            return [.upperBack, .latsLeft, .latsRight, .lowerBack]
+            return [.chest]
+        case .back, .lats, .upperMiddleBack, .lowerBack:
+            return [.back]
         case .shoulders:
-            return BodyZone.shoulders.expandedZones
+            return [.shoulders]
+        case .traps:
+            return [.back, .shoulders]
+        case .neckTraps:
+            return [.shoulders]
         case .biceps:
-            return BodyZone.biceps.expandedZones
+            return [.biceps]
         case .triceps:
-            return BodyZone.triceps.expandedZones
+            return [.triceps]
         case .forearms:
-            return [.forearmsLeft, .forearmsRight]
+            return [.biceps]
         case .absCore:
-            return BodyZone.core.expandedZones
+            return [.core]
         case .glutes:
-            return BodyZone.glutes.expandedZones
+            return [.glutes]
         case .quadriceps:
-            return BodyZone.quads.expandedZones
+            return [.quads]
         case .hamstrings:
-            return BodyZone.hamstrings.expandedZones
+            return [.hamstrings]
         case .calves:
-            return BodyZone.calves.expandedZones
+            return [.calves]
         case .adductors:
-            return [.adductorsLeft, .adductorsRight]
+            return [.quads, .glutes]
         case .abductors:
-            return BodyZone.glutes.expandedZones
+            return [.glutes]
         case .fullBody:
-            return BodyZone.chest.expandedZones
-                + [.upperBack, .latsLeft, .latsRight]
-                + BodyZone.shoulders.expandedZones
-                + BodyZone.core.expandedZones
-                + BodyZone.glutes.expandedZones
-                + BodyZone.quads.expandedZones
-                + BodyZone.hamstrings.expandedZones
+            return MuscleMatrixGroup.allCases.filter { $0.category == .muscle }
         case .cardioConditioning:
-            return [.heart]
+            return []
         case .other:
             return []
         }
     }
 
-    private static let zonesByWgerID: [Int: [BodyZone]] = [
-        1: BodyZone.biceps.expandedZones,
-        2: BodyZone.shoulders.expandedZones,
-        3: BodyZone.chest.expandedZones + [.obliquesLeft, .obliquesRight],
-        4: BodyZone.chest.expandedZones,
-        5: [.abs],
-        6: BodyZone.calves.expandedZones,
-        7: [.obliquesLeft, .obliquesRight],
-        8: BodyZone.glutes.expandedZones,
-        9: [.upperBack],
-        10: BodyZone.quads.expandedZones,
-        11: BodyZone.hamstrings.expandedZones,
-        12: [.latsLeft, .latsRight],
-        13: BodyZone.biceps.expandedZones,
-        14: BodyZone.triceps.expandedZones,
-        15: BodyZone.calves.expandedZones
+    private static let legacyGroupsByWgerID: [Int: [MuscleMatrixGroup]] = [
+        1: [.biceps],
+        2: [.shoulders],
+        3: [.chest, .core],
+        4: [.chest],
+        5: [.core],
+        6: [.calves],
+        7: [.core],
+        8: [.glutes],
+        9: [.back, .shoulders],
+        10: [.quads],
+        11: [.hamstrings],
+        12: [.back],
+        13: [.biceps],
+        14: [.triceps],
+        15: [.calves]
     ]
 }

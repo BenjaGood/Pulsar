@@ -48,6 +48,7 @@ final class GymHealthKitWorkoutManager: NSObject, ObservableObject {
 
     func startWorkout(
         routineName: String,
+        workoutKind: PulsarGymWorkoutKind,
         routineId: UUID,
         sessionId: UUID,
         startedAt: Date
@@ -75,18 +76,19 @@ final class GymHealthKitWorkoutManager: NSObject, ObservableObject {
             session.startActivity(with: startedAt)
             try await builder.beginCollection(at: startedAt)
             addMetadata(
-                [
-                    "PulsarWorkoutKind": "Gym",
-                    "PulsarRoutineName": routineName,
-                    "PulsarRoutineID": routineId.uuidString,
-                    "PulsarSessionID": sessionId.uuidString
-                ],
+                Self.metadata(
+                    routineName: routineName,
+                    workoutKind: workoutKind,
+                    routineId: routineId,
+                    sessionId: sessionId,
+                    startedFrom: .iPhone
+                ),
                 to: builder
             )
-            await wakeCompanionWatchIfPossible(configuration: configuration)
 
             isHealthKitEnabled = true
             statusMessage = nil
+            PulsarSyncDebugLogger.log("Gym HealthKit start selectedType=\(workoutKind.rawValue) hkType=\(configuration.activityType.rawValue) session=\(sessionId.uuidString) startedFrom=iPhone")
             return true
         } catch {
             isHealthKitEnabled = false
@@ -196,7 +198,9 @@ final class GymHealthKitWorkoutManager: NSObject, ObservableObject {
 
     private func addMetadata(_ metadata: [String: Any], to builder: HKLiveWorkoutBuilder) {
         builder.addMetadata(metadata) { success, error in
-            if !success, let error {
+            if success {
+                PulsarSyncDebugLogger.log("Gym HealthKit metadata added session=\(metadata[PulsarWorkoutMetadata.sessionIdKey] as? String ?? "none") type=\(metadata[PulsarWorkoutMetadata.workoutTypeKey] as? String ?? "unknown") startedFrom=\(metadata[PulsarWorkoutMetadata.startedFromKey] as? String ?? "unknown")")
+            } else if let error {
                 PulsarSyncDebugLogger.log("Gym HealthKit metadata failed: \(error.localizedDescription)")
             }
         }
@@ -226,14 +230,6 @@ final class GymHealthKitWorkoutManager: NSObject, ObservableObject {
         try await builder.addSamples([sample])
     }
 
-    private func wakeCompanionWatchIfPossible(configuration: HKWorkoutConfiguration) async {
-        do {
-            try await healthStore.startWatchApp(toHandle: configuration)
-        } catch {
-            PulsarSyncDebugLogger.log("Gym Apple Watch wake failed: \(error.localizedDescription)")
-        }
-    }
-
     private func currentResult(statusMessage: String?) -> GymHealthKitWorkoutResult {
         GymHealthKitWorkoutResult(
             workoutUUID: nil,
@@ -257,6 +253,28 @@ final class GymHealthKitWorkoutManager: NSObject, ObservableObject {
         configuration.locationType = .indoor
         return configuration
     }()
+
+    static func metadata(
+        routineName: String,
+        workoutKind: PulsarGymWorkoutKind,
+        routineId: UUID,
+        sessionId: UUID,
+        startedFrom: PulsarWorkoutStartedFrom
+    ) -> [String: Any] {
+        let displayName = workoutKind == .freeWorkout ? workoutKind.displayName : routineName
+        var metadata = PulsarWorkoutMetadata.base(
+            sessionId: sessionId,
+            workoutType: workoutKind.rawValue,
+            startedFrom: startedFrom
+        )
+        metadata["PulsarWorkoutCategory"] = workoutKind.categoryName
+        metadata["PulsarWorkoutKind"] = workoutKind.rawValue
+        metadata["PulsarWorkoutDisplayName"] = displayName
+        metadata["PulsarRoutineName"] = routineName
+        metadata["PulsarRoutineID"] = routineId.uuidString
+        metadata[PulsarWorkoutMetadata.legacySessionIdKey] = sessionId.uuidString
+        return metadata
+    }
 
     private static var healthShareTypes: Set<HKSampleType> {
         var types: Set<HKSampleType> = [HKObjectType.workoutType()]

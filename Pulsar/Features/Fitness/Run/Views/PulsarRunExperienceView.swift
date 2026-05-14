@@ -7,6 +7,8 @@ import SwiftUI
 
 struct PulsarRunExperienceView: View {
     @ObservedObject var coordinator: PulsarRunCoordinator
+    var workoutKind: PulsarOutdoorWorkoutKind = .running
+    var onMinimize: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -21,12 +23,13 @@ struct PulsarRunExperienceView: View {
                         coordinator.snapshot.phase == .paused ||
                         coordinator.snapshot.phase == .finishing ||
                         coordinator.snapshot.phase == .connectingToWatch {
-                PulsarLiveRunView(coordinator: coordinator) {
+                PulsarLiveRunView(coordinator: coordinator, workoutKind: workoutKind) {
+                    onMinimize?()
                     dismiss()
                 }
                 .transition(.opacity)
             } else {
-                PulsarRunSetupView(coordinator: coordinator) {
+                PulsarRunSetupView(coordinator: coordinator, workoutKind: workoutKind) {
                     dismiss()
                 }
                 .transition(.opacity)

@@ -8,14 +8,15 @@ import UIKit
 
 struct HomeView: View {
     @ObservedObject var viewModel: HomeViewModel
+    @StateObject private var measurementSourceManager = MeasurementSourceManager()
     @State private var isShowingProfile = false
     @State private var isShowingCalendar = false
+    @State private var isShowingMeasurementSource = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    header
                     if viewModel.healthKitStatus != "HealthKit connected" {
                         HealthKitStatusBanner(message: viewModel.healthKitStatus)
                     }
@@ -24,10 +25,15 @@ struct HomeView: View {
                     healthMonitorSection
                 }
                 .padding(.horizontal, 18)
+                .padding(.top, 12)
                 .padding(.bottom, 28)
             }
+            .pulsarBottomChromeScrollTracking()
             .background(PulsarBackground())
             .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                pinnedHeader
+            }
             .sheet(isPresented: $isShowingProfile) {
                 PulsarSettingsView(store: viewModel.profileStore) {
                     viewModel.refreshProfileFromStore()
@@ -40,21 +46,37 @@ struct HomeView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
             }
-            .refreshable { await viewModel.load() }
-            .safeAreaInset(edge: .top) {
-                PulsarSyncStatusPill()
-                    .padding(.horizontal, 18)
-                    .padding(.top, 6)
+            .sheet(isPresented: $isShowingMeasurementSource) {
+                MeasurementSourceSheet(manager: measurementSourceManager) {
+                    isShowingMeasurementSource = false
+                }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
             }
+            .refreshable { await viewModel.load() }
         }
     }
 
-    private var header: some View {
-        HomeHeaderView(profile: viewModel.dashboard.profile, date: viewModel.selectedDate) {
-            isShowingCalendar = true
-        } onProfileTapped: {
-            isShowingProfile = true
+    private var pinnedHeader: some View {
+        VStack(spacing: 6) {
+            HomeHeaderView(
+                profile: viewModel.dashboard.profile,
+                activeDevice: measurementSourceManager.activeDevice,
+                date: viewModel.selectedDate
+            ) {
+                isShowingCalendar = true
+            } onProfileTapped: {
+                isShowingProfile = true
+            } onDeviceTapped: {
+                isShowingMeasurementSource = true
+            }
+
+            PulsarSyncStatusPill()
         }
+        .padding(.horizontal, 18)
+        .padding(.top, 22)
+        .padding(.bottom, 10)
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     private var metricOrbStack: some View {
@@ -63,7 +85,7 @@ struct HomeView: View {
 
     private var stressSection: some View {
         NavigationLink {
-            StressDetailView(summary: viewModel.dashboard.stress)
+            StressDetailView(summary: viewModel.dashboard.stress, selectedDate: viewModel.selectedDate)
         } label: {
             StressHomeMeterView(summary: viewModel.dashboard.stress)
         }

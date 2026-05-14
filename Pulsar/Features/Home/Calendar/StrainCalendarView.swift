@@ -197,7 +197,6 @@ struct StrainCalendarView: View {
         guard viewModel.isDateSelectable(date) else { return }
         UIImpactFeedbackGenerator(style: record == nil ? .light : .soft).impactOccurred()
         withAnimation(.snappy) { viewModel.selectDate(date) }
-        guard record?.hasRecordedData == true else { return }
         onDateSelected(date)
         dismiss()
     }
@@ -227,7 +226,7 @@ struct StrainCalendarView: View {
                     CalendarSummaryMetric(title: "Steps", value: record.steps.formatted(), tint: .secondary)
                 }
 
-                Text("Tap any saved day to open its details immediately.")
+                Text("Tap any day to make it the active dashboard date.")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
             }
@@ -261,6 +260,7 @@ struct StrainCalendarView: View {
         HStack {
             Button {
                 withAnimation(.snappy) { viewModel.goToToday() }
+                handleDayTap(viewModel.validEndDate, record: viewModel.record(for: viewModel.validEndDate))
             } label: {
                 Label("Today", systemImage: "calendar")
                     .font(.callout.weight(.semibold))
@@ -329,7 +329,7 @@ struct StrainCalendarDayCell: View {
                 .opacity(record?.hasRecordedData == true && isSelectable ? 1 : 0)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 54)
+        .frame(height: 56)
         .opacity(dayOpacity)
         .background {
             if isSelected && isSelectable {
@@ -356,6 +356,7 @@ struct StrainCalendarDayCell: View {
         }
         .contentShape(isSelectable ? RoundedRectangle(cornerRadius: 16, style: .continuous) : RoundedRectangle(cornerRadius: 0, style: .continuous))
         .accessibilityLabel(accessibilityLabel)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var emptyStroke: Color {
@@ -386,14 +387,19 @@ struct StrainCalendarDayCell: View {
         guard isSelectable else {
             return "\(date.formatted(date: .abbreviated, time: .omitted)), unavailable"
         }
+        var parts: [String] = [date.formatted(.dateTime.month(.wide).day().year())]
+        if isSelected { parts.append("selected") }
+        if isToday { parts.append("today") }
         if let record, record.hasRecordedData {
-            let sleep = record.sleepScore.map { ", sleep \($0)" } ?? ""
-            let recovery = record.recoveryScore.map { ", recovery \($0)" } ?? ""
-            let strain = record.strainScore > 0 ? ", strain \(record.strainScore)" : ""
-            let stress = record.stressScore.map { ", stress \($0)" } ?? ""
-            return "\(date.formatted(date: .abbreviated, time: .omitted))\(sleep)\(recovery)\(strain)\(stress)"
+            if let sleepScore = record.sleepScore { parts.append("sleep \(sleepScore)") }
+            if let recoveryScore = record.recoveryScore { parts.append("recovery \(recoveryScore)") }
+            if record.strainScore > 0 { parts.append("strain \(record.strainScore)") }
+            if let stressScore = record.stressScore { parts.append("stress \(stressScore)") }
+            if record.workoutMinutes > 0 { parts.append("workout data available") }
+            return parts.joined(separator: ", ")
         }
-        return "\(date.formatted(date: .abbreviated, time: .omitted)), no data"
+        parts.append("no data")
+        return parts.joined(separator: ", ")
     }
 }
 

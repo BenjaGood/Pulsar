@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		EDF329D42FA7FABD00359606 /* Pulsar Watch App Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = EDF329CA2FA7FABC00359606 /* Pulsar Watch App Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		EDF329D42FA7FABD00359606 /* Pulsar Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = EDF329CA2FA7FABC00359606 /* Pulsar Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		EDF33A102FA9000000000001 /* PulsarWidgetsExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = EDF33A132FA9000000000004 /* PulsarWidgetsExtension.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -42,7 +42,7 @@
 			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
 			dstSubfolderSpec = 16;
 			files = (
-				EDF329D42FA7FABD00359606 /* Pulsar Watch App Watch App.app in Embed Watch Content */,
+				EDF329D42FA7FABD00359606 /* Pulsar Watch App.app in Embed Watch Content */,
 			);
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -62,10 +62,11 @@
 
 /* Begin PBXFileReference section */
 		EDF329B82FA7FA4B00359606 /* Pulsar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pulsar.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		EDF329CA2FA7FABC00359606 /* Pulsar Watch App Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Pulsar Watch App Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		EDF329CA2FA7FABC00359606 /* Pulsar Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Pulsar Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		EDF329E12FA8000000000001 /* PulsarTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PulsarTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		EDF33A132FA9000000000004 /* PulsarWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PulsarWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		EDF33A1E2FA900000000000F /* PulsarWidgetsExtension-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "PulsarWidgetsExtension-Info.plist"; sourceTree = "<group>"; };
+		EDF33A1F2FA9000000000010 /* PulsarWatchApp-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "PulsarWatchApp-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -141,6 +142,7 @@
 				EDF329BA2FA7FA4B00359606 /* Pulsar */,
 				EDF33A152FA9000000000006 /* PulsarWidgetsExtension */,
 				EDF33A1E2FA900000000000F /* PulsarWidgetsExtension-Info.plist */,
+				EDF33A1F2FA9000000000010 /* PulsarWatchApp-Info.plist */,
 				EDF329CB2FA7FABC00359606 /* Pulsar Watch App Watch App */,
 				EDF329E22FA8000000000002 /* PulsarTests */,
 				EDF329B92FA7FA4B00359606 /* Products */,
@@ -152,7 +154,7 @@
 			children = (
 				EDF329B82FA7FA4B00359606 /* Pulsar.app */,
 				EDF33A132FA9000000000004 /* PulsarWidgetsExtension.appex */,
-				EDF329CA2FA7FABC00359606 /* Pulsar Watch App Watch App.app */,
+				EDF329CA2FA7FABC00359606 /* Pulsar Watch App.app */,
 				EDF329E12FA8000000000001 /* PulsarTests.xctest */,
 			);
 			name = Products;
@@ -209,7 +211,7 @@
 			packageProductDependencies = (
 			);
 			productName = "Pulsar Watch App Watch App";
-			productReference = EDF329CA2FA7FABC00359606 /* Pulsar Watch App Watch App.app */;
+			productReference = EDF329CA2FA7FABC00359606 /* Pulsar Watch App.app */;
 			productType = "com.apple.product-type.application";
 		};
 		EDF329E62FA8000000000006 /* PulsarTests */ = {
@@ -439,7 +441,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -497,7 +499,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -593,12 +595,17 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "PulsarWatchApp-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Pulsar Watch App";
+				INFOPLIST_KEY_CFBundleName = PulsarWatch;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Pulsar reads sleep, heart rate, activity, and workout data from Apple Health on Apple Watch to show today’s Sleep, Recovery, Strain, and live workout context.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Pulsar saves running and gym workouts, routes when available, distance, active calories, and workout metrics to Apple Health from Apple Watch.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Pulsar uses location during outdoor runs to show distance, pace, elevation, and your route.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "Pulsar uses motion data on Apple Watch to support workout detection, cadence, and live workout context.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKApplication = YES;
+				INFOPLIST_KEY_WKBackgroundModes = "workout-processing location";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = aetherial.Pulsar;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -606,9 +613,9 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = aetherial.Pulsar.watchkitapp;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "Pulsar Watch App";
 				SDKROOT = watchos;
-				SKIP_INSTALL = YES;
+				SKIP_INSTALL = NO;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -616,7 +623,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 26.4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
 			name = Debug;
 		};
@@ -630,12 +637,17 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "PulsarWatchApp-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Pulsar Watch App";
+				INFOPLIST_KEY_CFBundleName = PulsarWatch;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Pulsar reads sleep, heart rate, activity, and workout data from Apple Health on Apple Watch to show today’s Sleep, Recovery, Strain, and live workout context.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Pulsar saves running and gym workouts, routes when available, distance, active calories, and workout metrics to Apple Health from Apple Watch.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Pulsar uses location during outdoor runs to show distance, pace, elevation, and your route.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "Pulsar uses motion data on Apple Watch to support workout detection, cadence, and live workout context.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKApplication = YES;
+				INFOPLIST_KEY_WKBackgroundModes = "workout-processing location";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = aetherial.Pulsar;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -643,9 +655,9 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = aetherial.Pulsar.watchkitapp;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "Pulsar Watch App";
 				SDKROOT = watchos;
-				SKIP_INSTALL = YES;
+				SKIP_INSTALL = NO;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -653,7 +665,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 26.4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
 			name = Release;
 		};
@@ -666,7 +678,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -695,7 +707,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -726,7 +738,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "PulsarWidgetsExtension-Info.plist";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -758,7 +770,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "PulsarWidgetsExtension-Info.plist";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

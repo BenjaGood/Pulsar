@@ -5,12 +5,87 @@
 
 import Foundation
 
+enum PulsarGymWorkoutKind: String, Codable, Hashable {
+    case routine
+    case freeWorkout
+
+    nonisolated var displayName: String {
+        switch self {
+        case .routine: "Gym Workout"
+        case .freeWorkout: "Free Workout"
+        }
+    }
+
+    nonisolated var categoryName: String { "Gym" }
+
+    nonisolated static func inferred(routineName: String, exerciseCount: Int) -> PulsarGymWorkoutKind {
+        let normalizedName = routineName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let knownFreeWorkoutNames: Set<String> = [
+            "free workout",
+            "free gym",
+            "empty gym workout",
+            "open gym",
+            "open gym workout"
+        ]
+
+        if knownFreeWorkoutNames.contains(normalizedName) {
+            return .freeWorkout
+        }
+        return exerciseCount == 0 ? .freeWorkout : .routine
+    }
+}
+
+struct WatchGymRoutinePlan: Codable, Hashable, Identifiable {
+    var id: UUID { routineId }
+
+    var routineId: UUID
+    var name: String
+    var emoji: String
+    var exerciseCount: Int
+    var mainMuscleGroups: [String]
+    var estimatedDurationSeconds: Int
+    var updatedAt: Date
+    var exercises: [WatchGymRoutineExercisePlan]
+
+    var subtitle: String {
+        if !mainMuscleGroups.isEmpty {
+            return mainMuscleGroups.prefix(3).joined(separator: " / ")
+        }
+        return exerciseCount == 1 ? "1 exercise" : "\(exerciseCount) exercises"
+    }
+}
+
+struct WatchGymRoutineExercisePlan: Codable, Hashable, Identifiable {
+    var id: UUID
+    var exerciseId: String?
+    var name: String
+    var muscleGroup: String
+    var equipment: String
+    var plannedSets: Int
+    var plannedReps: Int
+    var plannedWeight: Double
+    var weightUnit: String
+    var plannedRestSeconds: Int
+    var orderIndex: Int
+    var notes: String?
+    var supersetGroupId: UUID? = nil
+    var supersetOrder: Int? = nil
+    var supersetType: String? = nil
+    var supersetRestSeconds: Int? = nil
+    var supersetSharedSetCount: Int? = nil
+}
+
 struct ActiveGymWorkoutState: Codable, Hashable, Identifiable {
     var id: UUID { sessionId }
 
     var sessionId: UUID
     var routineId: UUID
     var routineName: String
+    var routineEmoji: String?
+    var workoutKind: PulsarGymWorkoutKind? = nil
+    var startedFrom: PulsarWorkoutStartedFrom? = nil
     var startedAt: Date
     var elapsedSeconds: Int
     var currentExerciseIndex: Int
@@ -22,6 +97,7 @@ struct ActiveGymWorkoutState: Codable, Hashable, Identifiable {
     var averageHeartRate: Double?
     var maxHeartRate: Double?
     var activeEnergyKilocalories: Double?
+    var healthKitWorkoutUUID: UUID? = nil
     var restRemainingSeconds: Int?
     var restTotalSeconds: Int?
     var isHealthKitEnabled: Bool
@@ -46,10 +122,12 @@ struct ActiveGymWorkoutState: Codable, Hashable, Identifiable {
     }
 
     var progressText: String {
-        "\(completedSets)/\(totalSets) sets"
+        guard totalSets > 0 else { return "\(completedSets) sets" }
+        return "\(completedSets)/\(totalSets) sets"
     }
 
     var exerciseProgressText: String {
+        guard totalExercises > 0 else { return "Open workout" }
         let displayIndex = min(max(currentExerciseIndex + 1, 1), max(totalExercises, 1))
         return "Exercise \(displayIndex) of \(max(totalExercises, 1))"
     }
@@ -57,6 +135,7 @@ struct ActiveGymWorkoutState: Codable, Hashable, Identifiable {
 
 struct ActiveGymWorkoutExerciseState: Codable, Hashable, Identifiable {
     var id: UUID
+    var exerciseId: String? = nil
     var exerciseName: String
     var muscleGroup: String
     var equipment: String
@@ -67,6 +146,11 @@ struct ActiveGymWorkoutExerciseState: Codable, Hashable, Identifiable {
     var plannedRestSeconds: Int
     var orderIndex: Int
     var notes: String?
+    var supersetGroupId: UUID? = nil
+    var supersetOrder: Int? = nil
+    var supersetType: String? = nil
+    var supersetRestSeconds: Int? = nil
+    var supersetSharedSetCount: Int? = nil
     var sets: [ActiveGymWorkoutSetState]
 
     var completedSetIndexes: [Int] {
@@ -79,6 +163,45 @@ struct ActiveGymWorkoutExerciseState: Codable, Hashable, Identifiable {
 
     var isCompleted: Bool {
         !sets.isEmpty && completedSetCount == sets.count
+    }
+}
+
+extension ActiveGymWorkoutState {
+    var nextActionIndices: (exerciseIndex: Int, setIndex: Int)? {
+        let sortedExercises = exercises.enumerated().sorted { $0.element.orderIndex < $1.element.orderIndex }
+        var consumedSupersetGroupIds: Set<UUID> = []
+
+        for sortedExercise in sortedExercises {
+            let exercise = sortedExercise.element
+            if let groupId = exercise.supersetGroupId {
+                guard consumedSupersetGroupIds.insert(groupId).inserted else { continue }
+                let members = sortedExercises
+                    .filter { $0.element.supersetGroupId == groupId }
+                    .sorted {
+                        ($0.element.supersetOrder ?? $0.element.orderIndex) < ($1.element.supersetOrder ?? $1.element.orderIndex)
+                    }
+                guard members.count >= 2 else {
+                    if let setIndex = exercise.sets.firstIndex(where: { !$0.isCompleted }) {
+                        return (sortedExercise.offset, setIndex)
+                    }
+                    continue
+                }
+
+                let sharedSetCount = max(1, members.compactMap { $0.element.supersetSharedSetCount }.first ?? members.map { $0.element.sets.count }.max() ?? 1)
+                for setNumber in 1...sharedSetCount {
+                    for member in members.prefix(2) {
+                        guard let setIndex = member.element.sets.firstIndex(where: { $0.setNumber == setNumber }) else { continue }
+                        if !member.element.sets[setIndex].isCompleted {
+                            return (member.offset, setIndex)
+                        }
+                    }
+                }
+            } else if let setIndex = exercise.sets.firstIndex(where: { !$0.isCompleted }) {
+                return (sortedExercise.offset, setIndex)
+            }
+        }
+
+        return nil
     }
 }
 
@@ -100,10 +223,14 @@ struct ActiveGymWorkoutAction: Codable, Hashable {
         case finishWorkout
         case requestState
         case metricsUpdated
+        case requestSavedRoutines
+        case startFreeWorkoutFromWatch
+        case startSavedRoutineFromWatch
     }
 
     var kind: Kind
     var sessionId: UUID?
+    var routineId: UUID? = nil
     var exerciseId: UUID?
     var setId: UUID?
     var sentAt: Date
@@ -127,6 +254,20 @@ struct ActiveGymWorkoutAction: Codable, Hashable {
 
     static func requestState(sessionId: UUID? = nil) -> ActiveGymWorkoutAction {
         ActiveGymWorkoutAction(kind: .requestState, sessionId: sessionId, exerciseId: nil, setId: nil, sentAt: Date())
+    }
+
+    static func requestSavedRoutines() -> ActiveGymWorkoutAction {
+        ActiveGymWorkoutAction(kind: .requestSavedRoutines, sessionId: nil, exerciseId: nil, setId: nil, sentAt: Date())
+    }
+
+    static func startFreeWorkoutFromWatch(sessionId: UUID) -> ActiveGymWorkoutAction {
+        ActiveGymWorkoutAction(kind: .startFreeWorkoutFromWatch, sessionId: sessionId, exerciseId: nil, setId: nil, sentAt: Date())
+    }
+
+    static func startSavedRoutineFromWatch(sessionId: UUID, routineId: UUID) -> ActiveGymWorkoutAction {
+        var action = ActiveGymWorkoutAction(kind: .startSavedRoutineFromWatch, sessionId: sessionId, exerciseId: nil, setId: nil, sentAt: Date())
+        action.routineId = routineId
+        return action
     }
 
     static func metricsUpdated(

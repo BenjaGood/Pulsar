@@ -1,0 +1,8 @@
+Target dependency graph (4 targets)
+Target 'PulsarTests' in project 'Pulsar'
+➜ Explicit dependency on target 'Pulsar' in project 'Pulsar'
+Target 'Pulsar' in project 'Pulsar'
+➜ Explicit dependency on target 'PulsarWidgetsExtension' in project 'Pulsar'
+➜ Explicit dependency on target 'Pulsar Watch App Watch App' in project 'Pulsar'
+Target 'Pulsar Watch App Watch App' in project 'Pulsar' (no dependencies)
+Target 'PulsarWidgetsExtension' in project 'Pulsar' (no dependencies)

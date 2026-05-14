@@ -1,0 +1,88 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/App/PulsarRootView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Home",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 1128
+        }
+      },
+      {
+        "comment": "",
+        "key": "Go to Home",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 1129
+        }
+      },
+      {
+        "comment": "",
+        "key": "More",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 1188
+        }
+      },
+      {
+        "comment": "",
+        "key": "Open more health modules",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 1189
+        }
+      },
+      {
+        "comment": "",
+        "key": "%@, %@",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 1304
+        }
+      },
+      {
+        "comment": "",
+        "key": "Open live workout",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 1305
+        }
+      },
+      {
+        "comment": "",
+        "key": "Close",
+        "location": {
+          "startingColumn": 37,
+          "startingLine": 1391
+        }
+      },
+      {
+        "comment": "",
+        "key": "More",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 1374
+        }
+      },
+      {
+        "comment": "",
+        "key": "Health modules",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 1376
+        }
+      },
+      {
+        "comment": "",
+        "key": "Open %@",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 1453
+        }
+      }
+    ]
+  },
+  "version": 1
+}

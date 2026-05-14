@@ -12,6 +12,7 @@ final class FitnessWeekViewModel: ObservableObject {
     @Published private(set) var selectedWeek: WeekPeriod
     @Published private(set) var historyWeeks: [WeekPeriod] = []
     @Published private(set) var activities: [WeeklyActivity] = []
+    @Published private(set) var muscleMatrixViewModel: MuscleMatrixViewModel
     @Published private(set) var isLoadingActivities = false
     @Published private(set) var isRefreshingWeeks = false
     @Published private(set) var isLoadingWeekHistory = false
@@ -21,6 +22,11 @@ final class FitnessWeekViewModel: ObservableObject {
     private let gymHistoryStore: PulsarGymWorkoutHistoryStore
     private let calendar: Calendar
     private var rolloverTask: Task<Void, Never>?
+    private var hasLoadedInitialData = false
+    private var activitiesByWeekID: [String: [WeeklyActivity]] = [:]
+    private var activityFetchDatesByWeekID: [String: Date] = [:]
+    private var lastPresenceRefreshAt: Date?
+    private let cacheFreshnessInterval: TimeInterval = 90
 
     init(
         healthKit: HealthKitGateway = HealthKitGateway(),
@@ -32,10 +38,13 @@ final class FitnessWeekViewModel: ObservableObject {
         self.healthKit = healthKit
         self.runHistoryStore = runHistoryStore
         self.gymHistoryStore = gymHistoryStore ?? PulsarGymWorkoutHistoryStore()
-        self.calendar = calendar
-        let generatedWeeks = FitnessWeekCalculator.getWeekPeriodsAroundCurrentWeek(calendar: calendar, now: now)
+        let fitnessCalendar = FitnessWeekCalculator.fitnessCalendar(from: calendar)
+        self.calendar = fitnessCalendar
+        let generatedWeeks = FitnessWeekCalculator.getWeekPeriodsAroundCurrentWeek(calendar: fitnessCalendar, now: now)
+        let initialSelection = generatedWeeks.first(where: \.isCurrentWeek) ?? FitnessWeekCalculator.getWeekPeriod(for: now, calendar: fitnessCalendar, now: now)
         self.weeks = generatedWeeks
-        self.selectedWeek = generatedWeeks.first(where: \.isCurrentWeek) ?? FitnessWeekCalculator.getWeekPeriod(for: now, calendar: calendar, now: now)
+        self.selectedWeek = initialSelection
+        self.muscleMatrixViewModel = MuscleMatrixViewModel(week: initialSelection, activities: [], calendar: fitnessCalendar, now: now)
     }
 
     deinit {
@@ -67,24 +76,26 @@ final class FitnessWeekViewModel: ObservableObject {
         }
     }
 
-    var bodyMapAnalysis: BodyMapAnalysis {
-        BodyMapAnalyzer.analyze(activities: activities)
-    }
-
     func load() async {
+        guard !hasLoadedInitialData else {
+            await refreshCurrentWeekIfNeeded()
+            return
+        }
+        hasLoadedInitialData = true
         rebuildWeekWindow(now: .now, preservingSelectedWeek: true)
         await refreshWorkoutPresence()
         await fetchWorkouts(for: selectedWeek)
     }
 
     func refresh() async {
+        gymHistoryStore.reload()
         await refreshWorkoutPresence()
-        await fetchWorkouts(for: selectedWeek)
+        await fetchWorkouts(for: selectedWeek, force: true)
     }
 
     func selectWeek(_ week: WeekPeriod) async {
         guard selectedWeek.id != week.id else {
-            await fetchWorkouts(for: week)
+            await fetchWorkouts(for: week, force: true)
             return
         }
 
@@ -119,8 +130,9 @@ final class FitnessWeekViewModel: ObservableObject {
         isLoadingWeekHistory = true
         let year = selectedWeek.year
         let yearWeeks = FitnessWeekCalculator.getWeekPeriods(forYear: year, calendar: calendar)
-        let interval = FitnessWeekCalculator.yearInterval(for: year, calendar: calendar)
-        let activityDates = await activityStartDates(start: interval.start, end: interval.end)
+        let fetchStart = yearWeeks.first?.startDate ?? FitnessWeekCalculator.yearInterval(for: year, calendar: calendar).start
+        let fetchEnd = yearWeeks.last.map { FitnessWeekCalculator.fetchEnd(for: $0, calendar: calendar) } ?? FitnessWeekCalculator.yearInterval(for: year, calendar: calendar).end
+        let activityDates = await activityStartDates(start: fetchStart, end: fetchEnd)
         let now = Date()
 
         historyWeeks = yearWeeks.map { week in
@@ -132,20 +144,37 @@ final class FitnessWeekViewModel: ObservableObject {
         weeks = uniqueWeeks(weeks + historyWeeks).sorted { $0.startDate < $1.startDate }
         if let updatedSelection = historyWeeks.first(where: { $0.id == selectedWeek.id }) ?? weeks.first(where: { $0.id == selectedWeek.id }) {
             selectedWeek = updatedSelection
+            rebuildMuscleMatrix()
         }
         isLoadingWeekHistory = false
     }
 
-    func refreshCurrentWeekIfNeeded() async {
+    func refreshCurrentWeekIfNeeded(force: Bool = false) async {
+        if force {
+            gymHistoryStore.reload()
+        }
         let wasViewingCurrentWeek = selectedWeek.isCurrentWeek
+        let previousSelectedWeekID = selectedWeek.id
         rebuildWeekWindow(now: .now, preservingSelectedWeek: !wasViewingCurrentWeek)
-        await refreshWorkoutPresence()
+        let movedIntoNewCurrentWeek = wasViewingCurrentWeek && weeks.first(where: \.isCurrentWeek)?.id != previousSelectedWeekID
+        if force || isPresenceStale || movedIntoNewCurrentWeek {
+            await refreshWorkoutPresence()
+        }
 
         if wasViewingCurrentWeek {
             selectedWeek = weeks.first(where: \.isCurrentWeek) ?? selectedWeek
-            await fetchWorkouts(for: selectedWeek)
+            let didMoveToNewWeek = selectedWeek.id != previousSelectedWeekID
+            if didMoveToNewWeek {
+                applyActivities(activitiesByWeekID[selectedWeek.id] ?? [])
+            } else {
+                rebuildMuscleMatrix()
+            }
+            if force || isActivitiesCacheStale(for: selectedWeek) {
+                await fetchWorkouts(for: selectedWeek, force: true)
+            }
         } else if let preserved = weeks.first(where: { $0.id == selectedWeek.id }) {
             selectedWeek = preserved
+            rebuildMuscleMatrix()
         }
     }
 
@@ -163,10 +192,19 @@ final class FitnessWeekViewModel: ObservableObject {
         }
     }
 
-    private func fetchWorkouts(for week: WeekPeriod, clearsExisting: Bool = false) async {
+    private func fetchWorkouts(for week: WeekPeriod, clearsExisting: Bool = false, force: Bool = false) async {
+        if !force, let cached = activitiesByWeekID[week.id], !isActivitiesCacheStale(for: week) {
+            applyActivities(cached)
+            return
+        }
+
         isLoadingActivities = true
         if clearsExisting {
-            activities = []
+            if let cached = activitiesByWeekID[week.id] {
+                applyActivities(cached)
+            } else {
+                applyActivities([])
+            }
         }
         let fetchEnd = FitnessWeekCalculator.fetchEnd(for: week, calendar: calendar)
 
@@ -182,7 +220,12 @@ final class FitnessWeekViewModel: ObservableObject {
 
         let healthKitActivities = await healthActivities
         let mergedActivities = mergeActivities(healthKit: healthKitActivities, local: localActivities)
-        activities = mergedActivities.sorted { $0.startDate > $1.startDate }
+        let sortedActivities = mergedActivities.sorted { $0.startDate > $1.startDate }
+        activitiesByWeekID[week.id] = sortedActivities
+        activityFetchDatesByWeekID[week.id] = Date()
+        if selectedWeek.id == week.id {
+            applyActivities(sortedActivities)
+        }
         isLoadingActivities = false
     }
 
@@ -214,6 +257,8 @@ final class FitnessWeekViewModel: ObservableObject {
         }
 
         isRefreshingWeeks = false
+        lastPresenceRefreshAt = Date()
+        rebuildMuscleMatrix()
     }
 
     private func rebuildWeekWindow(now: Date, preservingSelectedWeek: Bool) {
@@ -260,6 +305,53 @@ final class FitnessWeekViewModel: ObservableObject {
         return period
     }
 
+    private var isPresenceStale: Bool {
+        guard let lastPresenceRefreshAt else { return true }
+        return Date().timeIntervalSince(lastPresenceRefreshAt) > cacheFreshnessInterval
+    }
+
+    private func isActivitiesCacheStale(for week: WeekPeriod) -> Bool {
+        guard let fetchedAt = activityFetchDatesByWeekID[week.id] else { return true }
+        return Date().timeIntervalSince(fetchedAt) > cacheFreshnessInterval
+    }
+
+    private func applyActivities(_ nextActivities: [WeeklyActivity]) {
+        updateStoredPresence(for: selectedWeek, hasWorkout: !nextActivities.isEmpty)
+        guard activities != nextActivities else {
+            rebuildMuscleMatrix()
+            return
+        }
+        activities = nextActivities
+        rebuildMuscleMatrix()
+    }
+
+    private func updateStoredPresence(for period: WeekPeriod, hasWorkout: Bool) {
+        guard period.hasWorkout != hasWorkout else { return }
+        var updatedSelection = selectedWeek
+        updatedSelection.hasWorkout = hasWorkout
+        selectedWeek = updatedSelection
+        weeks = weeks.map { week in
+            guard week.id == period.id else { return week }
+            var updated = week
+            updated.hasWorkout = hasWorkout
+            return updated
+        }
+        if !historyWeeks.isEmpty {
+            historyWeeks = historyWeeks.map { week in
+                guard week.id == period.id else { return week }
+                var updated = week
+                updated.hasWorkout = hasWorkout
+                return updated
+            }
+        }
+    }
+
+    private func rebuildMuscleMatrix(now: Date = .now) {
+        let next = MuscleMatrixViewModel(week: selectedWeek, activities: activities, calendar: calendar, now: now)
+        guard next != muscleMatrixViewModel else { return }
+        muscleMatrixViewModel = next
+    }
+
     private func activityStartDates(start: Date, end: Date) async -> [Date] {
         async let healthWorkoutDates = healthKit.fetchWorkoutStartDates(start: start, end: end)
         async let cachedRuns = runHistoryStore.loadCachedRuns()
@@ -271,12 +363,28 @@ final class FitnessWeekViewModel: ObservableObject {
     }
 
     private func localRunActivity(_ run: PulsarRunSummary) -> WeeklyActivity {
-        WeeklyActivity(
-            id: "local-run-\(run.id.uuidString)",
+        let category: WeeklyActivityCategory
+        switch run.workoutKind {
+        case .running: category = .running
+        case .walking: category = .walking
+        case .hiking: category = .hiking
+        case .cycling: category = .cycling
+        case .hiit: category = .hiit
+        case .strength, .boxing, .core: category = .strength
+        case .yoga, .pilates: category = .yoga
+        case .swimming: category = .swimming
+        case .rowing, .elliptical, .stairClimber: category = .rowing
+        case .dance: category = .dance
+        case .stretching, .mobility, .cooldown: category = .recovery
+        case .other: category = .other
+        }
+        return WeeklyActivity(
+            id: "local-\(run.workoutKind.rawValue)-\(run.id.uuidString)",
+            pulsarWorkoutSessionId: run.pulsarWorkoutSessionId,
             workoutUUID: run.workoutUUID,
-            workoutType: "Running",
-            displayName: "Running",
-            category: .running,
+            workoutType: run.workoutKind.displayName,
+            displayName: run.workoutKind.displayName,
+            category: category,
             startDate: run.startedAt,
             endDate: run.endedAt,
             duration: run.movingTime > 0 ? run.movingTime : run.elapsedTime,
@@ -290,8 +398,7 @@ final class FitnessWeekViewModel: ObservableObject {
     }
 
     private func localGymActivity(_ session: PulsarGymWorkoutSession) -> WeeklyActivity {
-        let trimmedRoutineName = session.routineName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let displayName = trimmedRoutineName.isEmpty ? "Gym Workout" : trimmedRoutineName
+        let displayName = session.activityLogDisplayName
         let endedAt = session.finishedAt ?? session.startedAt.addingTimeInterval(TimeInterval(max(session.elapsedSeconds, 0)))
         let duration = session.elapsedSeconds > 0
             ? TimeInterval(session.elapsedSeconds)
@@ -300,6 +407,7 @@ final class FitnessWeekViewModel: ObservableObject {
 
         return WeeklyActivity(
             id: "local-gym-\(session.id.uuidString)",
+            pulsarWorkoutSessionId: session.id,
             workoutUUID: session.healthKitWorkoutUUID,
             workoutType: "Gym",
             displayName: displayName,
@@ -312,12 +420,12 @@ final class FitnessWeekViewModel: ObservableObject {
             averageHeartRate: session.averageHeartRate,
             maxHeartRate: session.maxHeartRate,
             source: .localGym,
-            sourceName: WeeklyActivitySource.localGym.rawValue,
+            sourceName: PulsarGymWorkoutKind.routine.categoryName,
             completedSets: muscleSummary.completedSets,
             totalSets: muscleSummary.totalSets,
             mainMuscleGroups: muscleSummary.mainMuscleGroupNames,
-            muscleLoadByBodyZone: muscleSummary.loadByBodyMapRegion,
-            muscleExercisesByBodyZone: muscleSummary.exercisesByBodyMapRegion
+            muscleLoadByMatrixGroup: muscleSummary.loadByMatrixGroup,
+            muscleExercisesByMatrixGroup: muscleSummary.exercisesByMatrixGroup
         )
     }
 
@@ -325,10 +433,15 @@ final class FitnessWeekViewModel: ObservableObject {
         var merged = healthActivities
 
         for localActivity in localActivities {
-            if localActivity.source == .localGym,
-               merged.contains(where: { isDuplicate(localActivity, of: $0) }) {
-                merged.removeAll { isDuplicate(localActivity, of: $0) }
-                merged.append(localActivity)
+            if let existingIndex = merged.firstIndex(where: { isDuplicate(localActivity, of: $0) }) {
+                let existing = merged[existingIndex]
+                if shouldPreferLocalActivity(localActivity, over: existing) {
+                    merged.remove(at: existingIndex)
+                    merged.append(localActivity)
+                    PulsarSyncDebugLogger.log("Activity Log merged duplicate session=\(localActivity.pulsarWorkoutSessionId?.uuidString ?? "none") action=localReplacedHealthKit localSource=\(localActivity.source.rawValue) healthSource=\(existing.sourceName)")
+                } else {
+                    PulsarSyncDebugLogger.log("Activity Log skipped duplicate local entry session=\(localActivity.pulsarWorkoutSessionId?.uuidString ?? "none") source=\(localActivity.source.rawValue)")
+                }
             } else if !merged.contains(where: { isDuplicate(localActivity, of: $0) }) {
                 merged.append(localActivity)
             }
@@ -338,6 +451,12 @@ final class FitnessWeekViewModel: ObservableObject {
     }
 
     private func isDuplicate(_ local: WeeklyActivity, of healthActivity: WeeklyActivity) -> Bool {
+        if let localSessionId = local.pulsarWorkoutSessionId,
+           let healthSessionId = healthActivity.pulsarWorkoutSessionId,
+           localSessionId == healthSessionId {
+            return true
+        }
+
         if let localUUID = local.workoutUUID,
            let healthUUID = healthActivity.workoutUUID,
            localUUID == healthUUID {
@@ -346,7 +465,7 @@ final class FitnessWeekViewModel: ObservableObject {
 
         let startDelta = abs(local.startDate.timeIntervalSince(healthActivity.startDate))
         let durationDelta = abs(local.duration - healthActivity.duration)
-        let bothRunning = local.category == .running && healthActivity.category == .running
+        let bothOutdoorKind = local.category == healthActivity.category && local.category.isCardioTraining
         let distanceDelta = abs((local.distanceMeters ?? 0) - (healthActivity.distanceMeters ?? 0))
         let distanceLooksSame = (local.distanceMeters == nil || healthActivity.distanceMeters == nil) || distanceDelta < 120
         let healthSearchText = "\(healthActivity.workoutType) \(healthActivity.displayName)".lowercased()
@@ -359,7 +478,21 @@ final class FitnessWeekViewModel: ObservableObject {
             return healthLooksLikeStrength && startDelta < 300 && durationDelta < 600
         }
 
-        return bothRunning && startDelta < 180 && durationDelta < 300 && distanceLooksSame
+        return bothOutdoorKind && startDelta < 180 && durationDelta < 300 && distanceLooksSame
+    }
+
+    private func shouldPreferLocalActivity(_ local: WeeklyActivity, over healthActivity: WeeklyActivity) -> Bool {
+        if local.source == .localGym {
+            return true
+        }
+
+        if let localSessionId = local.pulsarWorkoutSessionId,
+           let healthSessionId = healthActivity.pulsarWorkoutSessionId,
+           localSessionId == healthSessionId {
+            return true
+        }
+
+        return false
     }
 
     private func secondsUntilNextWeekBoundary() -> TimeInterval {

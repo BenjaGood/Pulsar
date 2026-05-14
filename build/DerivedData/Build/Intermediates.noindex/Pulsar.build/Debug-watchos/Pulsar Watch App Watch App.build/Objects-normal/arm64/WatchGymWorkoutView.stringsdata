@@ -1,0 +1,64 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/Workouts/WatchGymWorkoutView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Now Playing",
+        "location": {
+          "startingColumn": 33,
+          "startingLine": 79
+        }
+      },
+      {
+        "comment": "",
+        "key": "Gym",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 82
+        }
+      },
+      {
+        "comment": "",
+        "key": "Completed",
+        "location": {
+          "startingColumn": 64,
+          "startingLine": 177
+        }
+      },
+      {
+        "comment": "",
+        "key": "Complete Set",
+        "location": {
+          "startingColumn": 78,
+          "startingLine": 177
+        }
+      },
+      {
+        "comment": "",
+        "key": "Skip",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 216
+        }
+      },
+      {
+        "comment": "",
+        "key": "Rest",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 207
+        }
+      },
+      {
+        "comment": "",
+        "key": "Finish",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 234
+        }
+      }
+    ]
+  },
+  "version": 1
+}

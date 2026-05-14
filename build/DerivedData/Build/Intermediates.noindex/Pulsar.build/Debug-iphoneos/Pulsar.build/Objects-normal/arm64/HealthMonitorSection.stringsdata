@@ -1,0 +1,48 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Home/Views/HealthMonitorSection.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "%lld live",
+        "location": {
+          "startingColumn": 53,
+          "startingLine": 52
+        }
+      },
+      {
+        "comment": "",
+        "key": "Waiting",
+        "location": {
+          "startingColumn": 94,
+          "startingLine": 52
+        }
+      },
+      {
+        "comment": "",
+        "key": "Health Monitor",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 41
+        }
+      },
+      {
+        "comment": "",
+        "key": "Vitals and sleep signals for the selected day.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 44
+        }
+      },
+      {
+        "comment": "",
+        "key": "Show more details",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 141
+        }
+      }
+    ]
+  },
+  "version": 1
+}

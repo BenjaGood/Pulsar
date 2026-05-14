@@ -12,12 +12,32 @@ struct GymRoutineBuilderFlowView: View {
     }
 
     @ObservedObject var routineStore: PulsarRoutineStore
+    var initialRoutine: PulsarRoutine?
+    var defaultWeightUnit: PulsarWeightUnit
     var onCancel: () -> Void
     var onStartWorkout: (PulsarRoutine) -> Void
 
     @StateObject private var catalogStore = ExerciseCatalogStore()
-    @StateObject private var viewModel = RoutineBuilderViewModel()
-    @State private var path: [Route] = []
+    @StateObject private var viewModel: RoutineBuilderViewModel
+    @State private var path: [Route]
+
+    init(
+        routineStore: PulsarRoutineStore,
+        initialRoutine: PulsarRoutine? = nil,
+        defaultWeightUnit: PulsarWeightUnit = .kilograms,
+        onCancel: @escaping () -> Void,
+        onStartWorkout: @escaping (PulsarRoutine) -> Void
+    ) {
+        self.routineStore = routineStore
+        self.initialRoutine = initialRoutine
+        self.defaultWeightUnit = defaultWeightUnit
+        self.onCancel = onCancel
+        self.onStartWorkout = onStartWorkout
+        _viewModel = StateObject(wrappedValue: initialRoutine.map {
+            RoutineBuilderViewModel(routine: $0, defaultWeightUnit: defaultWeightUnit)
+        } ?? RoutineBuilderViewModel(defaultWeightUnit: defaultWeightUnit))
+        _path = State(initialValue: initialRoutine == nil ? [] : [.routineDetails])
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -36,6 +56,7 @@ struct GymRoutineBuilderFlowView: View {
                     GymRoutineCreationView(
                         routineStore: routineStore,
                         viewModel: viewModel,
+                        mode: initialRoutine == nil ? .create : .edit,
                         onStartWorkout: onStartWorkout
                     )
                 }
@@ -43,7 +64,12 @@ struct GymRoutineBuilderFlowView: View {
         }
         .tint(.white)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .environment(\.colorScheme, .dark)
+        .preferredColorScheme(.dark)
         .background(GymGlassBackground().ignoresSafeArea())
+        .onAppear {
+            viewModel.updateDefaultWeightUnit(defaultWeightUnit)
+        }
     }
 }
 
@@ -69,6 +95,8 @@ private struct GymExercisePickerView: View {
             .padding(.horizontal, 18)
             .padding(.bottom, viewModel.canContinue ? 112 : 30)
         }
+        .scrollDismissesKeyboard(.interactively)
+        .premiumScrollHeaderBlur(height: 52)
         .background(GymGlassBackground().ignoresSafeArea())
         .navigationTitle("Choose Exercises")
         .navigationBarTitleDisplayMode(.large)
@@ -117,7 +145,7 @@ private struct GymExercisePickerView: View {
             GymCatalogStateView(
                 symbolName: "dumbbell.fill",
                 title: "Loading exercises",
-                message: "Syncing the wger catalog into Pulsar."
+                message: "Loading the Pulsar exercise catalog."
             )
             .padding(.top, 38)
         } else if !catalogStore.hasExercises {
@@ -490,13 +518,32 @@ private struct GymContinueButton: View {
     }
 }
 
+private struct GymSupersetEditorContext: Identifiable, Hashable {
+    var groupID: UUID
+    var routineExerciseID: UUID
+
+    var id: String {
+        "\(groupID.uuidString)-\(routineExerciseID.uuidString)"
+    }
+}
+
 private struct GymRoutineCreationView: View {
+    enum Mode {
+        case create
+        case edit
+    }
+
     @ObservedObject var routineStore: PulsarRoutineStore
     @ObservedObject var viewModel: RoutineBuilderViewModel
+    var mode: Mode
     var onStartWorkout: (PulsarRoutine) -> Void
 
     @State private var didSave = false
     @State private var expandedExerciseIDs: Set<UUID> = []
+    @State private var isShowingEmojiPicker = false
+    @State private var supersetPickerExercise: PulsarRoutineExercise?
+    @State private var supersetEditorContext: GymSupersetEditorContext?
+    @FocusState private var focusedPlanningField: GymPlanningInputField?
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -506,16 +553,30 @@ private struct GymRoutineCreationView: View {
             }
             .padding(.horizontal, 18)
             .padding(.top, 8)
-            .padding(.bottom, 126)
+            .padding(.bottom, focusedPlanningField == nil ? 126 : 30)
         }
+        .scrollDismissesKeyboard(.interactively)
+        .premiumScrollHeaderBlur(height: 52)
         .background(GymGlassBackground().ignoresSafeArea())
-        .navigationTitle("Create Routine")
+        .navigationTitle(mode == .edit ? "Edit Routine" : "Create Routine")
         .navigationBarTitleDisplayMode(.large)
-        .safeAreaInset(edge: .bottom) {
-            actionBar
-                .padding(.horizontal, 18)
-                .padding(.bottom, 12)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    focusedPlanningField = nil
+                }
+            }
         }
+        .safeAreaInset(edge: .bottom) {
+            if focusedPlanningField == nil {
+                actionBar
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 12)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: focusedPlanningField)
         .onChange(of: viewModel.routineExercises) { _, _ in
             didSave = false
             if viewModel.routineExercises.count == 1, let firstID = viewModel.routineExercises.first?.id {
@@ -525,30 +586,112 @@ private struct GymRoutineCreationView: View {
         .onChange(of: viewModel.routineName) { _, _ in
             didSave = false
         }
+        .onChange(of: viewModel.routineEmoji) { _, _ in
+            didSave = false
+        }
+        .onChange(of: viewModel.supersetGroups) { _, _ in
+            didSave = false
+        }
         .onAppear {
             if viewModel.routineExercises.count == 1, let firstID = viewModel.routineExercises.first?.id {
                 expandedExerciseIDs = [firstID]
+            }
+        }
+        .sheet(isPresented: $isShowingEmojiPicker) {
+            GymRoutineEmojiPicker(
+                selectedEmoji: $viewModel.routineEmoji,
+                suggestedEmoji: PulsarRoutine.defaultEmoji(for: viewModel.routineExercises)
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(.clear)
+            .presentationCornerRadius(34)
+            .presentationContentInteraction(.scrolls)
+        }
+        .sheet(item: $supersetPickerExercise) { routineExercise in
+            GymSupersetPartnerPickerSheet(
+                baseExercise: routineExercise,
+                candidates: viewModel.supersetPartnerOptions(for: routineExercise.id)
+            ) { partnerID, restSeconds in
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                    viewModel.createSuperset(
+                        firstExerciseID: routineExercise.id,
+                        secondExerciseID: partnerID,
+                        restTimeSeconds: restSeconds
+                    )
+                    expandedExerciseIDs.insert(routineExercise.id)
+                    expandedExerciseIDs.insert(partnerID)
+                }
+                supersetPickerExercise = nil
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(.clear)
+            .presentationCornerRadius(34)
+        }
+        .sheet(item: $supersetEditorContext) { context in
+            if let group = viewModel.supersetGroup(id: context.groupID) {
+                GymSupersetEditorSheet(
+                    title: viewModel.supersetLabel(for: group.id),
+                    group: group,
+                    exercises: group.exerciseIds.compactMap { exerciseID in
+                        viewModel.routineExercises.first(where: { $0.id == exerciseID })
+                    },
+                    onUpdateSets: { viewModel.updateSupersetSetCount(groupID: group.id, sharedSetCount: $0) },
+                    onUpdateRest: { viewModel.updateSupersetRest(groupID: group.id, restTimeSeconds: $0) },
+                    onRemoveExercise: {
+                        viewModel.removeFromSuperset(routineExerciseID: context.routineExerciseID)
+                        supersetEditorContext = nil
+                    },
+                    onBreakGroup: {
+                        viewModel.dissolveSuperset(groupID: group.id)
+                        supersetEditorContext = nil
+                    }
+                )
+                .presentationDetents([.height(460), .medium])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.clear)
+                .presentationCornerRadius(34)
             }
         }
     }
 
     private var routineNameSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Routine Name")
+            Text("Routine Identity")
                 .font(.headline.weight(.bold))
                 .foregroundStyle(.white)
 
-            TextField("Gym Routine", text: $viewModel.routineName)
-                .font(.title3.weight(.bold))
-                .foregroundStyle(.white)
-                .textInputAutocapitalization(.words)
-                .submitLabel(.done)
-                .padding(16)
-                .background(.white.opacity(0.085), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(.white.opacity(0.12), lineWidth: 1)
+            HStack(spacing: 12) {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    isShowingEmojiPicker = true
+                } label: {
+                    Text(viewModel.resolvedRoutineEmoji)
+                        .font(.system(size: 28))
+                        .frame(width: 58, height: 58)
+                        .background(.white.opacity(0.10), in: Circle())
+                        .overlay {
+                            Circle()
+                                .stroke(.white.opacity(0.14), lineWidth: 1)
+                        }
                 }
+                .buttonStyle(PulsarGymPressButtonStyle())
+                .accessibilityLabel("Choose routine icon")
+
+                TextField("Gym Routine", text: $viewModel.routineName)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+                    .textInputAutocapitalization(.words)
+                    .submitLabel(.done)
+                    .padding(16)
+                    .background(.white.opacity(0.085), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .stroke(.white.opacity(0.12), lineWidth: 1)
+                    }
+            }
         }
     }
 
@@ -571,13 +714,26 @@ private struct GymRoutineCreationView: View {
 
             VStack(spacing: 10) {
                 ForEach(viewModel.routineExercises.sorted { $0.order < $1.order }) { routineExercise in
+                    let supersetGroup = viewModel.supersetGroup(containing: routineExercise.id)
                     GymRoutineExercisePlanningCard(
                         routineExercise: routineExercise,
                         viewModel: viewModel,
+                        focusedField: $focusedPlanningField,
+                        supersetGroup: supersetGroup,
+                        supersetBadge: viewModel.supersetBadge(for: routineExercise),
                         isExpanded: isExpanded(routineExercise),
                         canCollapse: viewModel.routineExercises.count > 1,
                         onToggleExpanded: {
                             toggleExpanded(routineExercise)
+                        },
+                        onCreateSuperset: {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            supersetPickerExercise = routineExercise
+                        },
+                        onEditSuperset: {
+                            guard let supersetGroup else { return }
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            supersetEditorContext = GymSupersetEditorContext(groupID: supersetGroup.id, routineExerciseID: routineExercise.id)
                         },
                         onRemove: {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -638,7 +794,7 @@ private struct GymRoutineCreationView: View {
 
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                let routine = viewModel.save(using: routineStore)
+                let routine = viewModel.makeRoutine()
                 onStartWorkout(routine)
             } label: {
                 HStack(spacing: 8) {
@@ -667,9 +823,14 @@ private struct GymRoutineCreationView: View {
 private struct GymRoutineExercisePlanningCard: View {
     var routineExercise: PulsarRoutineExercise
     @ObservedObject var viewModel: RoutineBuilderViewModel
+    var focusedField: FocusState<GymPlanningInputField?>.Binding
+    var supersetGroup: PulsarSupersetGroup?
+    var supersetBadge: String?
     var isExpanded: Bool
     var canCollapse: Bool
     var onToggleExpanded: () -> Void
+    var onCreateSuperset: () -> Void
+    var onEditSuperset: () -> Void
     var onRemove: () -> Void
     var onEdit: () -> Void
 
@@ -683,6 +844,19 @@ private struct GymRoutineExercisePlanningCard: View {
                     .background(.white.opacity(0.92), in: Circle())
 
                 VStack(alignment: .leading, spacing: 5) {
+                    if let supersetBadge {
+                        Text(supersetBadge)
+                            .font(.system(size: 10, weight: .black, design: .rounded))
+                            .foregroundStyle(Color(red: 0.78, green: 0.72, blue: 1.0))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(red: 0.72, green: 0.66, blue: 1.0).opacity(0.14), in: Capsule(style: .continuous))
+                            .overlay {
+                                Capsule(style: .continuous)
+                                    .stroke(Color(red: 0.78, green: 0.72, blue: 1.0).opacity(0.20), lineWidth: 1)
+                            }
+                    }
+
                     Text(routineExercise.exerciseName)
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(.white)
@@ -695,6 +869,22 @@ private struct GymRoutineExercisePlanningCard: View {
                 }
 
                 Spacer(minLength: 4)
+
+                Button(action: supersetGroup == nil ? onCreateSuperset : onEditSuperset) {
+                    Image(systemName: supersetGroup == nil ? "link.badge.plus" : "link")
+                        .font(.subheadline.weight(.black))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(supersetGroup == nil ? .white.opacity(0.76) : Color(red: 0.84, green: 0.78, blue: 1.0))
+                        .frame(width: 32, height: 32)
+                        .background(.white.opacity(supersetGroup == nil ? 0.075 : 0.12), in: Circle())
+                        .overlay {
+                            Circle()
+                                .stroke(.white.opacity(supersetGroup == nil ? 0.10 : 0.20), lineWidth: 1)
+                        }
+                }
+                .buttonStyle(.plain)
+                .disabled(supersetGroup == nil && viewModel.routineExercises.count < 2)
+                .accessibilityLabel(supersetGroup == nil ? "Create superset" : "Edit superset")
 
                 Button(action: onRemove) {
                     Image(systemName: "minus.circle.fill")
@@ -728,11 +918,17 @@ private struct GymRoutineExercisePlanningCard: View {
                 VStack(spacing: 12) {
                     HStack(spacing: 10) {
                         GymPlanIntegerField(
-                            title: "Sets",
+                            title: supersetGroup == nil ? "Sets" : "Shared Sets",
+                            focus: .sets(routineExercise.id),
+                            focusedField: focusedField,
                             value: Binding(
-                                get: { routineExercise.plannedSets },
+                                get: { supersetGroup?.sharedSetCount ?? routineExercise.plannedSets },
                                 set: { newValue in
-                                    viewModel.updatePlan(for: routineExercise.id, plannedSets: newValue)
+                                    if let supersetGroup {
+                                        viewModel.updateSupersetSetCount(groupID: supersetGroup.id, sharedSetCount: newValue)
+                                    } else {
+                                        viewModel.updatePlan(for: routineExercise.id, plannedSets: newValue)
+                                    }
                                     onEdit()
                                 }
                             )
@@ -740,6 +936,8 @@ private struct GymRoutineExercisePlanningCard: View {
 
                         GymPlanIntegerField(
                             title: "Reps",
+                            focus: .reps(routineExercise.id),
+                            focusedField: focusedField,
                             value: Binding(
                                 get: { routineExercise.plannedReps },
                                 set: { newValue in
@@ -752,6 +950,8 @@ private struct GymRoutineExercisePlanningCard: View {
                         GymPlanDecimalField(
                             title: "Weight",
                             unit: routineExercise.weightUnit.displayName,
+                            focus: .weight(routineExercise.id),
+                            focusedField: focusedField,
                             value: Binding(
                                 get: { routineExercise.plannedWeight },
                                 set: { newValue in
@@ -763,14 +963,22 @@ private struct GymRoutineExercisePlanningCard: View {
                     }
 
                     VStack(alignment: .leading, spacing: 10) {
+                        Text(supersetGroup == nil ? "Rest between sets" : "Superset rest")
+                            .font(.caption.weight(.black))
+                            .foregroundStyle(.white.opacity(0.52))
+
                         HStack(spacing: 8) {
                             ForEach([30, 60, 90, 120], id: \.self) { seconds in
                                 GymRestPresetButton(
                                     title: restPresetTitle(seconds),
-                                    isSelected: routineExercise.plannedRestSeconds == seconds
+                                    isSelected: (supersetGroup?.restTimeSeconds ?? routineExercise.plannedRestSeconds) == seconds
                                 ) {
                                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                    viewModel.updatePlan(for: routineExercise.id, plannedRestSeconds: seconds)
+                                    if let supersetGroup {
+                                        viewModel.updateSupersetRest(groupID: supersetGroup.id, restTimeSeconds: seconds)
+                                    } else {
+                                        viewModel.updatePlan(for: routineExercise.id, plannedRestSeconds: seconds)
+                                    }
                                     onEdit()
                                 }
                             }
@@ -779,10 +987,16 @@ private struct GymRoutineExercisePlanningCard: View {
                         GymPlanIntegerField(
                             title: "Custom Rest",
                             unit: "sec",
+                            focus: .rest(routineExercise.id),
+                            focusedField: focusedField,
                             value: Binding(
-                                get: { routineExercise.plannedRestSeconds },
+                                get: { supersetGroup?.restTimeSeconds ?? routineExercise.plannedRestSeconds },
                                 set: { newValue in
-                                    viewModel.updatePlan(for: routineExercise.id, plannedRestSeconds: newValue)
+                                    if let supersetGroup {
+                                        viewModel.updateSupersetRest(groupID: supersetGroup.id, restTimeSeconds: newValue)
+                                    } else {
+                                        viewModel.updatePlan(for: routineExercise.id, plannedRestSeconds: newValue)
+                                    }
                                     onEdit()
                                 }
                             )
@@ -821,21 +1035,395 @@ private struct GymRoutineExercisePlanningCard: View {
             }
         }
         .padding(14)
-        .background(.white.opacity(0.080), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(.white.opacity(isExpanded ? 0.16 : 0.10), lineWidth: 1)
+                .stroke(cardBorder, lineWidth: 1)
         }
     }
 
     private func restPresetTitle(_ seconds: Int) -> String {
-        seconds >= 60 ? "\(seconds / 60)m" : "\(seconds)s"
+        if seconds >= 60, seconds.isMultiple(of: 60) {
+            return "Rest \(seconds / 60) min"
+        }
+        return "Rest \(seconds)s"
+    }
+
+    private var cardBackground: LinearGradient {
+        LinearGradient(
+            colors: supersetGroup == nil
+                ? [.white.opacity(0.080), .white.opacity(0.052)]
+                : [Color(red: 0.72, green: 0.66, blue: 1.0).opacity(0.13), .white.opacity(0.062)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var cardBorder: Color {
+        if supersetGroup != nil {
+            return Color(red: 0.78, green: 0.72, blue: 1.0).opacity(isExpanded ? 0.32 : 0.22)
+        }
+        return .white.opacity(isExpanded ? 0.16 : 0.10)
+    }
+}
+
+private enum GymPlanningInputField: Hashable {
+    case sets(UUID)
+    case reps(UUID)
+    case weight(UUID)
+    case rest(UUID)
+}
+
+private struct GymSupersetPartnerPickerSheet: View {
+    var baseExercise: PulsarRoutineExercise
+    var candidates: [PulsarRoutineExercise]
+    var onCreate: (UUID, Int) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedPartnerID: UUID?
+    @State private var restSeconds = 90
+
+    init(
+        baseExercise: PulsarRoutineExercise,
+        candidates: [PulsarRoutineExercise],
+        onCreate: @escaping (UUID, Int) -> Void
+    ) {
+        self.baseExercise = baseExercise
+        self.candidates = candidates
+        self.onCreate = onCreate
+        _selectedPartnerID = State(initialValue: candidates.first?.id)
+    }
+
+    var body: some View {
+        ZStack {
+            GymSupersetSheetBackground()
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
+                    sheetHeader(title: "Create Superset", subtitle: baseExercise.exerciseName)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Pair with")
+                            .font(.caption.weight(.black))
+                            .foregroundStyle(.white.opacity(0.54))
+
+                        VStack(spacing: 9) {
+                            ForEach(candidates) { candidate in
+                                Button {
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    selectedPartnerID = candidate.id
+                                } label: {
+                                    HStack(spacing: 11) {
+                                        Image(systemName: selectedPartnerID == candidate.id ? "checkmark.circle.fill" : "circle")
+                                            .font(.headline.weight(.black))
+                                            .symbolRenderingMode(.hierarchical)
+                                            .foregroundStyle(selectedPartnerID == candidate.id ? Color(red: 0.70, green: 1.0, blue: 0.76) : .white.opacity(0.52))
+
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(candidate.exerciseName)
+                                                .font(.subheadline.weight(.bold))
+                                                .foregroundStyle(.white)
+                                                .lineLimit(2)
+                                            Text(candidate.primaryMuscleGroup.displayName)
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundStyle(.white.opacity(0.56))
+                                        }
+
+                                        Spacer(minLength: 0)
+                                    }
+                                    .padding(13)
+                                    .background(.white.opacity(selectedPartnerID == candidate.id ? 0.12 : 0.065), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                            .stroke(.white.opacity(selectedPartnerID == candidate.id ? 0.22 : 0.08), lineWidth: 1)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
+                    GymSupersetRestSelector(restSeconds: $restSeconds)
+
+                    Button {
+                        guard let selectedPartnerID else { return }
+                        onCreate(selectedPartnerID, restSeconds)
+                        dismiss()
+                    } label: {
+                        Text("Create Superset")
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 15)
+                            .background(
+                                LinearGradient(
+                                    colors: [.white.opacity(0.98), Color(red: 0.84, green: 0.78, blue: 1.0)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                in: Capsule(style: .continuous)
+                            )
+                    }
+                    .buttonStyle(PulsarGymPressButtonStyle())
+                    .disabled(selectedPartnerID == nil)
+                }
+                .padding(22)
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func sheetHeader(title: String, subtitle: String) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.white)
+                Text(subtitle)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 12)
+
+            Button("Done") {
+                dismiss()
+            }
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(.white.opacity(0.84))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(.white.opacity(0.08), in: Capsule(style: .continuous))
+        }
+    }
+}
+
+private struct GymSupersetEditorSheet: View {
+    var title: String
+    var group: PulsarSupersetGroup
+    var exercises: [PulsarRoutineExercise]
+    var onUpdateSets: (Int) -> Void
+    var onUpdateRest: (Int) -> Void
+    var onRemoveExercise: () -> Void
+    var onBreakGroup: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var sharedSets: Int
+    @State private var restSeconds: Int
+
+    init(
+        title: String,
+        group: PulsarSupersetGroup,
+        exercises: [PulsarRoutineExercise],
+        onUpdateSets: @escaping (Int) -> Void,
+        onUpdateRest: @escaping (Int) -> Void,
+        onRemoveExercise: @escaping () -> Void,
+        onBreakGroup: @escaping () -> Void
+    ) {
+        self.title = title
+        self.group = group
+        self.exercises = exercises
+        self.onUpdateSets = onUpdateSets
+        self.onUpdateRest = onUpdateRest
+        self.onRemoveExercise = onRemoveExercise
+        self.onBreakGroup = onBreakGroup
+        _sharedSets = State(initialValue: group.sharedSetCount)
+        _restSeconds = State(initialValue: group.restTimeSeconds)
+    }
+
+    var body: some View {
+        ZStack {
+            GymSupersetSheetBackground()
+
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(title)
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(.white)
+                        Text(exercises.map(\.exerciseName).joined(separator: " + "))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.62))
+                            .lineLimit(2)
+                    }
+
+                    Spacer(minLength: 12)
+
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.84))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(.white.opacity(0.08), in: Capsule(style: .continuous))
+                }
+
+                GymSupersetStepper(
+                    title: "Shared Sets",
+                    value: "\(sharedSets)",
+                    onMinus: {
+                        sharedSets = max(1, sharedSets - 1)
+                        onUpdateSets(sharedSets)
+                    },
+                    onPlus: {
+                        sharedSets = min(20, sharedSets + 1)
+                        onUpdateSets(sharedSets)
+                    }
+                )
+
+                GymSupersetRestSelector(
+                    restSeconds: Binding(
+                        get: { restSeconds },
+                        set: { newValue in
+                            restSeconds = newValue
+                            onUpdateRest(newValue)
+                        }
+                    )
+                )
+
+                VStack(spacing: 10) {
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        onRemoveExercise()
+                        dismiss()
+                    } label: {
+                        Text("Remove from Superset")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.white.opacity(0.86))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(.white.opacity(0.09), in: Capsule(style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        onBreakGroup()
+                        dismiss()
+                    } label: {
+                        Text("Delete Superset")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(Color(red: 1.0, green: 0.58, blue: 0.58))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color(red: 1.0, green: 0.40, blue: 0.45).opacity(0.11), in: Capsule(style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(22)
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
+private struct GymSupersetRestSelector: View {
+    @Binding var restSeconds: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Superset rest")
+                .font(.caption.weight(.black))
+                .foregroundStyle(.white.opacity(0.54))
+
+            HStack(spacing: 8) {
+                ForEach([30, 60, 90, 120], id: \.self) { seconds in
+                    GymRestPresetButton(
+                        title: seconds >= 60 ? "\(seconds / 60)m" : "\(seconds)s",
+                        isSelected: restSeconds == seconds
+                    ) {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        restSeconds = seconds
+                    }
+                }
+            }
+
+            GymSupersetStepper(
+                title: "Custom Rest",
+                value: "\(restSeconds)s",
+                onMinus: { restSeconds = max(0, restSeconds - 15) },
+                onPlus: { restSeconds = min(600, restSeconds + 15) }
+            )
+        }
+    }
+}
+
+private struct GymSupersetStepper: View {
+    var title: String
+    var value: String
+    var onMinus: () -> Void
+    var onPlus: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(.white.opacity(0.54))
+                Text(value)
+                    .font(.title3.weight(.black))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+            }
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 8) {
+                Button(action: onMinus) {
+                    Image(systemName: "minus")
+                        .font(.subheadline.weight(.black))
+                        .frame(width: 38, height: 38)
+                        .background(.white.opacity(0.08), in: Circle())
+                }
+
+                Button(action: onPlus) {
+                    Image(systemName: "plus")
+                        .font(.subheadline.weight(.black))
+                        .frame(width: 38, height: 38)
+                        .background(.white.opacity(0.12), in: Circle())
+                }
+            }
+            .foregroundStyle(.white.opacity(0.88))
+            .buttonStyle(.plain)
+        }
+        .padding(14)
+        .background(.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(.white.opacity(0.10), lineWidth: 1)
+        }
+    }
+}
+
+private struct GymSupersetSheetBackground: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.05, green: 0.04, blue: 0.09),
+                    Color(red: 0.14, green: 0.07, blue: 0.20),
+                    Color.black.opacity(0.96)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .opacity(0.16)
+        }
+        .ignoresSafeArea()
     }
 }
 
 private struct GymPlanIntegerField: View {
     var title: String
     var unit: String = ""
+    var focus: GymPlanningInputField
+    var focusedField: FocusState<GymPlanningInputField?>.Binding
     @Binding var value: Int
 
     var body: some View {
@@ -847,6 +1435,7 @@ private struct GymPlanIntegerField: View {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 TextField(title, value: $value, format: .number)
                     .keyboardType(.numberPad)
+                    .focused(focusedField, equals: focus)
                     .font(.headline.weight(.bold))
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.leading)
@@ -871,6 +1460,8 @@ private struct GymPlanIntegerField: View {
 private struct GymPlanDecimalField: View {
     var title: String
     var unit: String
+    var focus: GymPlanningInputField
+    var focusedField: FocusState<GymPlanningInputField?>.Binding
     @Binding var value: Double
 
     var body: some View {
@@ -882,6 +1473,7 @@ private struct GymPlanDecimalField: View {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 TextField(title, value: $value, format: .number.precision(.fractionLength(0...1)))
                     .keyboardType(.decimalPad)
+                    .focused(focusedField, equals: focus)
                     .font(.headline.weight(.bold))
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.leading)
@@ -930,6 +1522,149 @@ private struct GymRestPresetButton: View {
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
+    }
+}
+
+private struct GymRoutineEmojiPicker: View {
+    @Binding var selectedEmoji: String
+    var suggestedEmoji: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var customEmoji = ""
+    @FocusState private var isCustomEmojiFocused: Bool
+
+    private var options: [String] {
+        let values = [suggestedEmoji, "💪", "🦵", "🏋️", "🔥", "⚡️", "🏃", "🧠", "🪽", "🍑", "🧱", "🎯", "⭐️"]
+        var seen: Set<String> = []
+        return values.filter { seen.insert($0).inserted }
+    }
+
+    var body: some View {
+        ZStack {
+            sheetBackground
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("Routine Icon")
+                                .font(.title2.weight(.bold))
+                                .foregroundStyle(.white)
+                            Text("Choose an emoji that makes this plan instantly recognizable.")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white.opacity(0.62))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 12)
+                        Button("Done") {
+                            isCustomEmojiFocused = false
+                            dismiss()
+                        }
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.white.opacity(0.84))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(.white.opacity(0.08), in: Capsule(style: .continuous))
+                    }
+
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 6), spacing: 10) {
+                        ForEach(options, id: \.self) { emoji in
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                selectedEmoji = PulsarRoutine.normalizedEmoji(emoji)
+                                isCustomEmojiFocused = false
+                            } label: {
+                                Text(emoji)
+                                    .font(.system(size: 28))
+                                    .frame(maxWidth: .infinity, minHeight: 52)
+                                    .background(
+                                        isSelected(emoji) ? .white.opacity(0.22) : .white.opacity(0.08),
+                                        in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    )
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                            .stroke(isSelected(emoji) ? .white.opacity(0.34) : .white.opacity(0.10), lineWidth: 1)
+                                    }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    HStack(spacing: 10) {
+                        TextField("Custom emoji", text: $customEmoji)
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+                            .textInputAutocapitalization(.never)
+                            .disableAutocorrection(true)
+                            .submitLabel(.done)
+                            .focused($isCustomEmojiFocused)
+                            .padding(14)
+                            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .stroke(.white.opacity(isCustomEmojiFocused ? 0.24 : 0.10), lineWidth: 1)
+                            }
+                            .onSubmit {
+                                isCustomEmojiFocused = false
+                            }
+                            .onChange(of: customEmoji) { _, newValue in
+                                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                customEmoji = trimmed.isEmpty ? "" : String(trimmed.prefix(4))
+                            }
+
+                        Button("Use") {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            selectedEmoji = PulsarRoutine.normalizedEmoji(customEmoji)
+                            isCustomEmojiFocused = false
+                            dismiss()
+                        }
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 14)
+                        .background(.white.opacity(0.96), in: Capsule(style: .continuous))
+                        .disabled(customEmoji.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 24)
+                .padding(.bottom, 28)
+            }
+            .scrollDismissesKeyboard(.interactively)
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    isCustomEmojiFocused = false
+                }
+            }
+        }
+    }
+
+    private func isSelected(_ emoji: String) -> Bool {
+        if selectedEmoji.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return emoji == suggestedEmoji
+        }
+        return selectedEmoji == emoji
+    }
+
+    private var sheetBackground: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.05, green: 0.04, blue: 0.09),
+                    Color(red: 0.13, green: 0.06, blue: 0.17),
+                    Color.black.opacity(0.96)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .opacity(0.16)
+        }
+        .ignoresSafeArea()
     }
 }
 

@@ -194,15 +194,21 @@ actor HealthKitGateway {
         for workout in workouts {
             let heartRateSamples = includesHeartRate ? await fetchHeartRateSamples(start: workout.startDate, end: workout.endDate) : []
             let heartRates = heartRateSamples.map(\.bpm).filter { $0 > 0 }
-            let category = fitnessCategory(for: workout.workoutActivityType)
+            let gymMetadata = pulsarGymMetadata(for: workout)
+            let pulsarMetadata = pulsarWorkoutMetadata(for: workout)
+            let category = gymMetadata == nil ? fitnessCategory(for: workout.workoutActivityType) : .gym
+            let workoutType = gymMetadata?.categoryName ?? workout.workoutActivityType.fitnessDisplayName
+            let displayName = gymMetadata?.displayName ?? workout.workoutActivityType.fitnessDisplayName
             let provenance = provenance(for: workout)
+            PulsarSyncDebugLogger.log("HealthKit Activity Log metadata received session=\(pulsarMetadata.sessionId?.uuidString ?? "none") type=\(pulsarMetadata.workoutType ?? workout.workoutActivityType.fitnessDisplayName) startedFrom=\(pulsarMetadata.startedFrom?.rawValue ?? "unknown") hkType=\(workout.workoutActivityType.rawValue) source=\(provenance.displayName)")
 
             activities.append(
                 WeeklyActivity(
                     id: "healthkit-\(workout.uuid.uuidString)",
+                    pulsarWorkoutSessionId: pulsarMetadata.sessionId,
                     workoutUUID: workout.uuid,
-                    workoutType: workout.workoutActivityType.fitnessDisplayName,
-                    displayName: workout.workoutActivityType.fitnessDisplayName,
+                    workoutType: workoutType,
+                    displayName: displayName,
                     category: category,
                     startDate: workout.startDate,
                     endDate: workout.endDate,
@@ -212,7 +218,7 @@ actor HealthKitGateway {
                     averageHeartRate: heartRates.isEmpty ? nil : heartRates.reduce(0, +) / Double(heartRates.count),
                     maxHeartRate: heartRates.max(),
                     source: .healthKit,
-                    sourceName: provenance.displayName
+                    sourceName: pulsarMetadata.isPulsarWorkout ? PulsarWorkoutMetadata.brandName : provenance.displayName
                 )
             )
         }
@@ -450,6 +456,49 @@ actor HealthKitGateway {
         case .other: return .other
         default: return .notSet
         }
+    }
+
+    nonisolated private func pulsarGymMetadata(for workout: HKWorkout) -> (kind: PulsarGymWorkoutKind, categoryName: String, displayName: String)? {
+        guard let metadata = workout.metadata else { return nil }
+        let rawCategory = (metadata["PulsarWorkoutCategory"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let rawKind = (metadata["PulsarWorkoutKind"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let routineName = metadata["PulsarRoutineName"] as? String
+        let metadataDisplayName = metadata["PulsarWorkoutDisplayName"] as? String
+        let decodedKind = rawKind.flatMap(PulsarGymWorkoutKind.init(rawValue:))
+
+        let hasGymCategory = rawCategory == "gym" || rawKind?.lowercased() == "gym" || decodedKind != nil
+        guard hasGymCategory else { return nil }
+
+        let kind = decodedKind ?? PulsarGymWorkoutKind.inferred(
+            routineName: metadataDisplayName ?? routineName ?? "",
+            exerciseCount: 0
+        )
+        let displayName: String
+        if kind == .freeWorkout {
+            displayName = kind.displayName
+        } else {
+            let trimmedName = (metadataDisplayName ?? routineName ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            displayName = trimmedName.isEmpty ? kind.displayName : trimmedName
+        }
+
+        return (kind, kind.categoryName, displayName)
+    }
+
+    nonisolated private func pulsarWorkoutMetadata(for workout: HKWorkout) -> (sessionId: UUID?, workoutType: String?, startedFrom: PulsarWorkoutStartedFrom?, isPulsarWorkout: Bool) {
+        let metadata = workout.metadata
+        let sessionId = PulsarWorkoutMetadata.sessionId(from: metadata)
+        let workoutType = PulsarWorkoutMetadata.workoutType(from: metadata)
+        let startedFrom = PulsarWorkoutMetadata.startedFrom(from: metadata)
+        let brandName = metadata?[HKMetadataKeyWorkoutBrandName] as? String
+        let isPulsarWorkout = sessionId != nil ||
+            workoutType != nil ||
+            brandName?.localizedCaseInsensitiveCompare(PulsarWorkoutMetadata.brandName) == .orderedSame
+
+        return (sessionId, workoutType, startedFrom, isPulsarWorkout)
     }
 
     nonisolated private func fitnessCategory(for activityType: HKWorkoutActivityType) -> WeeklyActivityCategory {

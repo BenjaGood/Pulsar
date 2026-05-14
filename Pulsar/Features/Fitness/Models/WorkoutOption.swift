@@ -32,6 +32,15 @@ enum PersonalizedWorkoutKind: String, CaseIterable, Identifiable, Hashable {
         case .gym: .power
         }
     }
+
+    var outdoorWorkoutKind: PulsarOutdoorWorkoutKind? {
+        switch self {
+        case .running: .running
+        case .walking: .walking
+        case .hiking: .hiking
+        case .gym: nil
+        }
+    }
 }
 
 enum WorkoutAccent: String, Hashable {
@@ -72,6 +81,41 @@ struct WorkoutOption: Identifiable, Hashable {
 
     var isPersonalized: Bool {
         personalizedKind != nil
+    }
+
+    var outdoorWorkoutKind: PulsarOutdoorWorkoutKind? {
+        if let personalizedKind {
+            return personalizedKind.outdoorWorkoutKind
+        }
+
+        switch id {
+        case "cycling":
+            return .cycling
+        case "hiit":
+            return .hiit
+        case "strength":
+            return .strength
+        case "yoga":
+            return .yoga
+        case "pilates":
+            return .pilates
+        case "swimming":
+            return .swimming
+        case "rowing":
+            return .rowing
+        case "dance":
+            return .dance
+        case "boxing":
+            return .boxing
+        case "stretching":
+            return .stretching
+        case "core":
+            return .core
+        case "mobility":
+            return .mobility
+        default:
+            return nil
+        }
     }
 
     init(

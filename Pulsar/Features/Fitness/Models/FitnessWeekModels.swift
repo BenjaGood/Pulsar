@@ -17,8 +17,23 @@ struct WeekPeriod: Identifiable, Hashable {
     var id: String { "\(year)-\(weekNumber)" }
 }
 
+struct FitnessWeekRange: Hashable {
+    var startOfWeekMonday: Date
+    var endOfWeekSunday: Date
+    var endExclusive: Date
+
+    var interval: DateInterval {
+        DateInterval(start: startOfWeekMonday, end: endExclusive)
+    }
+
+    func contains(_ date: Date) -> Bool {
+        date >= startOfWeekMonday && date < endExclusive
+    }
+}
+
 struct WeeklyActivity: Identifiable, Hashable {
     var id: String
+    var pulsarWorkoutSessionId: UUID? = nil
     var workoutUUID: UUID?
     var workoutType: String
     var displayName: String
@@ -35,8 +50,8 @@ struct WeeklyActivity: Identifiable, Hashable {
     var completedSets: Int? = nil
     var totalSets: Int? = nil
     var mainMuscleGroups: [String] = []
-    var muscleLoadByBodyZone: [BodyZone: Double] = [:]
-    var muscleExercisesByBodyZone: [BodyZone: [String]] = [:]
+    var muscleLoadByMatrixGroup: [MuscleMatrixGroup: Double] = [:]
+    var muscleExercisesByMatrixGroup: [MuscleMatrixGroup: [String]] = [:]
 
     var durationMinutes: Double { max(0, duration / 60) }
 }
@@ -61,6 +76,15 @@ enum WeeklyActivityCategory: String, Hashable {
     case dance
     case recovery
     case other
+
+    var isCardioTraining: Bool {
+        switch self {
+        case .running, .walking, .hiking, .cycling, .hiit, .swimming, .rowing, .dance:
+            return true
+        case .strength, .gym, .yoga, .recovery, .other:
+            return false
+        }
+    }
 
     var symbolName: String {
         switch self {
@@ -98,35 +122,54 @@ enum WeeklyActivityCategory: String, Hashable {
 
 enum FitnessWeekCalculator {
     static func getCustomWeekNumber(for date: Date, calendar: Calendar = .current) -> Int {
-        let normalizedDate = calendar.startOfDay(for: date)
-        let januaryFirst = startOfYear(for: normalizedDate, calendar: calendar)
-        let dayDifference = calendar.dateComponents([.day], from: januaryFirst, to: normalizedDate).day ?? 0
-        return max(1, dayDifference / 7 + 1)
+        let calendar = fitnessCalendar(from: calendar)
+        return max(1, calendar.component(.weekOfYear, from: date))
+    }
+
+    static func getCurrentFitnessWeekRange(now: Date = .now, calendar: Calendar = .current) -> FitnessWeekRange {
+        getFitnessWeekRange(for: now, calendar: calendar)
+    }
+
+    static func isDateInCurrentFitnessWeek(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> Bool {
+        getCurrentFitnessWeekRange(now: now, calendar: calendar).contains(date)
+    }
+
+    static func getFitnessWeekRange(for date: Date, calendar: Calendar = .current) -> FitnessWeekRange {
+        let calendar = fitnessCalendar(from: calendar)
+        let day = calendar.startOfDay(for: date)
+        let weekday = calendar.component(.weekday, from: day)
+        let daysSinceMonday = (weekday + 5) % 7
+        let start = calendar.date(byAdding: .day, value: -daysSinceMonday, to: day) ?? day
+        let endExclusive = calendar.date(byAdding: .day, value: 7, to: start) ?? start.addingTimeInterval(7 * 86_400)
+        let endSunday = calendar.date(byAdding: .second, value: -1, to: endExclusive) ?? endExclusive.addingTimeInterval(-1)
+
+        return FitnessWeekRange(
+            startOfWeekMonday: start,
+            endOfWeekSunday: endSunday,
+            endExclusive: endExclusive
+        )
     }
 
     static func getWeekPeriod(for date: Date, calendar: Calendar = .current, now: Date = .now, hasWorkout: Bool = false) -> WeekPeriod {
-        let normalizedDate = calendar.startOfDay(for: date)
-        let year = calendar.component(.year, from: normalizedDate)
-        let weekNumber = getCustomWeekNumber(for: normalizedDate, calendar: calendar)
-        let januaryFirst = startOfYear(for: normalizedDate, calendar: calendar)
-        let start = calendar.date(byAdding: .day, value: (weekNumber - 1) * 7, to: januaryFirst) ?? januaryFirst
-        let decemberThirtyFirst = endOfYear(for: normalizedDate, calendar: calendar)
-        let uncappedEnd = calendar.date(byAdding: .day, value: 6, to: start) ?? start
-        let end = min(uncappedEnd, decemberThirtyFirst)
-        let currentWeek = getCustomWeekNumber(for: now, calendar: calendar)
-        let currentYear = calendar.component(.year, from: now)
+        let calendar = fitnessCalendar(from: calendar)
+        let range = getFitnessWeekRange(for: date, calendar: calendar)
+        let weekComponents = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        let weekNumber = max(1, weekComponents.weekOfYear ?? getCustomWeekNumber(for: date, calendar: calendar))
+        let year = weekComponents.yearForWeekOfYear ?? calendar.component(.year, from: range.startOfWeekMonday)
+        let currentRange = getCurrentFitnessWeekRange(now: now, calendar: calendar)
 
         return WeekPeriod(
             weekNumber: weekNumber,
             year: year,
-            startDate: start,
-            endDate: end,
-            isCurrentWeek: year == currentYear && weekNumber == currentWeek,
+            startDate: range.startOfWeekMonday,
+            endDate: range.endOfWeekSunday,
+            isCurrentWeek: range.startOfWeekMonday == currentRange.startOfWeekMonday,
             hasWorkout: hasWorkout
         )
     }
 
     static func getWeekPeriodsAroundCurrentWeek(pastWeeks: Int = 14, futureWeeks: Int = 0, calendar: Calendar = .current, now: Date = .now) -> [WeekPeriod] {
+        let calendar = fitnessCalendar(from: calendar)
         let current = getWeekPeriod(for: now, calendar: calendar, now: now)
         let firstStart = calendar.date(byAdding: .day, value: -7 * pastWeeks, to: current.startDate) ?? current.startDate
         let total = pastWeeks + futureWeeks + 1
@@ -138,9 +181,10 @@ enum FitnessWeekCalculator {
     }
 
     static func getWeekPeriods(forYear year: Int, calendar: Calendar = .current, now: Date = .now) -> [WeekPeriod] {
+        let calendar = fitnessCalendar(from: calendar)
         let interval = yearInterval(for: year, calendar: calendar)
         let finalDay = calendar.date(byAdding: .day, value: -1, to: interval.end) ?? interval.start
-        var date = interval.start
+        var date = getWeekPeriod(for: interval.start, calendar: calendar, now: now).startDate
         var periods: [WeekPeriod] = []
 
         while date <= finalDay {
@@ -155,36 +199,39 @@ enum FitnessWeekCalculator {
     }
 
     static func yearInterval(for year: Int, calendar: Calendar = .current) -> DateInterval {
+        let calendar = fitnessCalendar(from: calendar)
         let start = calendar.date(from: DateComponents(year: year, month: 1, day: 1)) ?? Date()
         let end = calendar.date(from: DateComponents(year: year + 1, month: 1, day: 1)) ?? calendar.date(byAdding: .year, value: 1, to: start) ?? start
         return DateInterval(start: start, end: end)
     }
 
     static func previousWeek(before week: WeekPeriod, calendar: Calendar = .current, now: Date = .now) -> WeekPeriod {
-        let date = calendar.date(byAdding: .day, value: -1, to: week.startDate) ?? week.startDate
+        let calendar = fitnessCalendar(from: calendar)
+        let date = calendar.date(byAdding: .day, value: -7, to: week.startDate) ?? week.startDate
         return getWeekPeriod(for: date, calendar: calendar, now: now)
     }
 
     static func nextWeek(after week: WeekPeriod, calendar: Calendar = .current, now: Date = .now) -> WeekPeriod {
+        let calendar = fitnessCalendar(from: calendar)
         let date = calendar.date(byAdding: .day, value: 7, to: week.startDate) ?? week.startDate
         return getWeekPeriod(for: date, calendar: calendar, now: now)
     }
 
     static func fetchEnd(for week: WeekPeriod, calendar: Calendar = .current) -> Date {
-        calendar.date(byAdding: .day, value: 1, to: week.endDate) ?? week.endDate
+        let calendar = fitnessCalendar(from: calendar)
+        return getFitnessWeekRange(for: week.startDate, calendar: calendar).endExclusive
     }
 
     static func contains(_ date: Date, in week: WeekPeriod, calendar: Calendar = .current) -> Bool {
-        date >= week.startDate && date < fetchEnd(for: week, calendar: calendar)
+        getFitnessWeekRange(for: week.startDate, calendar: calendar).contains(date)
     }
 
-    private static func startOfYear(for date: Date, calendar: Calendar) -> Date {
-        let year = calendar.component(.year, from: date)
-        return calendar.date(from: DateComponents(year: year, month: 1, day: 1)) ?? calendar.startOfDay(for: date)
-    }
-
-    private static func endOfYear(for date: Date, calendar: Calendar) -> Date {
-        let year = calendar.component(.year, from: date)
-        return calendar.date(from: DateComponents(year: year, month: 12, day: 31)) ?? calendar.startOfDay(for: date)
+    static func fitnessCalendar(from calendar: Calendar = .current) -> Calendar {
+        var fitnessCalendar = Calendar(identifier: .gregorian)
+        fitnessCalendar.locale = calendar.locale
+        fitnessCalendar.timeZone = calendar.timeZone
+        fitnessCalendar.firstWeekday = 2
+        fitnessCalendar.minimumDaysInFirstWeek = 1
+        return fitnessCalendar
     }
 }

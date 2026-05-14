@@ -1,0 +1,128 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Fitness/Views/FitnessProgressQuickView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "%lld exercises logged",
+        "location": {
+          "startingColumn": 37,
+          "startingLine": 95
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 83
+        }
+      },
+      {
+        "comment": "",
+        "key": "%@ progress details",
+        "location": {
+          "startingColumn": 41,
+          "startingLine": 158
+        }
+      },
+      {
+        "comment": "",
+        "key": "No exercises logged today yet",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 664
+        }
+      },
+      {
+        "comment": "",
+        "key": "No exercises logged this day",
+        "location": {
+          "startingColumn": 66,
+          "startingLine": 664
+        }
+      },
+      {
+        "comment": "",
+        "key": "Start Workout",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 678
+        }
+      },
+      {
+        "comment": "",
+        "key": "Loading daily progress",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 711
+        }
+      },
+      {
+        "comment": "",
+        "key": "Done",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 786
+        }
+      },
+      {
+        "comment": "",
+        "key": "%@ Progress",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 815
+        }
+      },
+      {
+        "comment": "",
+        "key": "No load data for this chart yet",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 1017
+        }
+      },
+      {
+        "comment": "",
+        "key": "Best Set History",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 1033
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld sets / %lld reps",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 1050
+        }
+      },
+      {
+        "comment": "",
+        "key": "Complete this exercise again to unlock trend charts.",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 1073
+        }
+      },
+      {
+        "comment": "",
+        "key": "No saved history yet",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 1106
+        }
+      },
+      {
+        "comment": "",
+        "key": "Finish a workout with %@ to start the trend.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 1110
+        }
+      }
+    ]
+  },
+  "version": 1
+}

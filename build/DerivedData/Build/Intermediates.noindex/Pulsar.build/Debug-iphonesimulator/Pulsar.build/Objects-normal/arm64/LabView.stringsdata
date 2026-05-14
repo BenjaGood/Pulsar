@@ -1,0 +1,312 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Lab/Views/LabView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Biological age & biomarker insights",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 142
+        }
+      },
+      {
+        "comment": "",
+        "key": "Lab",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 130
+        }
+      },
+      {
+        "comment": "",
+        "key": "Preliminary Biological Age",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 254
+        }
+      },
+      {
+        "comment": "",
+        "key": "Age estimate",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 266
+        }
+      },
+      {
+        "comment": "",
+        "key": "Biological Age %@. %@. %@",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 414
+        }
+      },
+      {
+        "comment": "",
+        "key": "yrs",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 481
+        }
+      },
+      {
+        "comment": "",
+        "key": "Preliminary",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 494
+        }
+      },
+      {
+        "comment": "",
+        "key": "Biological Age",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 541
+        }
+      },
+      {
+        "comment": "",
+        "key": "Age difference scale. Biological age %@. Chronological age %@. %@. Confidence %@.",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 664
+        }
+      },
+      {
+        "comment": "",
+        "key": "Younger",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 816
+        }
+      },
+      {
+        "comment": "",
+        "key": "Aligned",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 818
+        }
+      },
+      {
+        "comment": "",
+        "key": "Older",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 820
+        }
+      },
+      {
+        "comment": "",
+        "key": "Lab",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 1043
+        }
+      },
+      {
+        "comment": "",
+        "key": "Biological age and biomarkers",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 1044
+        }
+      },
+      {
+        "comment": "",
+        "key": "Health Trajectory",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 1538
+        }
+      },
+      {
+        "comment": "",
+        "key": "Pulsar recalculates every Monday.",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 1577
+        }
+      },
+      {
+        "comment": "",
+        "key": "Based on repeated Monday calculations.",
+        "location": {
+          "startingColumn": 42,
+          "startingLine": 1793
+        }
+      },
+      {
+        "comment": "",
+        "key": "Locked until 3 weekly results are available.",
+        "location": {
+          "startingColumn": 85,
+          "startingLine": 1793
+        }
+      },
+      {
+        "comment": "",
+        "key": "Confidence improves with 20+ days of data and recent lab results. Blood markers should be less than 6 months old.",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 2084
+        }
+      },
+      {
+        "comment": "",
+        "key": "Data confidence",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 2071
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld%%",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 2074
+        }
+      },
+      {
+        "comment": "",
+        "key": "Build your biological age profile",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 2138
+        }
+      },
+      {
+        "comment": "",
+        "key": "Enter manually",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 2153
+        }
+      },
+      {
+        "comment": "",
+        "key": "Delete biomarker",
+        "location": {
+          "startingColumn": 35,
+          "startingLine": 2389
+        }
+      },
+      {
+        "comment": "",
+        "key": "Done",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 2403
+        }
+      },
+      {
+        "comment": "",
+        "key": "Close",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 2476
+        }
+      },
+      {
+        "comment": "",
+        "key": "Import Lab Results",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 2503
+        }
+      },
+      {
+        "comment": "",
+        "key": "Select a PDF lab report. Extraction architecture is in place; parser connection will arrive in a later step.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 2506
+        }
+      },
+      {
+        "comment": "",
+        "key": "Enter manually",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 2517
+        }
+      },
+      {
+        "comment": "",
+        "key": "Reading PDF",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 2532
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld%%",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 2537
+        }
+      },
+      {
+        "comment": "",
+        "key": "Review extracted biomarkers",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 2547
+        }
+      },
+      {
+        "comment": "",
+        "key": "Choose another PDF",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 2591
+        }
+      },
+      {
+        "comment": "",
+        "key": "Enter manually",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 2581
+        }
+      },
+      {
+        "comment": "",
+        "key": "Date collected",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 2645
+        }
+      },
+      {
+        "comment": "",
+        "key": "Save biomarker",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 2659
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancel",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 2675
+        }
+      },
+      {
+        "comment": "",
+        "key": "Biological Age is an estimate based on available health, lifestyle, and biomarker data. It is not a diagnosis or a substitute for medical advice.",
+        "location": {
+          "startingColumn": 14,
+          "startingLine": 2733
+        }
+      }
+    ]
+  },
+  "version": 1
+}

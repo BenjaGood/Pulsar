@@ -121,6 +121,19 @@ struct PulsarRecoverySyncMetric: Codable, Equatable {
     }
 }
 
+struct PulsarSleepStageSyncInterval: Codable, Equatable {
+    var stage: String
+    var start: Date
+    var end: Date
+
+    nonisolated var isValid: Bool {
+        !stage.isEmpty &&
+            start.timeIntervalSinceReferenceDate.isFinite &&
+            end.timeIntervalSinceReferenceDate.isFinite &&
+            start < end
+    }
+}
+
 struct PulsarSleepSyncMetric: Codable, Equatable {
     var score: Int
     var confidence: PulsarSyncConfidence
@@ -149,6 +162,7 @@ struct PulsarSleepSyncMetric: Codable, Equatable {
     var targetSleepHours: Double
     var sourceNames: [String]
     var computedAt: Date
+    var stageIntervals: [PulsarSleepStageSyncInterval]? = nil
 
     nonisolated var isValid: Bool {
         guard (1...100).contains(score),
@@ -197,6 +211,10 @@ struct PulsarSleepSyncMetric: Codable, Equatable {
               awakenings >= 0,
               analyzedSampleCount > 0,
               (4...14).contains(targetSleepHours) else { return false }
+        if let stageIntervals,
+           !stageIntervals.allSatisfy(\.isValid) {
+            return false
+        }
         return true
     }
 }
@@ -553,7 +571,14 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
                 rounded(sleep.durationAdequacy),
                 rounded(sleep.regularity),
                 rounded(sleep.continuity),
-                rounded(sleep.targetSleepHours)
+                rounded(sleep.targetSleepHours),
+                sleep.stageIntervals?.prefix(24).map { interval in
+                    [
+                        interval.stage,
+                        rounded(interval.start.timeIntervalSinceReferenceDate),
+                        rounded(interval.end.timeIntervalSinceReferenceDate)
+                    ].joined(separator: "/")
+                }.joined(separator: ",") ?? "no-intervals"
             ].joined(separator: ":"))
         }
         if let stress, stress.isValid {

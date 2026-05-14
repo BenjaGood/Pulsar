@@ -76,6 +76,12 @@ final class RecoveryDetailsViewModel: ObservableObject {
         return date.formatted(.dateTime.weekday(.wide).month(.wide).day())
     }
 
+    var recoveryBalanceSubtitle: String {
+        calendar.isDateInToday(date)
+            ? "What is supporting or reducing recovery today"
+            : "What supported or reduced recovery that day"
+    }
+
     var metricTiles: [RecoveryMetricTileModel] {
         var tiles = [
             RecoveryMetricTileModel(title: "Recovery", value: scoreText, subtitle: "Baseline-relative", symbol: "heart.text.square.fill"),
@@ -124,13 +130,30 @@ final class RecoveryDetailsViewModel: ObservableObject {
         return sources.isEmpty ? "HealthKit" : sources.joined(separator: ", ")
     }
 
+    var needsDetailedRefresh: Bool {
+        guard canRequestHealthData else { return false }
+        if !Self.hasData(summary) { return true }
+        return summary.components.isEmpty || summary.trend.isEmpty
+    }
+
+    func loadIfNeeded() async {
+        guard needsDetailedRefresh else { return }
+        await refresh(showBanner: false)
+    }
+
     func load() async {
+        await refresh(showBanner: true)
+    }
+
+    private func refresh(showBanner: Bool) async {
         guard canRequestHealthData else {
             state = .permissionRequired
             return
         }
-        PulsarSyncDebugLogger.log("manual refresh started for Recovery details")
-        PulsarSyncBannerCenter.shared.showSyncing()
+        PulsarSyncDebugLogger.log("Recovery details refresh started date=\(date) reason=\(showBanner ? "manual" : "detailHydration")")
+        if showBanner {
+            PulsarSyncBannerCenter.shared.showSyncing()
+        }
         if !Self.hasData(summary) {
             state = .loading
         }
@@ -141,10 +164,14 @@ final class RecoveryDetailsViewModel: ObservableObject {
                 summary = loaded
             }
             state = Self.state(for: summary, canRequestHealthData: true)
-            PulsarSyncBannerCenter.shared.showSuccess()
+            if showBanner {
+                PulsarSyncBannerCenter.shared.showSuccess()
+            }
         } catch {
             state = Self.hasData(summary) ? .loaded : .error("Recovery data could not be refreshed.")
-            PulsarSyncBannerCenter.shared.showFailure()
+            if showBanner {
+                PulsarSyncBannerCenter.shared.showFailure()
+            }
         }
     }
 

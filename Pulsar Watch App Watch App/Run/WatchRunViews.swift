@@ -6,31 +6,16 @@
 import SwiftUI
 import WatchKit
 
-struct WatchRunEntryView: View {
-    @EnvironmentObject private var runManager: WatchRunSessionManager
-    @State private var isShowingOptions = false
+struct WatchWorkoutHeartbeatIntroView: View {
+    var title: String
+    var completionDelayNanoseconds: UInt64 = 380_000_000
+    var onCompletion: () -> Void
+
     @State private var introOpacity = 0.0
     @State private var pulseScale = 0.82
     @State private var glowOpacity = 0.0
 
     var body: some View {
-        ZStack {
-            if isShowingOptions {
-                WatchRunStartView()
-                    .environmentObject(runManager)
-                    .transition(.opacity.combined(with: .scale(scale: 1.02)))
-            } else {
-                watchHeartbeatIntro
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
-            }
-        }
-        .animation(.smooth(duration: 0.34), value: isShowingOptions)
-        .task {
-            await playIntro()
-        }
-    }
-
-    private var watchHeartbeatIntro: some View {
         ZStack {
             LinearGradient(
                 colors: [
@@ -55,7 +40,7 @@ struct WatchRunEntryView: View {
                     .shadow(color: .red.opacity(glowOpacity + 0.24), radius: 16)
                     .scaleEffect(pulseScale)
 
-                Text("Run")
+                Text(title)
                     .font(.headline.weight(.black))
                     .foregroundStyle(.white)
 
@@ -64,6 +49,9 @@ struct WatchRunEntryView: View {
                     .foregroundStyle(.white.opacity(0.62))
             }
             .opacity(introOpacity)
+        }
+        .task {
+            await playIntro()
         }
     }
 
@@ -76,6 +64,7 @@ struct WatchRunEntryView: View {
         }
 
         try? await Task.sleep(nanoseconds: 430_000_000)
+        guard !Task.isCancelled else { return }
         WKInterfaceDevice.current().play(.click)
         withAnimation(.spring(response: 0.18, dampingFraction: 0.48)) {
             pulseScale = 1.12
@@ -83,22 +72,46 @@ struct WatchRunEntryView: View {
         }
 
         try? await Task.sleep(nanoseconds: 150_000_000)
+        guard !Task.isCancelled else { return }
         WKInterfaceDevice.current().play(.directionUp)
         withAnimation(.easeOut(duration: 0.30)) {
             pulseScale = 1
             glowOpacity = 0.12
         }
 
-        try? await Task.sleep(nanoseconds: 380_000_000)
+        try? await Task.sleep(nanoseconds: completionDelayNanoseconds)
         guard !Task.isCancelled else { return }
-        withAnimation(.smooth(duration: 0.34)) {
-            isShowingOptions = true
+        onCompletion()
+    }
+}
+
+struct WatchRunEntryView: View {
+    @EnvironmentObject private var runManager: WatchRunSessionManager
+    var workoutKind: PulsarOutdoorWorkoutKind = .running
+    @State private var isShowingOptions = false
+
+    var body: some View {
+        ZStack {
+            if isShowingOptions {
+                WatchRunStartView(workoutKind: workoutKind)
+                    .environmentObject(runManager)
+                    .transition(.opacity.combined(with: .scale(scale: 1.02)))
+            } else {
+                WatchWorkoutHeartbeatIntroView(title: workoutKind.shortName) {
+                    withAnimation(.smooth(duration: 0.34)) {
+                        isShowingOptions = true
+                    }
+                }
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
         }
+        .animation(.smooth(duration: 0.34), value: isShowingOptions)
     }
 }
 
 struct WatchRunStartView: View {
     @EnvironmentObject private var runManager: WatchRunSessionManager
+    var workoutKind: PulsarOutdoorWorkoutKind = .running
     @State private var autoPause = true
     @State private var hapticCues = true
     @State private var countdown: Int?
@@ -107,9 +120,9 @@ struct WatchRunStartView: View {
         ZStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Run")
+                    Text(workoutKind.shortName)
                         .font(.title2.weight(.bold))
-                    Text("Start an outdoor run with HealthKit recording and iPhone mirroring.")
+                    Text("Start a \(workoutKind.actionName) with HealthKit recording and iPhone mirroring.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
 
@@ -124,12 +137,12 @@ struct WatchRunStartView: View {
                     Button {
                         Task { await startCountdown() }
                     } label: {
-                        Label("Start Run", systemImage: "figure.run")
+                        Label(workoutKind.startTitle, systemImage: workoutKind.systemImageName)
                             .font(.headline.weight(.bold))
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(.green)
+                    .tint(workoutKind.watchTint)
 
                     if let message = runManager.message {
                         Text(message)
@@ -168,13 +181,14 @@ struct WatchRunStartView: View {
         withAnimation(.easeOut(duration: 0.18)) {
             countdown = nil
         }
-        await runManager.startRunFromWatch(options: PulsarRunOptions(prefersWatchRecorder: true, autoPauseEnabled: autoPause, audioCuesEnabled: hapticCues))
+        await runManager.startOutdoorWorkoutFromWatch(workoutKind, options: PulsarRunOptions(prefersWatchRecorder: true, autoPauseEnabled: autoPause, audioCuesEnabled: hapticCues))
     }
 }
 
 struct WatchLiveRunView: View {
     @EnvironmentObject private var runManager: WatchRunSessionManager
     @State private var selectedTab = 0
+    @State private var isShowingNowPlaying = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -185,14 +199,38 @@ struct WatchLiveRunView: View {
         }
         .tabViewStyle(.verticalPage)
         .navigationBarBackButtonHidden(true)
+        .sheet(isPresented: $isShowingNowPlaying) {
+            NowPlayingView()
+        }
     }
 
     private var metricsPage: some View {
         VStack(spacing: 8) {
             HStack {
-                Text(PulsarRunFormatters.compactDistance(runManager.snapshot.distanceMeters))
+                Button {
+                    WKInterfaceDevice.current().play(.click)
+                    isShowingNowPlaying = true
+                } label: {
+                    Image(systemName: "music.note")
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(.white)
+                        .frame(width: 30, height: 30)
+                        .background(.thinMaterial, in: Circle())
+                        .overlay {
+                            Circle()
+                                .stroke(.white.opacity(0.16), lineWidth: 1)
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Now Playing")
+
+                Spacer()
+            }
+
+            HStack {
+                Text(primaryMetricValue)
                     .font(.system(size: 34, weight: .black, design: .rounded).monospacedDigit())
-                Text("km")
+                Text(primaryMetricUnit)
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
                     .padding(.top, 10)
@@ -201,19 +239,39 @@ struct WatchLiveRunView: View {
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
                 WatchRunMetric(title: "Time", value: PulsarRunFormatters.duration(runManager.snapshot.elapsedTime))
-                WatchRunMetric(title: "Pace", value: PulsarRunFormatters.pace(runManager.snapshot.currentPaceSecondsPerKilometer).replacingOccurrences(of: " /km", with: ""))
+                WatchRunMetric(title: "Calories", value: PulsarRunFormatters.calories(runManager.snapshot.activeEnergyKilocalories), unit: "cal", tint: .orange)
                 WatchRunMetric(title: "HR", value: PulsarRunFormatters.heartRate(runManager.snapshot.currentHeartRate), unit: "bpm", tint: .red)
-                WatchRunMetric(title: "Gain", value: PulsarRunFormatters.elevation(runManager.snapshot.elevationGainMeters), tint: .green)
+                WatchRunMetric(title: secondaryMetricTitle, value: secondaryMetricValue, tint: runManager.snapshot.workoutKind.watchTint)
             }
 
             Text(runManager.snapshot.phase == .paused ? "Paused" : "Recording")
                 .font(.caption2.weight(.black))
-                .foregroundStyle(runManager.snapshot.phase == .paused ? .orange : .green)
+                .foregroundStyle(runManager.snapshot.phase == .paused ? .orange : runManager.snapshot.workoutKind.watchTint)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background((runManager.snapshot.phase == .paused ? Color.orange : Color.green).opacity(0.14), in: Capsule())
+                .background((runManager.snapshot.phase == .paused ? Color.orange : runManager.snapshot.workoutKind.watchTint).opacity(0.14), in: Capsule())
         }
         .padding(.horizontal, 8)
+    }
+
+    private var primaryMetricValue: String {
+        runManager.snapshot.workoutKind.isOutdoorDistanceWorkout
+            ? PulsarRunFormatters.compactDistance(runManager.snapshot.distanceMeters)
+            : PulsarRunFormatters.duration(runManager.snapshot.elapsedTime)
+    }
+
+    private var primaryMetricUnit: String {
+        runManager.snapshot.workoutKind.isOutdoorDistanceWorkout ? "km" : runManager.snapshot.workoutKind.shortName
+    }
+
+    private var secondaryMetricTitle: String {
+        runManager.snapshot.workoutKind.isOutdoorDistanceWorkout ? "Pace" : "State"
+    }
+
+    private var secondaryMetricValue: String {
+        runManager.snapshot.workoutKind.isOutdoorDistanceWorkout
+            ? PulsarRunFormatters.pace(runManager.snapshot.currentPaceSecondsPerKilometer).replacingOccurrences(of: " /km", with: "")
+            : (runManager.snapshot.phase == .paused ? "Paused" : "Live")
     }
 
     private var controlsPage: some View {
@@ -222,7 +280,7 @@ struct WatchLiveRunView: View {
                 runManager.snapshot.phase == .paused ? runManager.resume() : runManager.pause()
             }
             .buttonStyle(.borderedProminent)
-            .tint(runManager.snapshot.phase == .paused ? .green : .orange)
+            .tint(runManager.snapshot.phase == .paused ? runManager.snapshot.workoutKind.watchTint : .orange)
 
             Button("Finish", role: .destructive) {
                 runManager.finish()
@@ -264,5 +322,25 @@ private struct WatchRunMetric: View {
         .padding(8)
         .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
         .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+private extension PulsarOutdoorWorkoutKind {
+    var watchTint: Color {
+        switch self {
+        case .running: .green
+        case .walking: Color(red: 0.44, green: 0.72, blue: 1.00)
+        case .hiking: Color(red: 0.34, green: 0.82, blue: 0.58)
+        case .cycling: Color(red: 0.25, green: 0.78, blue: 0.86)
+        case .hiit: Color(red: 1.00, green: 0.61, blue: 0.25)
+        case .strength: Color(red: 0.72, green: 0.66, blue: 1.00)
+        case .yoga, .stretching, .cooldown: Color(red: 0.72, green: 0.82, blue: 0.46)
+        case .pilates, .core, .mobility: Color(red: 0.44, green: 0.72, blue: 1.00)
+        case .swimming: Color(red: 0.34, green: 0.68, blue: 1.00)
+        case .rowing, .elliptical, .stairClimber: Color(red: 0.25, green: 0.78, blue: 0.86)
+        case .dance: Color(red: 1.00, green: 0.44, blue: 0.68)
+        case .boxing: Color(red: 1.00, green: 0.46, blue: 0.34)
+        case .other: Color(red: 0.68, green: 0.74, blue: 0.84)
+        }
     }
 }

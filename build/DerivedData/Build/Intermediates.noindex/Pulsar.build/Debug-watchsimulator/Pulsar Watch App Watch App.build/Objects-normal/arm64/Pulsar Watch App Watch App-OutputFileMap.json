@@ -1,0 +1,259 @@
+{
+  "" : {
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/Pulsar Watch App Watch App-primary.dia",
+    "emit-module-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/Pulsar Watch App Watch App-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/Pulsar Watch App Watch App-primary-emit-module.dia",
+    "pch" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/Pulsar Watch App Watch App-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/Pulsar Watch App Watch App-primary.swiftdeps"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/ContentView.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/ContentView.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/ContentView.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/ContentView.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/ContentView.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/ContentView.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/ContentView.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/ContentView.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/ContentView~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/Pulsar_Watch_AppApp.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/Pulsar_Watch_AppApp.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/Pulsar_Watch_AppApp.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/Pulsar_Watch_AppApp.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/Pulsar_Watch_AppApp.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/Pulsar_Watch_AppApp.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/Pulsar_Watch_AppApp.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/Pulsar_Watch_AppApp.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/Pulsar_Watch_AppApp~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/Run/WatchRunAppDelegate.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunAppDelegate.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunAppDelegate.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunAppDelegate.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunAppDelegate.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunAppDelegate.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunAppDelegate.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunAppDelegate.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunAppDelegate~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/Run/WatchRunSessionManager.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunSessionManager.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunSessionManager.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunSessionManager.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunSessionManager.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunSessionManager.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunSessionManager.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunSessionManager.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunSessionManager~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/Run/WatchRunViews.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunViews.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunViews.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunViews.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunViews.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunViews.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunViews.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunViews.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchRunViews~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/WatchComponents.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchComponents.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchComponents.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchComponents.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchComponents.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchComponents.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchComponents.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchComponents.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchComponents~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/WatchDetailViews.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchDetailViews.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchDetailViews.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchDetailViews.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchDetailViews.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchDetailViews.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchDetailViews.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchDetailViews.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchDetailViews~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/WatchHealthKitStore.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchHealthKitStore.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchHealthKitStore.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchHealthKitStore.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchHealthKitStore.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchHealthKitStore.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchHealthKitStore.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchHealthKitStore.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchHealthKitStore~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/WatchHealthModels.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchHealthModels.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchHealthModels.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchHealthModels.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchHealthModels.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchHealthModels.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchHealthModels.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchHealthModels.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchHealthModels~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/WatchLaunchAnimationView.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchLaunchAnimationView.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchLaunchAnimationView.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchLaunchAnimationView.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchLaunchAnimationView.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchLaunchAnimationView.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchLaunchAnimationView.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchLaunchAnimationView.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchLaunchAnimationView~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/Workouts/WatchGymSessionManager.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymSessionManager.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymSessionManager.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymSessionManager.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymSessionManager.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymSessionManager.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymSessionManager.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymSessionManager.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymSessionManager~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/Workouts/WatchGymStartFlowView.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymStartFlowView.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymStartFlowView.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymStartFlowView.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymStartFlowView.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymStartFlowView.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymStartFlowView.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymStartFlowView.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymStartFlowView~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/Workouts/WatchGymWorkoutView.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymWorkoutView.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymWorkoutView.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymWorkoutView.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymWorkoutView.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymWorkoutView.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymWorkoutView.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymWorkoutView.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchGymWorkoutView~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/Workouts/WatchWorkoutPickerView.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchWorkoutPickerView.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchWorkoutPickerView.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchWorkoutPickerView.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchWorkoutPickerView.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchWorkoutPickerView.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchWorkoutPickerView.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchWorkoutPickerView.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/WatchWorkoutPickerView~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Shared/PulsarDailyMetricsSync.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarDailyMetricsSync.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarDailyMetricsSync.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarDailyMetricsSync.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarDailyMetricsSync.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarDailyMetricsSync.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarDailyMetricsSync.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarDailyMetricsSync.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarDailyMetricsSync~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Shared/PulsarGymSharedModels.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarGymSharedModels.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarGymSharedModels.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarGymSharedModels.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarGymSharedModels.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarGymSharedModels.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarGymSharedModels.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarGymSharedModels.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarGymSharedModels~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Shared/PulsarMetricRingTheme.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarMetricRingTheme.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarMetricRingTheme.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarMetricRingTheme.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarMetricRingTheme.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarMetricRingTheme.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarMetricRingTheme.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarMetricRingTheme.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarMetricRingTheme~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Shared/PulsarRunQuickStartIntent.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarRunQuickStartIntent.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarRunQuickStartIntent.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarRunQuickStartIntent.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarRunQuickStartIntent.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarRunQuickStartIntent.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarRunQuickStartIntent.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarRunQuickStartIntent.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarRunQuickStartIntent~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Shared/PulsarRunSharedModels.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarRunSharedModels.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarRunSharedModels.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarRunSharedModels.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarRunSharedModels.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarRunSharedModels.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarRunSharedModels.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarRunSharedModels.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarRunSharedModels~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Shared/PulsarSharedMetricCalculator.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarSharedMetricCalculator.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarSharedMetricCalculator.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarSharedMetricCalculator.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarSharedMetricCalculator.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarSharedMetricCalculator.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarSharedMetricCalculator.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarSharedMetricCalculator.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarSharedMetricCalculator~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Shared/PulsarSleepPreferencesSync.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarSleepPreferencesSync.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarSleepPreferencesSync.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarSleepPreferencesSync.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarSleepPreferencesSync.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarSleepPreferencesSync.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarSleepPreferencesSync.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarSleepPreferencesSync.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarSleepPreferencesSync~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Shared/PulsarStressScoring.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarStressScoring.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarStressScoring.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarStressScoring.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarStressScoring.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarStressScoring.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarStressScoring.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarStressScoring.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarStressScoring~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Shared/PulsarWatchConnectivitySyncStore.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarWatchConnectivitySyncStore.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarWatchConnectivitySyncStore.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarWatchConnectivitySyncStore.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarWatchConnectivitySyncStore.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarWatchConnectivitySyncStore.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarWatchConnectivitySyncStore.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarWatchConnectivitySyncStore.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/PulsarWatchConnectivitySyncStore~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Shared/SleepAnalysis.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/SleepAnalysis.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/SleepAnalysis.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/SleepAnalysis.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/SleepAnalysis.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/SleepAnalysis.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/SleepAnalysis.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/SleepAnalysis.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/SleepAnalysis~partial.swiftmodule"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/GeneratedAssetSymbols.dia",
+    "index-unit-output-path" : "/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftdeps",
+    "swiftmodule" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-watchsimulator/Pulsar Watch App Watch App.build/Objects-normal/arm64/GeneratedAssetSymbols~partial.swiftmodule"
+  }
+}

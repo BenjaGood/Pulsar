@@ -31,7 +31,7 @@ struct PulsarRunSummaryView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Run Saved")
+                Text(summary.workoutKind.savedTitle)
                     .font(.system(size: 36, weight: .black, design: .rounded))
                 Text(summary.startedAt.formatted(.dateTime.weekday(.wide).month(.abbreviated).day().hour().minute()))
                     .font(.subheadline.weight(.semibold))
@@ -51,7 +51,7 @@ struct PulsarRunSummaryView: View {
         if routeCoordinates.count > 1 {
             Map {
                 MapPolyline(coordinates: routeCoordinates)
-                    .stroke(.green, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                    .stroke(summary.workoutKind.accentColor, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
             }
             .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
             .frame(height: 230)
@@ -72,11 +72,11 @@ struct PulsarRunSummaryView: View {
     private var heroStats: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
             SummaryTile(title: "Distance", value: PulsarRunFormatters.distance(summary.distanceMeters), symbol: "point.topleft.down.curvedto.point.bottomright.up")
-            SummaryTile(title: "Moving Time", value: PulsarRunFormatters.duration(summary.movingTime), symbol: "figure.run")
+            SummaryTile(title: "Moving Time", value: PulsarRunFormatters.duration(summary.movingTime), symbol: summary.workoutKind.systemImageName, tint: summary.workoutKind.accentColor)
             SummaryTile(title: "Elapsed", value: PulsarRunFormatters.duration(summary.elapsedTime), symbol: "timer")
             SummaryTile(title: "Avg Pace", value: PulsarRunFormatters.pace(summary.averagePaceSecondsPerKilometer), symbol: "speedometer")
             SummaryTile(title: "Calories", value: PulsarRunFormatters.calories(summary.activeEnergyKilocalories), symbol: "flame.fill", tint: .orange)
-            SummaryTile(title: "Elevation", value: PulsarRunFormatters.elevation(summary.elevationGainMeters), symbol: "mountain.2.fill", tint: .green)
+            SummaryTile(title: "Elevation", value: PulsarRunFormatters.elevation(summary.elevationGainMeters), symbol: "mountain.2.fill", tint: summary.workoutKind.accentColor)
             SummaryTile(title: "Avg HR", value: PulsarRunFormatters.heartRate(summary.averageHeartRate), unit: "bpm", symbol: "heart.fill", tint: .red)
             SummaryTile(title: "Max HR", value: PulsarRunFormatters.heartRate(summary.maxHeartRate), unit: "bpm", symbol: "bolt.heart.fill", tint: .red)
         }
@@ -91,7 +91,7 @@ struct PulsarRunSummaryView: View {
                             x: .value("Split", split.index),
                             y: .value("Pace", split.paceSecondsPerKilometer ?? 0)
                         )
-                        .foregroundStyle(.green.gradient)
+                        .foregroundStyle(summary.workoutKind.accentColor.gradient)
                     }
                     .chartYAxis {
                         AxisMarks { value in
@@ -114,12 +114,12 @@ struct PulsarRunSummaryView: View {
                             y: .value("Elevation", sample.altitude)
                         )
                         .interpolationMethod(.catmullRom)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(summary.workoutKind.accentColor)
                         AreaMark(
                             x: .value("Point", sample.index),
                             y: .value("Elevation", sample.altitude)
                         )
-                        .foregroundStyle(.green.opacity(0.16))
+                        .foregroundStyle(summary.workoutKind.accentColor.opacity(0.16))
                     }
                     .frame(height: 170)
                 }
@@ -169,14 +169,14 @@ struct PulsarRunSummaryView: View {
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
-                .background(.green.gradient, in: Capsule(style: .continuous))
+                .background(summary.workoutKind.accentColor.gradient, in: Capsule(style: .continuous))
         }
         .buttonStyle(PulsarRunPressStyle())
     }
 
     private var summaryBackground: some View {
         LinearGradient(
-            colors: [Color(.systemBackground), Color.green.opacity(0.10), Color(.secondarySystemBackground)],
+            colors: [Color(.systemBackground), summary.workoutKind.accentColor.opacity(0.10), Color(.secondarySystemBackground)],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )

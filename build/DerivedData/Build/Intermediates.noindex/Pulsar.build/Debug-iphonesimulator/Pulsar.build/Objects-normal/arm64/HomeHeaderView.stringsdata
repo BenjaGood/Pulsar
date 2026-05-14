@@ -1,0 +1,24 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Home/Views/HomeHeaderView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Open calendar",
+        "location": {
+          "startingColumn": 33,
+          "startingLine": 85
+        }
+      },
+      {
+        "comment": "",
+        "key": "Open Profile",
+        "location": {
+          "startingColumn": 37,
+          "startingLine": 62
+        }
+      }
+    ]
+  },
+  "version": 1
+}

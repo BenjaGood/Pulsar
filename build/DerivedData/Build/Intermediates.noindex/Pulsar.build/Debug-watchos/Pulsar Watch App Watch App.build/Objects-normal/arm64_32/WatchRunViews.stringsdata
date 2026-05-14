@@ -1,0 +1,104 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar Watch App Watch App/Run/WatchRunViews.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Pulsar",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 47
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 158
+        }
+      },
+      {
+        "comment": "",
+        "key": "Start a %@ with HealthKit recording and iPhone mirroring.",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 125
+        }
+      },
+      {
+        "comment": "",
+        "key": "Auto-pause",
+        "location": {
+          "startingColumn": 36,
+          "startingLine": 131
+        }
+      },
+      {
+        "comment": "",
+        "key": "Haptic cues",
+        "location": {
+          "startingColumn": 36,
+          "startingLine": 132
+        }
+      },
+      {
+        "comment": "",
+        "key": "Paused",
+        "location": {
+          "startingColumn": 57,
+          "startingLine": 247
+        }
+      },
+      {
+        "comment": "",
+        "key": "Recording",
+        "location": {
+          "startingColumn": 68,
+          "startingLine": 247
+        }
+      },
+      {
+        "comment": "",
+        "key": "Now Playing",
+        "location": {
+          "startingColumn": 37,
+          "startingLine": 225
+        }
+      },
+      {
+        "comment": "",
+        "key": "Resume",
+        "location": {
+          "startingColumn": 59,
+          "startingLine": 279
+        }
+      },
+      {
+        "comment": "",
+        "key": "Pause",
+        "location": {
+          "startingColumn": 70,
+          "startingLine": 279
+        }
+      },
+      {
+        "comment": "",
+        "key": "Finish",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 285
+        }
+      },
+      {
+        "comment": "",
+        "key": "Saving",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 291
+        }
+      }
+    ]
+  },
+  "version": 1
+}

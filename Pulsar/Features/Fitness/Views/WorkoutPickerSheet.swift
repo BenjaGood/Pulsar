@@ -159,7 +159,7 @@ struct WorkoutPickerSheet: View {
     private func handleSelection(_ workout: WorkoutOption) {
         UIImpactFeedbackGenerator(style: workout.isPersonalized ? .medium : .light).impactOccurred()
 
-        guard workout.isPersonalized else { return }
+        guard workout.isPersonalized || workout.outdoorWorkoutKind != nil else { return }
 
         dismiss {
             onSelectPersonalizedWorkout(workout)

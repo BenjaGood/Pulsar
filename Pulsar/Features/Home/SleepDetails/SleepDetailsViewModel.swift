@@ -144,21 +144,43 @@ final class SleepDetailsViewModel: ObservableObject {
         return sources.isEmpty ? "HealthKit" : sources.joined(separator: ", ")
     }
 
+    var needsDetailedRefresh: Bool {
+        guard canRequestHealthData else { return false }
+        if summary.totalSleepMinutes > 0, summary.intervals.isEmpty { return true }
+        if summary.analyzedSampleCount == 0 { return true }
+        return false
+    }
+
+    func loadIfNeeded() async {
+        guard needsDetailedRefresh else { return }
+        await refresh(showBanner: false)
+    }
+
     func load() async {
+        await refresh(showBanner: true)
+    }
+
+    private func refresh(showBanner: Bool) async {
         guard canRequestHealthData else {
             state = .permissionRequired
             return
         }
-        PulsarSyncDebugLogger.log("manual refresh started for Sleep details")
-        state = .loading
+        PulsarSyncDebugLogger.log("Sleep details refresh started wakeUpDate=\(wakeUpDate) reason=\(showBanner ? "manual" : "detailHydration")")
+        if summary.totalSleepMinutes == 0 && summary.intervals.isEmpty {
+            state = .loading
+        }
         let syncSessionID = UUID()
-        PulsarSyncBannerCenter.shared.showSyncing()
+        if showBanner {
+            PulsarSyncBannerCenter.shared.showSyncing()
+        }
         PulsarSyncDebugLogger.log("Sleep sync started session=\(syncSessionID.uuidString) wakeUpDate=\(wakeUpDate)")
         do {
             let refreshedAt = Date()
             let loaded = try await provider.sleepSummary(profile: profile, wakeUpDate: wakeUpDate, calendar: calendar, refreshedAt: refreshedAt)
-            summary = loaded
-            state = Self.state(for: loaded, canRequestHealthData: true)
+            if loaded.totalSleepMinutes > 0 || summary.totalSleepMinutes == 0 {
+                summary = loaded
+            }
+            state = Self.state(for: summary, canRequestHealthData: true)
             let dashboard = HomeDashboard(profile: profile, sleep: loaded, recovery: .missing, strain: .missing, generatedAt: refreshedAt, usingSampleData: false)
             if let payload = dashboard.syncPayload(sourceDevice: .iPhone, syncSessionID: syncSessionID, calendar: calendar) {
                 syncStore.storeLocalPayload(payload, broadcast: true, reason: "iPhoneSleepDetailsSync")
@@ -166,10 +188,14 @@ final class SleepDetailsViewModel: ObservableObject {
             } else {
                 PulsarSyncDebugLogger.log("invalid result ignored for Sleep details session=\(syncSessionID.uuidString)")
             }
-            PulsarSyncBannerCenter.shared.showSuccess()
+            if showBanner {
+                PulsarSyncBannerCenter.shared.showSuccess()
+            }
         } catch {
-            state = .error("Sleep data could not be refreshed.")
-            PulsarSyncBannerCenter.shared.showFailure()
+            state = summary.totalSleepMinutes > 0 ? .loaded : .error("Sleep data could not be refreshed.")
+            if showBanner {
+                PulsarSyncBannerCenter.shared.showFailure()
+            }
         }
     }
 

@@ -162,6 +162,22 @@ final class StrainDetailsViewModel: ObservableObject {
         return date.formatted(.dateTime.weekday(.wide).month(.wide).day())
     }
 
+    var isViewingToday: Bool {
+        calendar.isDateInToday(date)
+    }
+
+    var accumulatedSubtitle: String {
+        isViewingToday ? "Accumulated today" : "Recorded that day"
+    }
+
+    var workoutsSubtitle: String {
+        summary.workouts.isEmpty ? "No logged workouts" : (isViewingToday ? "Logged today" : "Logged that day")
+    }
+
+    var workoutEmptyTitle: String {
+        isViewingToday ? "No workouts logged today" : "No workouts logged for this date"
+    }
+
     var statusText: String {
         if let targetRange, hasCurrentStrainValue, summary.score > targetRange.upperBound { return "Above target" }
         if let targetRange, hasCurrentStrainValue, targetRange.contains(summary.score) { return "In target range" }
@@ -174,11 +190,11 @@ final class StrainDetailsViewModel: ObservableObject {
 
     var metricTiles: [StrainMetricTileModel] {
         [
-            StrainMetricTileModel(title: "Current Strain", value: scoreText, subtitle: "Accumulated today", symbol: "bolt.heart.fill"),
+            StrainMetricTileModel(title: "Current Strain", value: scoreText, subtitle: accumulatedSubtitle, symbol: "bolt.heart.fill"),
             StrainMetricTileModel(title: "Target Range", value: recommendedTargetText, subtitle: targetProgressText, symbol: "scope"),
             StrainMetricTileModel(title: "Active Strain", value: activeStrainText, subtitle: "Workout contribution", symbol: "figure.run"),
             StrainMetricTileModel(title: "Passive Strain", value: passiveStrainText, subtitle: "Movement + elevated HR", symbol: "figure.walk.motion"),
-            StrainMetricTileModel(title: "Workouts", value: workoutsText, subtitle: summary.workouts.isEmpty ? "No logged workouts" : "Logged today", symbol: "figure.run"),
+            StrainMetricTileModel(title: "Workouts", value: workoutsText, subtitle: workoutsSubtitle, symbol: "figure.run"),
             StrainMetricTileModel(title: "Training Time", value: trainingTimeText, subtitle: "Workout duration", symbol: "timer"),
             StrainMetricTileModel(title: "Exercise", value: exerciseMinutesText, subtitle: "Apple Exercise Time", symbol: "figure.walk.motion"),
             StrainMetricTileModel(title: "Steps", value: stepsText, subtitle: "\(stepProgressText) of goal", symbol: "shoeprints.fill"),
@@ -192,7 +208,7 @@ final class StrainDetailsViewModel: ObservableObject {
 
     var insights: [StrainInsight] {
         var values: [String] = []
-        values.append(PulsarSharedMetricCalculator.strainGuidance(
+        values.append(dateAwareCopy(PulsarSharedMetricCalculator.strainGuidance(
             currentStrain: hasCurrentStrainValue ? summary.score : nil,
             targetRange: targetRange,
             recoveryScore: recoveryScore,
@@ -202,14 +218,14 @@ final class StrainDetailsViewModel: ObservableObject {
             exerciseMinutes: summary.exerciseMinutes,
             steps: summary.steps,
             isEarlyDay: calendar.isDateInToday(date) && calendar.component(.hour, from: Date()) < 11
-        ))
+        )))
         if !summary.workouts.isEmpty {
-            values.append("You completed \(summary.workouts.count) \(summary.workouts.count == 1 ? "workout" : "workouts") today for a total of \(Self.durationText(minutes: summary.workoutMinutes)).")
+            values.append("You completed \(summary.workouts.count) \(summary.workouts.count == 1 ? "workout" : "workouts") \(isViewingToday ? "today" : "that day") for a total of \(Self.durationText(minutes: summary.workoutMinutes)).")
             if summary.workoutLoad >= summary.movementLoad {
-                values.append("Most of today's load came from active strain: workouts, duration, and workout intensity.")
+                values.append("Most of \(isViewingToday ? "today's" : "that day's") load came from active strain: workouts, duration, and workout intensity.")
             }
         } else if summary.exerciseMinutes < 20 {
-            values.append("Today looks recovery-focused with light movement and no logged workouts.")
+            values.append(isViewingToday ? "Today looks recovery-focused with light movement and no logged workouts." : "That day looked recovery-focused with light movement and no logged workouts.")
         }
         if summary.movementLoad > 0 {
             values.append("Passive strain reflects walking, active calories, non-workout exercise, and sustained elevated heart rate.")
@@ -221,12 +237,20 @@ final class StrainDetailsViewModel: ObservableObject {
             values.append("You are \(stepProgressText) of the way to your \(summary.stepGoal.formatted()) step goal.")
         }
         if let hardest = summary.workouts.max(by: { ($0.peakHeartRate ?? $0.averageHeartRate ?? 0) < ($1.peakHeartRate ?? $1.averageHeartRate ?? 0) }) {
-            values.append("Most of today's high-intensity signal came from \(hardest.workoutType.lowercased()).")
+            values.append("Most of \(isViewingToday ? "today's" : "that day's") high-intensity signal came from \(hardest.workoutType.lowercased()).")
         }
         if values.isEmpty {
             values.append("Strain details will appear after HealthKit records movement, workouts, or heart-rate samples for this day.")
         }
         return Array(values.prefix(4)).map { StrainInsight(text: $0) }
+    }
+
+    private func dateAwareCopy(_ text: String) -> String {
+        guard !isViewingToday else { return text }
+        return text
+            .replacingOccurrences(of: "today's", with: "that day's")
+            .replacingOccurrences(of: "today", with: "that day")
+            .replacingOccurrences(of: "Today", with: "That day")
     }
 
     var sourceText: String {
@@ -241,13 +265,33 @@ final class StrainDetailsViewModel: ObservableObject {
         return DateInterval(start: start, end: max(end, start.addingTimeInterval(60)))
     }
 
+    var needsDetailedRefresh: Bool {
+        guard canRequestHealthData else { return false }
+        if !Self.hasData(summary) { return true }
+        return summary.analyzedSampleCount == 0 &&
+            summary.heartRatePoints.isEmpty &&
+            summary.workoutBands.isEmpty &&
+            summary.timeline.isEmpty
+    }
+
+    func loadIfNeeded() async {
+        guard needsDetailedRefresh else { return }
+        await refresh(showBanner: false)
+    }
+
     func load() async {
+        await refresh(showBanner: true)
+    }
+
+    private func refresh(showBanner: Bool) async {
         guard canRequestHealthData else {
             state = .permissionRequired
             return
         }
-        PulsarSyncDebugLogger.log("manual refresh started for Strain details")
-        PulsarSyncBannerCenter.shared.showSyncing()
+        PulsarSyncDebugLogger.log("Strain details refresh started date=\(date) reason=\(showBanner ? "manual" : "detailHydration")")
+        if showBanner {
+            PulsarSyncBannerCenter.shared.showSyncing()
+        }
         if !Self.hasData(summary) {
             state = .loading
         }
@@ -258,10 +302,14 @@ final class StrainDetailsViewModel: ObservableObject {
                 summary = loaded
             }
             state = Self.state(for: summary, canRequestHealthData: true)
-            PulsarSyncBannerCenter.shared.showSuccess()
+            if showBanner {
+                PulsarSyncBannerCenter.shared.showSuccess()
+            }
         } catch {
             state = Self.hasData(summary) ? .loaded : .error("Strain data could not be refreshed.")
-            PulsarSyncBannerCenter.shared.showFailure()
+            if showBanner {
+                PulsarSyncBannerCenter.shared.showFailure()
+            }
         }
     }
 

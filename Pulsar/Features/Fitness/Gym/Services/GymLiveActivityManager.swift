@@ -69,10 +69,14 @@ final class GymLiveActivityManager {
 
     private static func contentState(from state: ActiveGymWorkoutState) -> PulsarGymLiveActivityAttributes.ContentState {
         PulsarGymLiveActivityAttributes.ContentState(
-            routineName: state.routineName,
-            currentExerciseName: state.currentExercise?.exerciseName ?? "Open Gym",
+            routineName: displayRoutineName(state.routineName),
+            routineEmoji: state.routineEmoji,
+            currentExerciseName: state.currentExercise?.exerciseName ?? "Open gym session",
             progressText: state.progressText,
             exerciseProgressText: state.exerciseProgressText,
+            completedSets: state.completedSets,
+            totalSets: state.totalSets,
+            totalExercises: state.totalExercises,
             elapsedSeconds: state.elapsedSeconds,
             heartRate: state.currentHeartRate,
             activeEnergyKilocalories: state.activeEnergyKilocalories,
@@ -85,9 +89,13 @@ final class GymLiveActivityManager {
         guard let state else {
             return PulsarGymLiveActivityAttributes.ContentState(
                 routineName: "Gym Workout",
+                routineEmoji: "🏋️",
                 currentExerciseName: "Finished",
                 progressText: "Finished",
                 exerciseProgressText: "Workout complete",
+                completedSets: 0,
+                totalSets: 0,
+                totalExercises: 0,
                 elapsedSeconds: 0,
                 heartRate: nil,
                 activeEnergyKilocalories: nil,
@@ -100,5 +108,14 @@ final class GymLiveActivityManager {
         content.isFinished = true
         content.restRemainingSeconds = nil
         return content
+    }
+
+    private static func displayRoutineName(_ routineName: String) -> String {
+        let trimmedName = routineName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return "Gym Workout" }
+        if trimmedName.localizedCaseInsensitiveContains("empty gym") {
+            return "Gym Workout"
+        }
+        return trimmedName
     }
 }

@@ -1,0 +1,32 @@
+{
+  "tables" : {
+    "AppShortcuts" : [
+      {
+        "values" : [
+          "Start a run in ${applicationName}",
+          "Begin running with ${applicationName}"
+        ],
+        "appShortcutMetadata" : [
+          {
+            "title" : "Start Pulsar Run",
+            "index" : 0,
+            "parameterTypes" : {
+
+            },
+            "actionIdentifier" : "StartPulsarRunIntent",
+            "parameterDisplayRepresentations" : {
+
+            }
+          }
+        ],
+        "location" : {
+          "startingColumn" : 0,
+          "startingLine" : 22
+        },
+        "key" : "Start a run in ${applicationName}"
+      }
+    ]
+  },
+  "source" : "\/Volumes\/Benjamin SSD\/Aetherial\/Pulsar\/Pulsar\/Shared\/PulsarRunQuickStartIntent.swift",
+  "version" : 2
+}

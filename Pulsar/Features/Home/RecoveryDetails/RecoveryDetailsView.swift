@@ -28,6 +28,7 @@ struct RecoveryDetailsView: View {
         .task {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             withAnimation(.smooth(duration: 0.45)) { contentVisible = true }
+            await viewModel.loadIfNeeded()
         }
         .safeAreaInset(edge: .top) {
             PulsarSyncStatusPill()
@@ -57,7 +58,7 @@ struct RecoveryDetailsView: View {
             RecoveryDetailsHeader(viewModel: viewModel)
                 .opacity(contentVisible ? 1 : 0)
                 .offset(y: contentVisible ? 0 : 14)
-            RecoveryBalanceCard(summary: viewModel.summary)
+            RecoveryBalanceCard(summary: viewModel.summary, subtitle: viewModel.recoveryBalanceSubtitle)
                 .opacity(contentVisible ? 1 : 0)
                 .offset(y: contentVisible ? 0 : 18)
             RecoveryTrendCard(points: viewModel.summary.trend)
@@ -108,13 +109,14 @@ private struct RecoveryDetailsHeader: View {
 
 private struct RecoveryBalanceCard: View {
     var summary: RecoverySummary
+    var subtitle: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Recovery Balance")
                     .font(.title3.weight(.semibold))
-                Text("What is supporting or reducing recovery today")
+                Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

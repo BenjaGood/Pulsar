@@ -9,6 +9,7 @@ import WatchKit
 struct WatchActiveGymWorkoutView: View {
     @ObservedObject var syncStore: PulsarWatchConnectivitySyncStore
     var state: ActiveGymWorkoutState
+    @State private var isShowingNowPlaying = false
 
     var body: some View {
         ZStack {
@@ -31,6 +32,9 @@ struct WatchActiveGymWorkoutView: View {
             Task {
                 await WatchGymSessionManager.shared.startIfNeeded(for: state)
             }
+        }
+        .sheet(isPresented: $isShowingNowPlaying) {
+            NowPlayingView()
         }
     }
 
@@ -57,6 +61,23 @@ struct WatchActiveGymWorkoutView: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 8) {
+            Button {
+                WKInterfaceDevice.current().play(.click)
+                isShowingNowPlaying = true
+            } label: {
+                Image(systemName: "music.note")
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .background(.thinMaterial, in: Circle())
+                    .overlay {
+                        Circle()
+                            .stroke(.white.opacity(0.13), lineWidth: 1)
+                    }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Now Playing")
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("Gym")
                     .font(.caption2.weight(.black))
@@ -149,8 +170,7 @@ struct WatchActiveGymWorkoutView: View {
 
                 Button {
                     guard let exercise = currentExercise, let set = currentSet else { return }
-                    WKInterfaceDevice.current().play(.success)
-                    syncStore.sendGymAction(.completeSet(sessionId: state.sessionId, exerciseId: exercise.id, setId: set.id))
+                    WatchGymSessionManager.shared.completeSet(sessionId: state.sessionId, exerciseId: exercise.id, setId: set.id)
                 } label: {
                     HStack(spacing: 7) {
                         Image(systemName: "checkmark.circle.fill")
@@ -195,7 +215,7 @@ struct WatchActiveGymWorkoutView: View {
                     Spacer()
                     Button("Skip") {
                         WKInterfaceDevice.current().play(.click)
-                        syncStore.sendGymAction(.skipRestTimer(sessionId: state.sessionId))
+                        WatchGymSessionManager.shared.skipRest(sessionId: state.sessionId)
                     }
                     .font(.caption.weight(.black))
                     .buttonStyle(.plain)
@@ -207,10 +227,8 @@ struct WatchActiveGymWorkoutView: View {
 
     private var finishButton: some View {
         Button {
-            WKInterfaceDevice.current().play(.stop)
-            syncStore.sendGymAction(.finishWorkout(sessionId: state.sessionId))
             Task {
-                await WatchGymSessionManager.shared.finishCurrentWorkoutIfNeeded()
+                await WatchGymSessionManager.shared.finishWorkoutFromUser(sessionId: state.sessionId)
             }
         } label: {
             Text("Finish")

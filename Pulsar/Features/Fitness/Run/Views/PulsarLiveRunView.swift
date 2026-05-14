@@ -9,6 +9,7 @@ import UIKit
 
 struct PulsarLiveRunView: View {
     @ObservedObject var coordinator: PulsarRunCoordinator
+    var workoutKind: PulsarOutdoorWorkoutKind = .running
     var onClose: () -> Void
 
     @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
@@ -34,11 +35,11 @@ struct PulsarLiveRunView: View {
         .onChange(of: coordinator.snapshot.route.count) { _, _ in
             updateCamera()
         }
-        .confirmationDialog("Finish this run?", isPresented: $showingFinishConfirmation, titleVisibility: .visible) {
-            Button("Finish Run", role: .destructive) {
+        .confirmationDialog("Finish this \(activeWorkoutKind.actionName)?", isPresented: $showingFinishConfirmation, titleVisibility: .visible) {
+            Button("Finish \(activeWorkoutKind.shortName)", role: .destructive) {
                 coordinator.finish()
             }
-            Button("Keep Running", role: .cancel) {}
+            Button("Keep \(activeWorkoutKind.displayName)", role: .cancel) {}
         }
     }
 
@@ -47,7 +48,7 @@ struct PulsarLiveRunView: View {
             UserAnnotation()
             if routeCoordinates.count > 1 {
                 MapPolyline(coordinates: routeCoordinates)
-                    .stroke(.green, style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round))
+                    .stroke(activeWorkoutKind.accentColor, style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round))
                 MapPolyline(coordinates: routeCoordinates)
                     .stroke(.white.opacity(0.85), style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
             }
@@ -57,6 +58,18 @@ struct PulsarLiveRunView: View {
 
     private var topBar: some View {
         HStack(spacing: 10) {
+            Button {
+                openNowPlaying()
+            } label: {
+                Image(systemName: "music.note")
+                    .font(.headline.weight(.bold))
+                    .frame(width: 40, height: 40)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary)
+            .accessibilityLabel("Now Playing")
+
             Label(coordinator.snapshot.source.label, systemImage: coordinator.snapshot.source == .appleWatch ? "applewatch" : "iphone")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.primary)
@@ -65,6 +78,19 @@ struct PulsarLiveRunView: View {
                 .background(.ultraThinMaterial, in: Capsule())
 
             Spacer()
+
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onClose()
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.headline.weight(.bold))
+                    .frame(width: 40, height: 40)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary)
+            .accessibilityLabel("Minimize workout")
 
             Button {
                 mapFirst.toggle()
@@ -83,13 +109,13 @@ struct PulsarLiveRunView: View {
         VStack(spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("DISTANCE")
+                    Text(primaryMetricTitle)
                         .font(.caption2.weight(.black))
                         .tracking(1.1)
                         .foregroundStyle(.secondary)
-                    Text(PulsarRunFormatters.compactDistance(coordinator.snapshot.distanceMeters))
+                    Text(primaryMetricValue)
                         .font(.system(size: 56, weight: .black, design: .rounded).monospacedDigit())
-                    Text("kilometers")
+                    Text(primaryMetricSubtitle)
                         .font(.caption.weight(.bold))
                         .foregroundStyle(.secondary)
                 }
@@ -99,13 +125,13 @@ struct PulsarLiveRunView: View {
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                 RunMetricTile(title: "Elapsed", value: PulsarRunFormatters.duration(coordinator.snapshot.elapsedTime), symbol: "timer")
-                RunMetricTile(title: "Moving", value: PulsarRunFormatters.duration(coordinator.snapshot.movingTime), symbol: "figure.run")
+                RunMetricTile(title: "Moving", value: PulsarRunFormatters.duration(coordinator.snapshot.movingTime), symbol: activeWorkoutKind.systemImageName, tint: activeWorkoutKind.accentColor)
                 RunMetricTile(title: "Pace", value: PulsarRunFormatters.pace(coordinator.snapshot.currentPaceSecondsPerKilometer), symbol: "speedometer")
                 RunMetricTile(title: "Avg Pace", value: PulsarRunFormatters.pace(coordinator.snapshot.averagePaceSecondsPerKilometer), symbol: "chart.line.uptrend.xyaxis")
                 RunMetricTile(title: "Split", value: PulsarRunFormatters.pace(coordinator.snapshot.splitPaceSecondsPerKilometer), symbol: "\(coordinator.snapshot.activeSplitIndex).circle")
                 RunMetricTile(title: "Heart", value: PulsarRunFormatters.heartRate(coordinator.snapshot.currentHeartRate), unit: "bpm", symbol: "heart.fill", tint: .red)
                 RunMetricTile(title: "Calories", value: PulsarRunFormatters.calories(coordinator.snapshot.activeEnergyKilocalories), unit: "cal", symbol: "flame.fill", tint: .orange)
-                RunMetricTile(title: "Gain", value: PulsarRunFormatters.elevation(coordinator.snapshot.elevationGainMeters), symbol: "mountain.2.fill", tint: .green)
+                RunMetricTile(title: "Gain", value: PulsarRunFormatters.elevation(coordinator.snapshot.elevationGainMeters), symbol: "mountain.2.fill", tint: activeWorkoutKind.accentColor)
                 RunMetricTile(title: "Cadence", value: PulsarRunFormatters.cadence(coordinator.snapshot.cadenceStepsPerMinute), symbol: "shoeprints.fill", tint: .cyan)
             }
         }
@@ -121,10 +147,10 @@ struct PulsarLiveRunView: View {
     private var phasePill: some View {
         Text(phaseText)
             .font(.caption.weight(.black))
-            .foregroundStyle(coordinator.snapshot.phase == .paused ? .orange : .green)
+            .foregroundStyle(coordinator.snapshot.phase == .paused ? .orange : activeWorkoutKind.accentColor)
             .padding(.horizontal, 11)
             .padding(.vertical, 8)
-            .background((coordinator.snapshot.phase == .paused ? Color.orange : Color.green).opacity(0.14), in: Capsule())
+            .background((coordinator.snapshot.phase == .paused ? Color.orange : activeWorkoutKind.accentColor).opacity(0.14), in: Capsule())
     }
 
     private var controls: some View {
@@ -139,7 +165,7 @@ struct PulsarLiveRunView: View {
                 Label(coordinator.snapshot.phase == .paused ? "Resume" : "Pause", systemImage: coordinator.snapshot.phase == .paused ? "play.fill" : "pause.fill")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(RunControlButtonStyle(tint: coordinator.snapshot.phase == .paused ? .green : .orange))
+            .buttonStyle(RunControlButtonStyle(tint: coordinator.snapshot.phase == .paused ? activeWorkoutKind.accentColor : .orange))
 
             Button {
                 showingFinishConfirmation = true
@@ -165,11 +191,36 @@ struct PulsarLiveRunView: View {
         coordinator.snapshot.route.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
     }
 
+    private var activeWorkoutKind: PulsarOutdoorWorkoutKind {
+        coordinator.snapshot.phase == .idle ? workoutKind : coordinator.snapshot.workoutKind
+    }
+
+    private var primaryMetricTitle: String {
+        activeWorkoutKind.isOutdoorDistanceWorkout ? "DISTANCE" : activeWorkoutKind.displayName.uppercased()
+    }
+
+    private var primaryMetricValue: String {
+        activeWorkoutKind.isOutdoorDistanceWorkout
+            ? PulsarRunFormatters.compactDistance(coordinator.snapshot.distanceMeters)
+            : PulsarRunFormatters.duration(coordinator.snapshot.elapsedTime)
+    }
+
+    private var primaryMetricSubtitle: String {
+        activeWorkoutKind.isOutdoorDistanceWorkout ? "kilometers" : "elapsed time"
+    }
+
     private func updateCamera() {
         guard let last = routeCoordinates.last else { return }
         withAnimation(.smooth(duration: 0.6)) {
             cameraPosition = .region(MKCoordinateRegion(center: last, latitudinalMeters: 520, longitudinalMeters: 520))
         }
+    }
+
+    private func openNowPlaying() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        let urls = ["music://nowplaying", "music://"].compactMap(URL.init(string:))
+        guard let url = urls.first else { return }
+        UIApplication.shared.open(url)
     }
 }
 

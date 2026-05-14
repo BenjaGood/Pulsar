@@ -19,7 +19,27 @@ private struct WatchWorkoutOption: Identifiable, Hashable {
     let tint: Color
     let section: WatchWorkoutSection
 
-    var isRunning: Bool { id == "running" }
+    var outdoorWorkoutKind: PulsarOutdoorWorkoutKind? {
+        switch id {
+        case "running": .running
+        case "walking": .walking
+        case "hiking": .hiking
+        case "cycling": .cycling
+        case "strength-training": .strength
+        case "yoga": .yoga
+        case "hiit": .hiit
+        case "swimming": .swimming
+        case "rowing": .rowing
+        case "pilates": .pilates
+        case "core": .core
+        case "dance": .dance
+        case "elliptical": .elliptical
+        case "stair-climber": .stairClimber
+        case "cooldown": .cooldown
+        default: nil
+        }
+    }
+    var isGym: Bool { id == "gym" }
     var isPersonalized: Bool { section == .personalized }
 }
 
@@ -27,7 +47,7 @@ private extension WatchWorkoutOption {
     static let personalized: [WatchWorkoutOption] = [
         WatchWorkoutOption(id: "hiking", name: "Hiking", category: "Trail", symbolName: "mountain.2.fill", tint: Color(red: 0.34, green: 0.82, blue: 0.58), section: .personalized),
         WatchWorkoutOption(id: "running", name: "Running", category: "GPS Run", symbolName: "figure.run", tint: Color(red: 1.00, green: 0.46, blue: 0.34), section: .personalized),
-        WatchWorkoutOption(id: "walking", name: "Walking", category: "Steps", symbolName: "figure.walk", tint: Color(red: 0.44, green: 0.72, blue: 1.00), section: .personalized),
+        WatchWorkoutOption(id: "walking", name: "Walking", category: "GPS Walk", symbolName: "figure.walk", tint: Color(red: 0.44, green: 0.72, blue: 1.00), section: .personalized),
         WatchWorkoutOption(id: "gym", name: "Gym", category: "Strength", symbolName: "dumbbell.fill", tint: Color(red: 0.72, green: 0.66, blue: 1.00), section: .personalized)
     ]
 
@@ -174,7 +194,7 @@ struct WatchWorkoutPickerView: View {
             Text("Choose training")
                 .font(.headline.weight(.black))
                 .foregroundStyle(.white)
-            Text("Add a workout or jump into Run.")
+            Text("Add a workout or jump into Run or Walk.")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.60))
                 .lineLimit(2)
@@ -201,7 +221,7 @@ struct WatchWorkoutPickerView: View {
                     }
                     .buttonStyle(.plain)
                     .simultaneousGesture(TapGesture().onEnded {
-                        WKInterfaceDevice.current().play(workout.isRunning ? .start : .click)
+                        WKInterfaceDevice.current().play(workout.outdoorWorkoutKind != nil ? .start : .click)
                     })
                     .opacity(appeared ? 1 : 0)
                     .offset(y: appeared ? 0 : 10)
@@ -213,9 +233,11 @@ struct WatchWorkoutPickerView: View {
 
     @ViewBuilder
     private func destination(for workout: WatchWorkoutOption) -> some View {
-        if workout.isRunning {
-            WatchRunEntryView()
+        if let outdoorWorkoutKind = workout.outdoorWorkoutKind {
+            WatchRunEntryView(workoutKind: outdoorWorkoutKind)
                 .environmentObject(runManager)
+        } else if workout.isGym {
+            WatchGymEntryView(syncStore: .shared)
         } else {
             WatchWorkoutPlaceholderView(workout: workout)
         }
@@ -251,9 +273,9 @@ private struct WatchWorkoutOptionCard: View {
 
             Spacer(minLength: 0)
 
-            Image(systemName: workout.isRunning ? "bolt.heart.fill" : "chevron.right")
+            Image(systemName: workout.outdoorWorkoutKind != nil ? "bolt.heart.fill" : "chevron.right")
                 .font(.caption2.weight(.black))
-                .foregroundStyle(workout.isRunning ? workout.tint : .white.opacity(0.36))
+                .foregroundStyle(workout.outdoorWorkoutKind != nil ? workout.tint : .white.opacity(0.36))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, isFeatured ? 10 : 8)
@@ -328,7 +350,7 @@ private struct WatchWorkoutPlaceholderView: View {
                         .foregroundStyle(.white.opacity(0.62))
                 }
 
-                Text("Dedicated recording for this workout is coming soon. Running is ready today.")
+                Text("Dedicated recording for this workout is coming soon. Running and Walking are ready today.")
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(.white.opacity(0.70))
                     .multilineTextAlignment(.center)

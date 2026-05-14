@@ -1,0 +1,32 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Home/Views/HomeView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Open Stress details",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 96
+        }
+      },
+      {
+        "comment": "",
+        "key": "%@ %@%@",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 196
+        }
+      },
+      {
+        "comment": "",
+        "key": "Open %@ details",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 197
+        }
+      }
+    ]
+  },
+  "version": 1
+}

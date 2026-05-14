@@ -26,6 +26,7 @@ struct SleepDetailsView: View {
         .refreshable { await viewModel.load() }
         .task {
             withAnimation(.smooth(duration: 0.45)) { contentVisible = true }
+            await viewModel.loadIfNeeded()
         }
     }
 

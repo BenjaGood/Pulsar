@@ -1,0 +1,86 @@
+{
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/App/PulsarRootView.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarRootView.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarRootView.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarRootView.dia",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarRootView.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarRootView.swiftdeps"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/DesignSystem/PulsarGlassStyle.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarGlassStyle.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarGlassStyle.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarGlassStyle.dia",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarGlassStyle.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarGlassStyle.swiftdeps"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/DesignSystem/PulsarTheme.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarTheme.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarTheme.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarTheme.dia",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarTheme.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarTheme.swiftdeps"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Cycle/Views/CycleView.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/CycleView.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/CycleView.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/CycleView.dia",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/CycleView.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/CycleView.swiftdeps"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Fitness/Gym/Models/PulsarGymModels.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarGymModels.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarGymModels.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarGymModels.dia",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarGymModels.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarGymModels.swiftdeps"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Fitness/Gym/Services/ExerciseCatalogStore.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/ExerciseCatalogStore.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/ExerciseCatalogStore.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/ExerciseCatalogStore.dia",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/ExerciseCatalogStore.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/ExerciseCatalogStore.swiftdeps"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Fitness/Gym/Services/FreeExerciseDBService.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/FreeExerciseDBService.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/FreeExerciseDBService.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/FreeExerciseDBService.dia",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/FreeExerciseDBService.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/FreeExerciseDBService.swiftdeps"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Fitness/Gym/Services/GymHealthKitWorkoutManager.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymHealthKitWorkoutManager.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymHealthKitWorkoutManager.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymHealthKitWorkoutManager.dia",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymHealthKitWorkoutManager.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymHealthKitWorkoutManager.swiftdeps"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Fitness/Gym/Services/GymLiveActivityManager.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymLiveActivityManager.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymLiveActivityManager.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymLiveActivityManager.dia",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymLiveActivityManager.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymLiveActivityManager.swiftdeps"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Fitness/Gym/Services/GymSettingsStore.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymSettingsStore.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymSettingsStore.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymSettingsStore.dia",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymSettingsStore.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymSettingsStore.swiftdeps"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Fitness/Gym/Services/GymWorkoutSessionViewModel.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymWorkoutSessionViewModel.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymWorkoutSessionViewModel.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymWorkoutSessionViewModel.dia",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymWorkoutSessionViewModel.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/GymWorkoutSessionViewModel.swiftdeps"
+  },
+  "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Fitness/Gym/Services/PulsarGymWorkoutHistoryStore.swift" : {
+    "const-values" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarGymWorkoutHistoryStore.swiftconstvalues",
+    "dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarGymWorkoutHistoryStore.d",
+    "diagnostics" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarGymWorkoutHistoryStore.dia",
+    "object" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarGymWorkoutHistoryStore.o",
+    "swift-dependencies" : "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/build/DerivedData/Build/Intermediates.noindex/Pulsar.build/Debug-iphonesimulator/Pulsar.build/Objects-normal/arm64/PulsarGymWorkoutHistoryStore.swiftdeps"
+  }
+}

@@ -11,6 +11,7 @@ struct PulsarSettingsView: View {
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var healthKitStore = HealthKitSettingsStore()
+    @StateObject private var gymSettingsStore = GymSettingsStore()
 
     var body: some View {
         NavigationStack {
@@ -64,6 +65,16 @@ struct PulsarSettingsView: View {
                             SettingsNavigationRow(title: "Notifications", subtitle: "Workout, stress, wind-down, and sleep insights", symbol: "bell.badge.fill", tint: .red)
                         }
                         SettingsDivider()
+                        NavigationLink { GymSettingsView(gymSettingsStore: gymSettingsStore, appUnits: store.profile.preferredUnits) } label: {
+                            SettingsNavigationRow(
+                                title: "Gym Weight Unit",
+                                subtitle: "Use pounds or kilograms for lifting, independent from your app units.",
+                                symbol: "dumbbell.fill",
+                                tint: .purple,
+                                badge: gymSettingsStore.weightUnitPreference.shortTitle
+                            )
+                        }
+                        SettingsDivider()
                         SettingsNavigationRow(title: "Units", subtitle: "Managed in Measurements", symbol: "slider.horizontal.3", tint: .mint, badge: store.profile.preferredUnits.rawValue)
                     }
                 }
@@ -81,6 +92,69 @@ struct PulsarSettingsView: View {
                 }
             }
         }
+    }
+}
+
+private struct GymSettingsView: View {
+    @ObservedObject var gymSettingsStore: GymSettingsStore
+    var appUnits: UnitPreference
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 18) {
+                HelperCard(
+                    symbol: "dumbbell.fill",
+                    title: "Lifting Units",
+                    message: "Gym weights can use pounds or kilograms without changing body weight, distance, or other app measurements.",
+                    tint: .purple
+                )
+
+                SettingsSectionCard(title: "Weights") {
+                    VStack(spacing: 0) {
+                        ForEach(GymWeightUnitPreference.allCases) { preference in
+                            Button {
+                                gymSettingsStore.setWeightUnitPreference(preference)
+                            } label: {
+                                HStack(spacing: 14) {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(preference.title)
+                                            .font(.body.weight(.medium))
+                                            .foregroundStyle(.primary)
+                                        if preference == .followApp {
+                                            Text("Currently resolves to \(preference.resolvedUnit(appUnits: appUnits).displayName)")
+                                                .font(.footnote)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+
+                                    Spacer(minLength: 12)
+
+                                    if gymSettingsStore.weightUnitPreference == preference {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.headline.weight(.semibold))
+                                            .foregroundStyle(.purple)
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 13)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+
+                            if preference != GymWeightUnitPreference.allCases.last {
+                                SettingsDivider()
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 12)
+            .padding(.bottom, 30)
+        }
+        .background(PulsarSectionBackground())
+        .navigationTitle("Gym")
+        .navigationBarTitleDisplayMode(.large)
     }
 }
 

@@ -46,7 +46,7 @@ struct StressTimelineChartView: View {
                 Text("Daily Stress Timeline")
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(primaryText)
-                Text("How your physiological load moved today")
+                Text("How your physiological load moved \(datePhrase)")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(secondaryText)
             }
@@ -252,14 +252,22 @@ struct StressTimelineChartView: View {
         case .buildingBaseline:
             return "Build more baseline data"
         case .noData:
-            return "Not enough stress data yet"
+            return "No stress data for this date"
         case .ready, .lowConfidence:
-            return "No stress samples today"
+            return "No stress samples for this date"
         case .workoutPaused:
             return "Stress paused during workout"
         case .cooldown:
             return "Cooldown pause active"
         }
+    }
+
+    private var datePhrase: String {
+        let date = summary.date ?? summary.queryStart ?? sortedSamples.first?.timestamp ?? Date()
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return "today" }
+        if calendar.isDateInYesterday(date) { return "yesterday" }
+        return "on \(date.formatted(.dateTime.month(.abbreviated).day()))"
     }
 
     private func point(for sample: StressSample, in rect: CGRect, range: DateInterval) -> CGPoint {

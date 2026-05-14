@@ -15,7 +15,7 @@ struct FoodView: View {
                         title: "Energy",
                         value: "2,180",
                         subtitle: "Calories logged placeholder",
-                        symbol: "fork.knife"
+                        symbol: "leaf.circle.fill"
                     )
                     PlaceholderMetricCard(
                         title: "Protein",
@@ -25,9 +25,12 @@ struct FoodView: View {
                     )
                 }
                 .padding(.horizontal, 18)
+                .padding(.top, 12)
                 .padding(.bottom, 28)
             }
+            .pulsarBottomChromeScrollTracking()
             .background(PulsarSectionBackground())
+            .premiumScrollHeaderBlur(height: 56)
             .toolbar(.hidden, for: .navigationBar)
         }
     }
@@ -41,7 +44,6 @@ struct FoodView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 8)
     }
 }
 

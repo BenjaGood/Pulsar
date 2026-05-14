@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>FormatVersion</key>
+	<integer>1</integer>
+	<key>Store</key>
+	<dict>
+		<key>PulsarTests</key>
+		<dict>
+			<key>PulsarRunDerivedMetricsTests</key>
+			<dict>
+				<key>autoPauseIgnoresPoorAccuracy</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.091114997863769531</real>
+				</dict>
+				<key>durationFormatterDistinguishesHours</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.091183900833129883</real>
+				</dict>
+				<key>elevationGainRequiresMeaningfulPositiveChange</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00084900856018066406</real>
+				</dict>
+				<key>paceFormatterUsesKilometerPace</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00079798698425292969</real>
+				</dict>
+				<key>pulsarWorkoutMetadataOverridesFallbackWorkoutType</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.091166973114013672</real>
+				</dict>
+				<key>runHistoryMergesSavesWithSamePulsarSessionId</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.096213817596435547</real>
+				</dict>
+				<key>unknownHealthKitWorkoutTypeDoesNotDefaultToRunning</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0005931854248046875</real>
+				</dict>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

@@ -8,6 +8,7 @@ import UIKit
 
 struct PulsarRunSetupView: View {
     @ObservedObject var coordinator: PulsarRunCoordinator
+    var workoutKind: PulsarOutdoorWorkoutKind = .running
     var onCancel: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
@@ -44,7 +45,7 @@ struct PulsarRunSetupView: View {
             options.prefersWatchRecorder = coordinator.preferredSource == .appleWatch
         }
         .sheet(isPresented: $isShowingHistory) {
-            PulsarRunHistoryView(coordinator: coordinator)
+            PulsarRunHistoryView(coordinator: coordinator, workoutKind: workoutKind)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
@@ -53,7 +54,7 @@ struct PulsarRunSetupView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 7) {
-                Text("Outdoor Run")
+                Text(workoutKind.outdoorTitle)
                     .font(.system(size: 38, weight: .bold, design: .rounded))
                     .foregroundStyle(primaryText)
                 Text("GPS route, live pace, splits, heart rate, and HealthKit workout saving.")
@@ -119,7 +120,7 @@ struct PulsarRunSetupView: View {
                         .background(.green.opacity(0.12), in: Capsule())
                 }
 
-                Text("Free run today. Route planning and saved routes are a good next layer once recording is battle-tested.")
+                Text("Free \(workoutKind.actionName) today. Route planning and saved routes are a good next layer once recording is battle-tested.")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(secondaryText)
             }
@@ -145,7 +146,7 @@ struct PulsarRunSetupView: View {
                 }
                 .disabled(!coordinator.isWatchAvailable)
             }
-            .tint(.green)
+            .tint(workoutKind.accentColor)
             .foregroundStyle(primaryText)
         }
     }
@@ -161,7 +162,7 @@ struct PulsarRunSetupView: View {
             }
         } else {
             PulsarRunGlassCard {
-                Label("HealthKit and Location are used only to record this run, route, and summary.", systemImage: "checkmark.shield.fill")
+                Label("HealthKit and Location are used only to record this \(workoutKind.actionName), route, and summary.", systemImage: "checkmark.shield.fill")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.green)
                     .fixedSize(horizontal: false, vertical: true)
@@ -175,9 +176,9 @@ struct PulsarRunSetupView: View {
             Task { await beginCountdownAndStart() }
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: "figure.run")
+                Image(systemName: workoutKind.systemImageName)
                     .font(.title3.weight(.bold))
-                Text("Start Run")
+                Text(workoutKind.startTitle)
                     .font(.title3.weight(.bold))
             }
             .foregroundStyle(Color(red: 0.03, green: 0.14, blue: 0.08))
@@ -185,14 +186,14 @@ struct PulsarRunSetupView: View {
             .padding(.vertical, 18)
             .background(
                 LinearGradient(
-                    colors: [Color.green.opacity(0.96), Color(red: 0.75, green: 1.0, blue: 0.55)],
+                    colors: [workoutKind.accentColor.opacity(0.96), workoutKind.glowColor],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 ),
                 in: Capsule(style: .continuous)
             )
             .overlay(Capsule().stroke(.white.opacity(0.56), lineWidth: 1))
-            .shadow(color: .green.opacity(0.28), radius: 22, y: 12)
+            .shadow(color: workoutKind.accentColor.opacity(0.28), radius: 22, y: 12)
         }
         .buttonStyle(PulsarRunPressStyle())
     }
@@ -230,7 +231,7 @@ struct PulsarRunSetupView: View {
     }
 
     private func beginCountdownAndStart() async {
-        await coordinator.requestPermissions()
+        await coordinator.requestPermissions(for: workoutKind)
         guard coordinator.authorizationMessage == nil else { return }
 
         for value in [3, 2, 1] {
@@ -244,11 +245,11 @@ struct PulsarRunSetupView: View {
         withAnimation(.easeOut(duration: 0.18)) {
             countdown = nil
         }
-        await coordinator.startRun(options: options)
+        await coordinator.startOutdoorWorkout(workoutKind, options: options)
     }
 
     private var sourceTint: Color {
-        coordinator.preferredSource == .appleWatch ? .green : .cyan
+        coordinator.preferredSource == .appleWatch ? workoutKind.accentColor : .cyan
     }
 
     private var primaryText: Color {
@@ -308,5 +309,43 @@ struct PulsarRunPressStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.975 : 1)
             .brightness(configuration.isPressed ? 0.04 : 0)
             .animation(.spring(response: 0.28, dampingFraction: 0.74), value: configuration.isPressed)
+    }
+}
+
+extension PulsarOutdoorWorkoutKind {
+    var accentColor: Color {
+        switch self {
+        case .running: Color.green
+        case .walking: Color(red: 0.44, green: 0.72, blue: 1.00)
+        case .hiking: Color(red: 0.34, green: 0.82, blue: 0.58)
+        case .cycling: Color(red: 0.25, green: 0.78, blue: 0.86)
+        case .hiit: Color(red: 1.00, green: 0.61, blue: 0.25)
+        case .strength: Color(red: 0.72, green: 0.66, blue: 1.00)
+        case .yoga, .stretching, .cooldown: Color(red: 0.72, green: 0.82, blue: 0.46)
+        case .pilates, .core, .mobility: Color(red: 0.44, green: 0.72, blue: 1.00)
+        case .swimming: Color(red: 0.34, green: 0.68, blue: 1.00)
+        case .rowing, .elliptical, .stairClimber: Color(red: 0.25, green: 0.78, blue: 0.86)
+        case .dance: Color(red: 1.00, green: 0.44, blue: 0.68)
+        case .boxing: Color(red: 1.00, green: 0.46, blue: 0.34)
+        case .other: Color(red: 0.68, green: 0.74, blue: 0.84)
+        }
+    }
+
+    var glowColor: Color {
+        switch self {
+        case .running: Color(red: 0.75, green: 1.0, blue: 0.55)
+        case .walking: Color(red: 0.78, green: 0.92, blue: 1.0)
+        case .hiking: Color(red: 0.80, green: 1.0, blue: 0.70)
+        case .cycling: Color(red: 0.60, green: 0.95, blue: 1.0)
+        case .hiit: Color(red: 1.0, green: 0.82, blue: 0.56)
+        case .strength: Color(red: 0.86, green: 0.82, blue: 1.0)
+        case .yoga, .stretching, .cooldown: Color(red: 0.86, green: 0.94, blue: 0.62)
+        case .pilates, .core, .mobility: Color(red: 0.78, green: 0.92, blue: 1.0)
+        case .swimming: Color(red: 0.66, green: 0.86, blue: 1.0)
+        case .rowing, .elliptical, .stairClimber: Color(red: 0.60, green: 0.95, blue: 1.0)
+        case .dance: Color(red: 1.0, green: 0.72, blue: 0.86)
+        case .boxing: Color(red: 1.0, green: 0.70, blue: 0.58)
+        case .other: Color(red: 0.84, green: 0.88, blue: 0.96)
+        }
     }
 }

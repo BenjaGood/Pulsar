@@ -1,0 +1,128 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Fitness/Run/Views/PulsarRunSetupView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "GPS route, live pace, splits, heart rate, and HealthKit workout saving.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 60
+        }
+      },
+      {
+        "comment": "",
+        "key": "Watch-first recording",
+        "location": {
+          "startingColumn": 71,
+          "startingLine": 93
+        }
+      },
+      {
+        "comment": "",
+        "key": "iPhone recording",
+        "location": {
+          "startingColumn": 97,
+          "startingLine": 93
+        }
+      },
+      {
+        "comment": "",
+        "key": "Pulsar will launch Apple Watch and mirror live stats back here.",
+        "location": {
+          "startingColumn": 71,
+          "startingLine": 96
+        }
+      },
+      {
+        "comment": "",
+        "key": "No paired Watch recorder was found. Pulsar will record GPS from iPhone.",
+        "location": {
+          "startingColumn": 139,
+          "startingLine": 96
+        }
+      },
+      {
+        "comment": "",
+        "key": "Free %@ today. Route planning and saved routes are a good next layer once recording is battle-tested.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 123
+        }
+      },
+      {
+        "comment": "",
+        "key": "Open",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 115
+        }
+      },
+      {
+        "comment": "",
+        "key": "Route",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 111
+        }
+      },
+      {
+        "comment": "",
+        "key": "Auto-pause",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 134
+        }
+      },
+      {
+        "comment": "",
+        "key": "Audio cues",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 139
+        }
+      },
+      {
+        "comment": "",
+        "key": "Prefer Apple Watch",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 144
+        }
+      },
+      {
+        "comment": "",
+        "key": "HealthKit and Location are used only to record this %@, route, and summary.",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 165
+        }
+      },
+      {
+        "comment": "",
+        "key": "Training Log",
+        "location": {
+          "startingColumn": 19,
+          "startingLine": 205
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 222
+        }
+      },
+      {
+        "comment": "",
+        "key": "Ready",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 226
+        }
+      }
+    ]
+  },
+  "version": 1
+}

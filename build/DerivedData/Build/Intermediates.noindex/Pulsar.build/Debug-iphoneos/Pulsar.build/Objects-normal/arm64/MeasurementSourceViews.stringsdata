@@ -1,0 +1,120 @@
+{
+  "source": "/Volumes/Benjamin SSD/Aetherial/Pulsar/Pulsar/Pulsar/Features/Home/Devices/MeasurementSourceViews.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Pulsar uses your selected source to prioritize sleep, recovery, strain, stress, and workout metrics when multiple devices are available.",
+        "location": {
+          "startingColumn": 14,
+          "startingLine": 216
+        }
+      },
+      {
+        "comment": "",
+        "key": "Close",
+        "location": {
+          "startingColumn": 33,
+          "startingLine": 170
+        }
+      },
+      {
+        "comment": "",
+        "key": "Measurement Source",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 147
+        }
+      },
+      {
+        "comment": "",
+        "key": "Choose which device powers your health metrics.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 150
+        }
+      },
+      {
+        "comment": "",
+        "key": "Change source",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 177
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld devices",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 183
+        }
+      },
+      {
+        "comment": "",
+        "key": "Last sync",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 318
+        }
+      },
+      {
+        "comment": "",
+        "key": "Integration is not connected yet.",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 494
+        }
+      },
+      {
+        "comment": "",
+        "key": "Device details",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 629
+        }
+      },
+      {
+        "comment": "",
+        "key": "Last sync",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 660
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld%%",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 904
+        }
+      },
+      {
+        "comment": "",
+        "key": "Battery",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 907
+        }
+      },
+      {
+        "comment": "",
+        "key": "Battery unavailable",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 938
+        }
+      },
+      {
+        "comment": "",
+        "key": "No real device battery data",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 944
+        }
+      }
+    ]
+  },
+  "version": 1
+}

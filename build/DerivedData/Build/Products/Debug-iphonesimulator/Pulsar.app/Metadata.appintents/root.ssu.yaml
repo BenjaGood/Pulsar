@@ -1,0 +1,40 @@
+apiVersion: ssu/v1
+nlu:
+  shortcuts:
+    bundleIdentifier: aetherial.Pulsar
+    intents:
+    - metadata:
+        name: StartPulsarRunIntent_0
+        title: Start Pulsar Run
+      corpuses:
+        training:
+        - locale: en
+          utterances:
+          - '{${+prefix} }Start a run in ${+applicationName}'
+          - '{${+prefix} }Begin running with ${+applicationName}'
+    - metadata:
+        name: +negative
+      corpuses:
+        training:
+        - locale: en
+          utterances:
+          - '{${+prefix} }${+standardAppShortcutNegatives}'
+variables:
+- name: +applicationName
+  type: ssu/expansion
+  definitions:
+  - locale: en
+    synomyms:
+    - Pulsar
+- name: +prefix
+  type: ssu/expansion
+  definitions:
+  - locale: en
+    synomyms:
+      $ref: ssu://Resources/prefix/en.yaml
+- name: +standardAppShortcutNegatives
+  type: ssu/expansion
+  definitions:
+  - locale: en
+    synomyms:
+      $ref: ssu://Resources/standardAppShortcutNegatives/en.yaml

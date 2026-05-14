@@ -34,15 +34,23 @@ final class PulsarGymWorkoutHistoryStore: ObservableObject {
         completedSession.muscleLoadByGroup = Dictionary(uniqueKeysWithValues: muscleSummary.loadByGroup.map { group, score in
             (group.rawValue, score)
         })
-        completedSession.muscleLoadByBodyMapRegion = Dictionary(uniqueKeysWithValues: muscleSummary.loadByBodyMapRegion.map { zone, score in
-            (zone.rawValue, score)
+        completedSession.muscleLoadByMatrixGroup = Dictionary(uniqueKeysWithValues: muscleSummary.loadByMatrixGroup.map { group, score in
+            (group.rawValue, score)
         })
 
-        sessions.removeAll { $0.id == completedSession.id }
+        let wasExisting = sessions.contains { existing in
+            existing.id == completedSession.id ||
+                (existing.healthKitWorkoutUUID != nil && existing.healthKitWorkoutUUID == completedSession.healthKitWorkoutUUID)
+        }
+        sessions.removeAll { existing in
+            existing.id == completedSession.id ||
+                (existing.healthKitWorkoutUUID != nil && existing.healthKitWorkoutUUID == completedSession.healthKitWorkoutUUID)
+        }
         sessions.insert(completedSession, at: 0)
-        sessions = Array(sessions.prefix(100))
+        sessions.sort { $0.startedAt > $1.startedAt }
         persist()
         NotificationCenter.default.post(name: Self.didChangeNotification, object: completedSession)
+        PulsarSyncDebugLogger.log("Gym Activity Log \(wasExisting ? "updated" : "created") session=\(completedSession.id.uuidString) type=\(completedSession.workoutKind.rawValue) workoutUUID=\(completedSession.healthKitWorkoutUUID?.uuidString ?? "none")")
         return completedSession
     }
 
@@ -51,7 +59,6 @@ final class PulsarGymWorkoutHistoryStore: ObservableObject {
     }
 
     func sessions(start: Date, end: Date) -> [PulsarGymWorkoutSession] {
-        reload()
         return sessions.filter { session in
             session.finishedAt != nil && session.startedAt >= start && session.startedAt < end
         }

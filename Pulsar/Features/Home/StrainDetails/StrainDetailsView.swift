@@ -26,6 +26,7 @@ struct StrainDetailsView: View {
         .refreshable { await viewModel.load() }
         .task {
             withAnimation(.smooth(duration: 0.45)) { contentVisible = true }
+            await viewModel.loadIfNeeded()
         }
         .safeAreaInset(edge: .top) {
             PulsarSyncStatusPill()
@@ -61,7 +62,7 @@ struct StrainDetailsView: View {
             StrainMetricsGrid(metrics: viewModel.metricTiles)
                 .opacity(contentVisible ? 1 : 0)
                 .offset(y: contentVisible ? 0 : 22)
-            StrainWorkoutSection(workouts: viewModel.summary.workouts)
+            StrainWorkoutSection(workouts: viewModel.summary.workouts, emptyTitle: viewModel.workoutEmptyTitle)
             StrainHeartSection(summary: viewModel.summary)
             StrainStepsSection(steps: viewModel.summary.steps, goal: viewModel.summary.stepGoal, progress: viewModel.stepProgress)
             StrainInsightsSection(insights: viewModel.insights)
@@ -84,7 +85,7 @@ private struct StrainDetailsHeader: View {
                     .foregroundStyle(.secondary)
             }
             HStack(alignment: .center, spacing: 12) {
-                StrainHeaderMetric(title: "Current", value: viewModel.scoreText, subtitle: "Accumulated today", tint: .orange)
+                StrainHeaderMetric(title: "Current", value: viewModel.scoreText, subtitle: viewModel.accumulatedSubtitle, tint: .orange)
                 StrainHeaderMetric(title: "Target Range", value: viewModel.recommendedTargetText, subtitle: "Recovery + recent load", tint: .cyan)
             }
             StrainTargetProgressBar(current: viewModel.hasCurrentStrainValue ? viewModel.summary.score : nil, targetRange: viewModel.targetRange)
@@ -660,13 +661,14 @@ private struct StrainMetricTile: View {
 
 private struct StrainWorkoutSection: View {
     var workouts: [StrainWorkoutSummary]
+    var emptyTitle: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Workouts")
                 .font(.title3.weight(.semibold))
             if workouts.isEmpty {
-                StrainEmptySection(symbol: "figure.run", title: "No workouts logged today", message: "Movement and heart-rate signals can still contribute to strain.")
+                StrainEmptySection(symbol: "figure.run", title: emptyTitle, message: "Movement and heart-rate signals can still contribute to strain.")
             } else {
                 VStack(spacing: 10) {
                     ForEach(workouts) { workout in

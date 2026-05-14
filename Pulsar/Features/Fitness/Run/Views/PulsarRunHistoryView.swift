@@ -7,6 +7,7 @@ import SwiftUI
 
 struct PulsarRunHistoryView: View {
     @ObservedObject var coordinator: PulsarRunCoordinator
+    var workoutKind: PulsarOutdoorWorkoutKind = .running
     @State private var runs: [PulsarRunSummary] = []
     @State private var isLoading = true
 
@@ -14,12 +15,12 @@ struct PulsarRunHistoryView: View {
         NavigationStack {
             List {
                 if isLoading {
-                    ProgressView("Loading runs")
+                    ProgressView("Loading \(workoutKind.actionName)s")
                 } else if runs.isEmpty {
                     ContentUnavailableView(
-                        "No Runs Yet",
-                        systemImage: "figure.run.circle",
-                        description: Text("Start an outdoor run and Pulsar will build your training log here.")
+                        "No \(workoutKind.shortName)s Yet",
+                        systemImage: "\(workoutKind.systemImageName).circle",
+                        description: Text("Start an outdoor \(workoutKind.actionName) and Pulsar will build your training log here.")
                     )
                 } else {
                     ForEach(runs) { run in
@@ -33,7 +34,7 @@ struct PulsarRunHistoryView: View {
             .navigationTitle("Training Log")
         }
         .task {
-            runs = await coordinator.history()
+            runs = await coordinator.history(for: workoutKind)
             isLoading = false
         }
     }
@@ -46,10 +47,10 @@ private struct RunHistoryRow: View {
         HStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .fill(.green.opacity(0.14))
-                Image(systemName: "figure.run")
+                    .fill(run.workoutKind.accentColor.opacity(0.14))
+                Image(systemName: run.workoutKind.systemImageName)
                     .font(.headline.weight(.bold))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(run.workoutKind.accentColor)
             }
             .frame(width: 44, height: 44)
 
@@ -65,10 +66,10 @@ private struct RunHistoryRow: View {
 
             Text(run.source == .appleWatch ? "Watch" : "iPhone")
                 .font(.caption2.weight(.black))
-                .foregroundStyle(.green)
+                .foregroundStyle(run.workoutKind.accentColor)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
-                .background(.green.opacity(0.11), in: Capsule())
+                .background(run.workoutKind.accentColor.opacity(0.11), in: Capsule())
         }
         .padding(.vertical, 6)
     }
