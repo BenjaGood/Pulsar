@@ -195,13 +195,18 @@ struct PulsarRootView: View {
             activeWorkoutManager: activeWorkoutManager,
             runCoordinator: runCoordinator,
             onOpenDestination: openPlusDestination,
+            activeWorkoutMiniPlayerState: shouldShowMiniWorkoutBar ? activeWorkoutMiniPlayerState : nil,
+            onOpenActiveWorkout: openActiveWorkoutMiniPlayer,
+            onPrimaryActiveWorkoutAction: handleActiveWorkoutMiniPlayerAction,
             onMetricsChange: updateTabBarMetrics
         )
     }
 
     @ViewBuilder
     private var rootMiniWorkoutHost: some View {
-        if shouldShowMiniWorkoutBar, let state = activeWorkoutMiniPlayerState {
+        if !usesNativeMiniWorkoutTabAccessory,
+           shouldShowMiniWorkoutBar,
+           let state = activeWorkoutMiniPlayerState {
             GeometryReader { proxy in
                 ZStack(alignment: .top) {
                     Color.clear
@@ -209,8 +214,8 @@ struct PulsarRootView: View {
 
                     PulsarMiniWorkoutBarHost(
                         state: state,
-                        isInlinePlacement: false,
-                        placement: "rootStable",
+                        isInlinePlacement: isMiniWorkoutCollapsed,
+                        placement: isMiniWorkoutCollapsed ? "rootCollapsed" : "rootStable",
                         onOpen: openActiveWorkoutMiniPlayer,
                         onPrimaryAction: handleActiveWorkoutMiniPlayerAction
                     )
@@ -229,6 +234,7 @@ struct PulsarRootView: View {
             }
             .zIndex(999)
             .transition(.move(edge: .bottom).combined(with: .opacity))
+            .animation(.spring(response: 0.36, dampingFraction: 0.86), value: isMiniWorkoutCollapsed)
         }
     }
 
@@ -260,6 +266,9 @@ struct PulsarRootView: View {
     }
 
     private var usesNativeMiniWorkoutTabAccessory: Bool {
+        if #available(iOS 26.0, *) {
+            return true
+        }
         return false
     }
 
@@ -268,8 +277,12 @@ struct PulsarRootView: View {
         horizontalSizeClass == .regular ? 56 : 16
     }
 
+    private var isMiniWorkoutCollapsed: Bool {
+        tabBarMetrics.isMinimized
+    }
+
     private var rootMiniWorkoutHeight: CGFloat {
-        60
+        isMiniWorkoutCollapsed ? 48 : 60
     }
 
     private var rootMiniWorkoutGap: CGFloat {
@@ -1418,6 +1431,9 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
     let activeWorkoutManager: PulsarActiveWorkoutManager
     let runCoordinator: PulsarRunCoordinator
     let onOpenDestination: (PulsarPlusDestination) -> Void
+    let activeWorkoutMiniPlayerState: PulsarWorkoutMiniPlayerState?
+    let onOpenActiveWorkout: () -> Void
+    let onPrimaryActiveWorkoutAction: () -> Void
     let onMetricsChange: (PulsarTabBarMetrics) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -1432,6 +1448,11 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
         let controller = PulsarNativeTabBarController()
         context.coordinator.configure(controller)
         controller.installTabs(nativeTabs, selectedRootTab: selectedTab)
+        controller.updateMiniWorkoutAccessory(
+            state: activeWorkoutMiniPlayerState,
+            onOpen: onOpenActiveWorkout,
+            onPrimaryAction: onPrimaryActiveWorkoutAction
+        )
         return controller
     }
 
@@ -1445,6 +1466,11 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
             uiViewController.installTabs(nativeTabs, selectedRootTab: selectedTab)
         }
         uiViewController.selectRootTab(selectedTab)
+        uiViewController.updateMiniWorkoutAccessory(
+            state: activeWorkoutMiniPlayerState,
+            onOpen: onOpenActiveWorkout,
+            onPrimaryAction: onPrimaryActiveWorkoutAction
+        )
     }
 
     private var nativeTabs: [UITab] {
@@ -1552,6 +1578,9 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
     private lazy var plusMenuInteraction = UIEditMenuInteraction(delegate: self)
     private var plusMenuTargetRect: CGRect = .null
     private var lastMetrics = PulsarTabBarMetrics()
+    private var miniWorkoutAccessoryContentView: UIView?
+    private var miniWorkoutAccessoryHostingController: UIViewController?
+    private var miniWorkoutAccessoryPlacementStore: PulsarMiniWorkoutAccessoryPlacementStore?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -1587,6 +1616,57 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
         guard selectedTab?.identifier != rootTab.identifier,
               let tab = tab(forIdentifier: rootTab.identifier) else { return }
         selectedTab = tab
+    }
+
+    func updateMiniWorkoutAccessory(
+        state: PulsarWorkoutMiniPlayerState?,
+        onOpen: @escaping () -> Void,
+        onPrimaryAction: @escaping () -> Void
+    ) {
+        guard #available(iOS 26.0, *) else { return }
+        guard let state else {
+            removeMiniWorkoutAccessory(animated: true)
+            return
+        }
+
+        let placementStore = miniWorkoutAccessoryPlacementStore ?? PulsarMiniWorkoutAccessoryPlacementStore()
+        miniWorkoutAccessoryPlacementStore = placementStore
+        let rootView = PulsarNativeWorkoutMiniAccessoryView(
+            placementStore: placementStore,
+            state: state,
+            onOpen: onOpen,
+            onPrimaryAction: onPrimaryAction
+        )
+
+        if let hostingController = miniWorkoutAccessoryHostingController as? UIHostingController<PulsarNativeWorkoutMiniAccessoryView> {
+            hostingController.rootView = rootView
+            miniWorkoutAccessoryContentView?.invalidateIntrinsicContentSize()
+            return
+        }
+
+        let contentView = PulsarMiniWorkoutAccessoryContentView(placementStore: placementStore)
+        let hostingController = UIHostingController(rootView: rootView)
+        hostingController.view.backgroundColor = .clear
+        hostingController.view.isOpaque = false
+        addChild(hostingController)
+        contentView.install(hostingController.view)
+        hostingController.didMove(toParent: self)
+
+        miniWorkoutAccessoryContentView = contentView
+        miniWorkoutAccessoryHostingController = hostingController
+        setBottomAccessory(UITabAccessory(contentView: contentView), animated: true)
+    }
+
+    private func removeMiniWorkoutAccessory(animated: Bool) {
+        if #available(iOS 26.0, *) {
+            setBottomAccessory(nil, animated: animated)
+        }
+        miniWorkoutAccessoryHostingController?.willMove(toParent: nil)
+        miniWorkoutAccessoryHostingController?.view.removeFromSuperview()
+        miniWorkoutAccessoryHostingController?.removeFromParent()
+        miniWorkoutAccessoryHostingController = nil
+        miniWorkoutAccessoryContentView = nil
+        miniWorkoutAccessoryPlacementStore = nil
     }
 
     func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
@@ -1681,6 +1761,98 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
     }
 }
 
+private final class PulsarMiniWorkoutAccessoryPlacementStore: ObservableObject {
+    @Published var isInlinePlacement = false
+}
+
+private struct PulsarNativeWorkoutMiniAccessoryView: View {
+    @ObservedObject var placementStore: PulsarMiniWorkoutAccessoryPlacementStore
+
+    let state: PulsarWorkoutMiniPlayerState
+    let onOpen: () -> Void
+    let onPrimaryAction: () -> Void
+
+    var body: some View {
+        PulsarMiniWorkoutBarHost(
+            state: state,
+            isInlinePlacement: placementStore.isInlinePlacement,
+            placement: placementStore.isInlinePlacement ? "tabAccessoryInline" : "tabAccessoryRegular",
+            onOpen: onOpen,
+            onPrimaryAction: onPrimaryAction
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.spring(response: 0.36, dampingFraction: 0.88), value: placementStore.isInlinePlacement)
+    }
+}
+
+@available(iOS 26.0, *)
+private final class PulsarMiniWorkoutAccessoryContentView: UIView {
+    private let placementStore: PulsarMiniWorkoutAccessoryPlacementStore
+
+    init(placementStore: PulsarMiniWorkoutAccessoryPlacementStore) {
+        self.placementStore = placementStore
+        super.init(frame: .zero)
+        backgroundColor = .clear
+        isOpaque = false
+        registerForTraitChanges([UITraitTabAccessoryEnvironment.self]) { (view: PulsarMiniWorkoutAccessoryContentView, _) in
+            view.updatePlacement()
+        }
+        updatePlacement()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var intrinsicContentSize: CGSize {
+        let windowWidth = window?.bounds.width ?? max(bounds.width, 393)
+        let horizontalSafeArea = (window?.safeAreaInsets.left ?? 0) + (window?.safeAreaInsets.right ?? 0)
+        let availableWidth = max(0, windowWidth - horizontalSafeArea)
+        if placementStore.isInlinePlacement {
+            return CGSize(
+                width: max(220, min(320, availableWidth - 168)),
+                height: 48
+            )
+        }
+        return CGSize(
+            width: min(max(0, availableWidth - 32), 720),
+            height: 60
+        )
+    }
+
+    func install(_ hostedView: UIView) {
+        hostedView.translatesAutoresizingMaskIntoConstraints = false
+        hostedView.backgroundColor = .clear
+        hostedView.isOpaque = false
+        addSubview(hostedView)
+        NSLayoutConstraint.activate([
+            hostedView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            hostedView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            hostedView.topAnchor.constraint(equalTo: topAnchor),
+            hostedView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        updatePlacement()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        updatePlacement()
+    }
+
+    private func updatePlacement() {
+        let isInline = traitCollection.tabAccessoryEnvironment == .inline
+        if placementStore.isInlinePlacement != isInline {
+            placementStore.isInlinePlacement = isInline
+        }
+        invalidateIntrinsicContentSize()
+    }
+}
+
 private struct PulsarWorkoutMiniPlayerState: Equatable {
     enum Kind: Equatable {
         case run(PulsarOutdoorWorkoutKind)
@@ -1760,50 +1932,55 @@ private struct PulsarMiniWorkoutFrameReporter: View {
 }
 
 private struct PulsarNativeWorkoutMiniBar: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     let state: PulsarWorkoutMiniPlayerState
     let isInlinePlacement: Bool
     let onOpen: () -> Void
     let onPrimaryAction: () -> Void
 
     var body: some View {
-        HStack(spacing: isInlinePlacement ? 9 : 11) {
-            workoutGlyph
-                .frame(width: isInlinePlacement ? 36 : 44, height: isInlinePlacement ? 36 : 44)
+        if isInlinePlacement {
+            compactBody
+        } else {
+            expandedBody
+        }
+    }
 
-            VStack(alignment: .leading, spacing: isInlinePlacement ? 1 : 2) {
+    private var expandedBody: some View {
+        HStack(spacing: 11) {
+            workoutGlyph
+                .frame(width: 44, height: 44)
+
+            VStack(alignment: .leading, spacing: 2) {
                 Text(state.title)
-                    .font(.system(size: isInlinePlacement ? 15 : 17, weight: .semibold, design: .rounded))
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
 
-                Text(isInlinePlacement ? state.metrics : "\(state.subtitle) • \(state.metrics)")
-                    .font(.system(size: isInlinePlacement ? 13 : 14, weight: .regular, design: .rounded).monospacedDigit())
+                Text("\(state.subtitle) • \(state.metrics)")
+                    .font(.system(size: 14, weight: .regular, design: .rounded).monospacedDigit())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
             }
             .layoutPriority(1)
 
-            Button(action: onPrimaryAction) {
-                Image(systemName: primaryActionSymbol)
-                    .font(.system(size: isInlinePlacement ? 18 : 24, weight: .bold))
+            Button(action: onOpen) {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(.primary)
-                    .frame(width: isInlinePlacement ? 36 : 44, height: isInlinePlacement ? 36 : 44)
-                    .modifier(PulsarMiniWorkoutControlModifier(isInlinePlacement: isInlinePlacement))
+                    .frame(width: 44, height: 44)
+                    .modifier(PulsarMiniWorkoutControlModifier(isInlinePlacement: false))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(primaryActionLabel)
+            .accessibilityLabel("Open workout")
         }
-        .padding(.leading, isInlinePlacement ? 8 : 10)
-        .padding(.trailing, isInlinePlacement ? 9 : 10)
+        .padding(.leading, 10)
+        .padding(.trailing, 10)
         .frame(minWidth: 1, maxWidth: .infinity)
-        .frame(height: isInlinePlacement ? 50 : 60)
+        .frame(height: 60)
         .contentShape(.rect(cornerRadius: barCornerRadius))
         .modifier(PulsarMiniWorkoutBarBackgroundModifier(
-            tint: tint,
             cornerRadius: barCornerRadius,
             isInlinePlacement: isInlinePlacement
         ))
@@ -1812,40 +1989,65 @@ private struct PulsarNativeWorkoutMiniBar: View {
         .accessibilityAction(named: Text("Open live workout"), onOpen)
     }
 
+    private var compactBody: some View {
+        HStack(spacing: 8) {
+            workoutGlyph
+                .frame(width: 34, height: 34)
+
+            compactText
+                .lineLimit(1)
+                .minimumScaleFactor(0.76)
+                .layoutPriority(1)
+
+            Button(action: onOpen) {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 32, height: 34)
+                    .modifier(PulsarMiniWorkoutControlModifier(isInlinePlacement: true))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open workout")
+        }
+        .padding(.leading, 7)
+        .padding(.trailing, 8)
+        .frame(minWidth: 1, maxWidth: .infinity)
+        .frame(height: 44)
+        .contentShape(.rect(cornerRadius: barCornerRadius))
+        .modifier(PulsarMiniWorkoutBarBackgroundModifier(
+            cornerRadius: barCornerRadius,
+            isInlinePlacement: isInlinePlacement
+        ))
+        .onTapGesture(perform: onOpen)
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(named: Text("Open live workout"), onOpen)
+    }
+
+    private var compactText: some View {
+        HStack(spacing: 0) {
+            Text(state.title)
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(.primary)
+
+            Text(" • \(compactMetric)")
+                .font(.system(size: 14, weight: .regular, design: .rounded).monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var compactMetric: String {
+        state.metrics.components(separatedBy: " · ").first ?? state.metrics
+    }
+
     private var workoutGlyph: some View {
         Image(systemName: state.symbol)
-            .font(.system(size: isInlinePlacement ? 16 : 18, weight: .semibold))
+            .font(.system(size: isInlinePlacement ? 15 : 18, weight: .semibold))
             .symbolRenderingMode(.hierarchical)
             .foregroundStyle(tint)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(tileFill, in: .rect(cornerRadius: isInlinePlacement ? 14 : 13, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: isInlinePlacement ? 14 : 13, style: .continuous)
-                    .stroke(tileStroke, lineWidth: 1)
-            }
-    }
-
-    private var tileFill: some ShapeStyle {
-        LinearGradient(
-            colors: [
-                tint.opacity(colorScheme == .dark ? 0.34 : 0.22),
-                tint.opacity(colorScheme == .dark ? 0.20 : 0.14),
-                Color.white.opacity(colorScheme == .dark ? 0.03 : 0.18)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    private var tileStroke: some ShapeStyle {
-        LinearGradient(
-            colors: [
-                Color.white.opacity(colorScheme == .dark ? 0.24 : 0.58),
-                tint.opacity(colorScheme == .dark ? 0.22 : 0.18)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+            .modifier(PulsarMiniWorkoutGlyphGlassModifier(
+                cornerRadius: isInlinePlacement ? 14 : 13
+            ))
     }
 
     private var barCornerRadius: CGFloat {
@@ -1863,152 +2065,40 @@ private struct PulsarNativeWorkoutMiniBar: View {
         }
     }
 
-    private var primaryActionSymbol: String {
-        switch state.kind {
-        case .run:
-            state.isPaused ? "play.fill" : "pause.fill"
-        case .gym, .watchGym:
-            "chevron.up"
-        }
-    }
-
-    private var primaryActionLabel: String {
-        switch state.kind {
-        case .run:
-            state.isPaused ? "Resume workout" : "Pause workout"
-        case .gym, .watchGym:
-            "Open workout"
-        }
-    }
 }
 
 private struct PulsarMiniWorkoutBarBackgroundModifier: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-
-    let tint: Color
     let cornerRadius: CGFloat
     let isInlinePlacement: Bool
 
     func body(content: Content) -> some View {
-        if isInlinePlacement {
-            inlineBackground(content)
-        } else {
-            dockBackground(content)
-        }
-    }
-
-    @ViewBuilder
-    private func inlineBackground(_ content: Content) -> some View {
         if #available(iOS 26.0, *) {
             content
-                .background(inlineSurfaceFill, in: .rect(cornerRadius: cornerRadius, style: .continuous))
-                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: cornerRadius, style: .continuous))
-                .overlay(alignment: .topLeading) {
-                    Capsule(style: .continuous)
-                        .fill(.white.opacity(colorScheme == .dark ? 0.10 : 0.34))
-                        .frame(width: 46, height: 7)
-                        .blur(radius: 5)
-                        .offset(x: 13, y: 7)
-                        .allowsHitTesting(false)
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(inlineStroke, lineWidth: 1)
-                }
-                .shadow(color: tint.opacity(colorScheme == .dark ? 0.20 : 0.12), radius: 10, x: 0, y: 5)
-                .shadow(color: .black.opacity(colorScheme == .dark ? 0.22 : 0.10), radius: 13, x: 0, y: 7)
+                .glassEffect(
+                    .regular.interactive(),
+                    in: .rect(cornerRadius: cornerRadius, style: .continuous)
+                )
         } else {
             content
-                .background(inlineSurfaceFill, in: .rect(cornerRadius: cornerRadius, style: .continuous))
                 .background(.ultraThinMaterial, in: .rect(cornerRadius: cornerRadius, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(inlineStroke, lineWidth: 1)
-                }
-                .shadow(color: tint.opacity(colorScheme == .dark ? 0.18 : 0.10), radius: 10, x: 0, y: 5)
-                .shadow(color: .black.opacity(0.12), radius: 16, x: 0, y: 8)
         }
     }
+}
 
-    @ViewBuilder
-    private func dockBackground(_ content: Content) -> some View {
+private struct PulsarMiniWorkoutGlyphGlassModifier: ViewModifier {
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
             content
-                .background(dockSurfaceFill, in: .rect(cornerRadius: cornerRadius, style: .continuous))
-                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: cornerRadius, style: .continuous))
-                .overlay(alignment: .topLeading) {
-                    Capsule(style: .continuous)
-                        .fill(.white.opacity(colorScheme == .dark ? 0.07 : 0.24))
-                        .frame(width: 56, height: 7)
-                        .blur(radius: 6)
-                        .offset(x: 18, y: 8)
-                        .allowsHitTesting(false)
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(dockStroke, lineWidth: 1)
-                }
-                .shadow(color: tint.opacity(colorScheme == .dark ? 0.14 : 0.07), radius: 10, x: 0, y: 5)
-                .shadow(color: .black.opacity(colorScheme == .dark ? 0.20 : 0.08), radius: 14, x: 0, y: 8)
+                .glassEffect(
+                    .regular,
+                    in: .rect(cornerRadius: cornerRadius, style: .continuous)
+                )
         } else {
             content
-                .background(dockSurfaceFill, in: .rect(cornerRadius: cornerRadius, style: .continuous))
-                .background(.ultraThinMaterial, in: .rect(cornerRadius: cornerRadius, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(dockStroke, lineWidth: 1)
-                }
-                .shadow(color: tint.opacity(colorScheme == .dark ? 0.12 : 0.06), radius: 10, x: 0, y: 5)
-                .shadow(color: .black.opacity(0.08), radius: 14, x: 0, y: 8)
+                .background(.thinMaterial, in: .rect(cornerRadius: cornerRadius, style: .continuous))
         }
-    }
-
-    private var inlineSurfaceFill: some ShapeStyle {
-        LinearGradient(
-            colors: [
-                Color(uiColor: .systemBackground).opacity(colorScheme == .dark ? 0.54 : 0.78),
-                Color(uiColor: .secondarySystemBackground).opacity(colorScheme == .dark ? 0.46 : 0.66),
-                tint.opacity(colorScheme == .dark ? 0.20 : 0.15)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    private var dockSurfaceFill: some ShapeStyle {
-        LinearGradient(
-            colors: [
-                tint.opacity(colorScheme == .dark ? 0.18 : 0.16),
-                Color(uiColor: .systemBackground).opacity(colorScheme == .dark ? 0.54 : 0.72),
-                Color(uiColor: .secondarySystemBackground).opacity(colorScheme == .dark ? 0.48 : 0.62)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    private var inlineStroke: some ShapeStyle {
-        LinearGradient(
-            colors: [
-                Color.white.opacity(colorScheme == .dark ? 0.22 : 0.64),
-                tint.opacity(colorScheme == .dark ? 0.16 : 0.13),
-                Color.black.opacity(colorScheme == .dark ? 0.12 : 0.04)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    private var dockStroke: some ShapeStyle {
-        LinearGradient(
-            colors: [
-                Color.white.opacity(colorScheme == .dark ? 0.24 : 0.68),
-                Color.white.opacity(colorScheme == .dark ? 0.08 : 0.22),
-                tint.opacity(colorScheme == .dark ? 0.16 : 0.12)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
     }
 }
 
