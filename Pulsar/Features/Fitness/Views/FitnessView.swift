@@ -19,6 +19,7 @@ struct FitnessView: View {
     @State private var isActivityLogExpanded = false
     @State private var selectedPersonalizedWorkout: PersonalizedWorkoutKind?
     @State private var selectedOutdoorWorkoutKind: PulsarOutdoorWorkoutKind?
+    @State private var selectedHistoricalActivity: WeeklyActivity?
 
     @MainActor
     init(profileStore: ProfileStore) {
@@ -79,6 +80,9 @@ struct FitnessView: View {
                                 withAnimation(.spring(response: 0.38, dampingFraction: 0.84)) {
                                     isActivityLogExpanded.toggle()
                                 }
+                            },
+                            onSelectActivity: { activity in
+                                selectedHistoricalActivity = activity
                             }
                         )
                     }
@@ -101,6 +105,9 @@ struct FitnessView: View {
             .background(FitnessWeeklyBackground())
             .navigationTitle("")
             .toolbarTitleDisplayMode(.inline)
+            .navigationDestination(item: $selectedHistoricalActivity) { activity in
+                FitnessWorkoutDetailView(activity: activity)
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {

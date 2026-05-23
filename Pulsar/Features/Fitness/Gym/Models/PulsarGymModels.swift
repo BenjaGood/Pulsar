@@ -449,6 +449,7 @@ struct PulsarGymWorkoutSession: Identifiable, Codable, Hashable {
     var routineName: String
     var routineEmoji: String
     var workoutKind: PulsarGymWorkoutKind
+    var startedFrom: PulsarWorkoutStartedFrom?
     var startedAt: Date
     var finishedAt: Date?
     var elapsedSeconds: Int
@@ -473,6 +474,7 @@ struct PulsarGymWorkoutSession: Identifiable, Codable, Hashable {
         self.routineName = routine.name
         self.routineEmoji = routine.emoji
         self.workoutKind = PulsarGymWorkoutKind.inferred(routineName: routine.name, exerciseCount: routine.exercises.count)
+        self.startedFrom = .iPhone
         self.startedAt = startedAt
         self.finishedAt = nil
         self.elapsedSeconds = 0
@@ -521,6 +523,7 @@ struct PulsarGymWorkoutSession: Identifiable, Codable, Hashable {
         self.routineName = state.routineName
         self.routineEmoji = PulsarRoutine.normalizedEmoji(state.routineEmoji ?? "🏋️")
         self.workoutKind = state.workoutKind ?? PulsarGymWorkoutKind.inferred(routineName: state.routineName, exerciseCount: state.exercises.count)
+        self.startedFrom = state.startedFrom
         self.startedAt = state.startedAt
         self.finishedAt = state.isFinished ? state.updatedAt : nil
         self.elapsedSeconds = max(state.elapsedSeconds, Int(state.updatedAt.timeIntervalSince(state.startedAt)))
@@ -544,6 +547,7 @@ struct PulsarGymWorkoutSession: Identifiable, Codable, Hashable {
         case routineName
         case routineEmoji
         case workoutKind
+        case startedFrom
         case startedAt
         case finishedAt
         case elapsedSeconds
@@ -571,6 +575,7 @@ struct PulsarGymWorkoutSession: Identifiable, Codable, Hashable {
         routineName = (try? container.decode(String.self, forKey: .routineName)) ?? "Gym Workout"
         routineEmoji = PulsarRoutine.normalizedEmoji((try? container.decodeIfPresent(String.self, forKey: .routineEmoji)) ?? "🏋️")
         let decodedWorkoutKind = try? container.decodeIfPresent(PulsarGymWorkoutKind.self, forKey: .workoutKind)
+        startedFrom = try? container.decodeIfPresent(PulsarWorkoutStartedFrom.self, forKey: .startedFrom)
         startedAt = (try? container.decode(Date.self, forKey: .startedAt)) ?? Date()
         finishedAt = try? container.decodeIfPresent(Date.self, forKey: .finishedAt)
         elapsedSeconds = (try? container.decode(Int.self, forKey: .elapsedSeconds)) ?? 0
@@ -846,6 +851,9 @@ struct PulsarGymWorkoutSummary: Identifiable, Codable, Hashable {
     var sessionId: UUID
     var routineName: String
     var routineEmoji: String
+    var startedAt: Date?
+    var endedAt: Date?
+    var source: PulsarWorkoutStartedFrom?
     var durationSeconds: Int
     var exercisesCompleted: Int
     var totalExercises: Int
@@ -864,6 +872,9 @@ struct PulsarGymWorkoutSummary: Identifiable, Codable, Hashable {
         sessionId = session.id
         routineName = session.activityLogDisplayName
         routineEmoji = session.routineEmoji
+        startedAt = session.startedAt
+        endedAt = session.finishedAt
+        source = session.startedFrom
         durationSeconds = session.elapsedSeconds
         exercisesCompleted = session.exercises.filter(\.isCompleted).count
         totalExercises = session.exercises.count
@@ -884,6 +895,41 @@ struct PulsarGymWorkoutSummary: Identifiable, Codable, Hashable {
                 return setPartial + reps * weight
             }
         }
+    }
+
+    init(activeGymState state: ActiveGymWorkoutState) {
+        id = UUID()
+        sessionId = state.sessionId
+        routineName = state.routineName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Gym Workout" : state.routineName
+        routineEmoji = PulsarRoutine.normalizedEmoji(state.routineEmoji ?? "🏋️")
+        startedAt = state.startedAt
+        endedAt = state.isFinished ? state.updatedAt : nil
+        source = state.startedFrom
+        durationSeconds = max(state.elapsedSeconds, Int(state.updatedAt.timeIntervalSince(state.startedAt)))
+        exercisesCompleted = state.exercises.filter(\.isCompleted).count
+        totalExercises = state.totalExercises
+        setsCompleted = state.completedSets
+        totalSets = state.totalSets
+        let summaryWeightUnit = state.exercises.first.map { PulsarWeightUnit.gymDisplayName($0.weightUnit) } ?? .kilograms
+        weightUnit = summaryWeightUnit
+        healthKitWorkoutUUID = state.healthKitWorkoutUUID
+        activeEnergyKilocalories = state.activeEnergyKilocalories
+        averageHeartRate = state.averageHeartRate
+        maxHeartRate = state.maxHeartRate
+        healthKitStatusMessage = state.healthKitStatusMessage
+        totalVolume = state.exercises.reduce(0) { partialResult, exercise in
+            let exerciseUnit = PulsarWeightUnit.gymDisplayName(exercise.weightUnit)
+            return partialResult + exercise.sets.reduce(0) { setPartial, set in
+                guard set.isCompleted else { return setPartial }
+                let reps = Double(set.completedReps ?? set.targetReps)
+                let weight = exerciseUnit.convert(set.completedWeight ?? set.targetWeight, to: summaryWeightUnit)
+                return setPartial + reps * weight
+            }
+        }
+    }
+
+    var sourceDeviceName: String {
+        (source ?? .iPhone).displayName
     }
 }
 

@@ -17,6 +17,9 @@ struct PulsarRootView: View {
     @State private var ignoredFailedSessionIDs = Set<UUID>()
     @State private var lastKnownActiveWorkoutDisplayStates: [UUID: PulsarWorkoutMiniPlayerState] = [:]
     @State private var presentedPlusDestination: PulsarPlusDestination?
+    @State private var isPlusMenuMounted = false
+    @State private var isPlusMenuExpanded = false
+    @State private var plusMenuAnchorMetrics: PulsarTabBarMetrics?
     @StateObject private var homeViewModel = HomeViewModel()
     @StateObject private var runCoordinator = PulsarRunCoordinator()
     @StateObject private var watchSyncStore = PulsarWatchConnectivitySyncStore.shared
@@ -183,6 +186,16 @@ struct PulsarRootView: View {
                 )
 
             rootMiniWorkoutHost
+
+            if isPlusMenuMounted {
+                PulsarPlusMorphingMenu(
+                    isExpanded: isPlusMenuExpanded,
+                    tabBarMetrics: plusMenuAnchorMetrics ?? tabBarMetrics,
+                    onOpenDestination: openPlusDestination,
+                    onDismiss: dismissPlusMenu
+                )
+                .zIndex(1000)
+            }
         }
         .background(PulsarRootTabBackground(tab: selectedTab).ignoresSafeArea())
     }
@@ -194,7 +207,8 @@ struct PulsarRootView: View {
             homeViewModel: homeViewModel,
             activeWorkoutManager: activeWorkoutManager,
             runCoordinator: runCoordinator,
-            onOpenDestination: openPlusDestination,
+            isPlusActionHidden: isPlusMenuMounted,
+            onTogglePlusMenu: togglePlusMenu,
             activeWorkoutMiniPlayerState: shouldShowMiniWorkoutBar ? activeWorkoutMiniPlayerState : nil,
             onOpenActiveWorkout: openActiveWorkoutMiniPlayer,
             onPrimaryActiveWorkoutAction: handleActiveWorkoutMiniPlayerAction,
@@ -461,8 +475,44 @@ struct PulsarRootView: View {
 
     private func openPlusDestination(_ destination: PulsarPlusDestination) {
         playPlusMenuHaptic(.light)
+        dismissPlusMenu()
         DispatchQueue.main.async {
             presentedPlusDestination = destination
+        }
+    }
+
+    private func togglePlusMenu() {
+        playPlusMenuHaptic(isPlusMenuExpanded ? .soft : .light)
+        if isPlusMenuExpanded {
+            dismissPlusMenu()
+        } else if isPlusMenuMounted {
+            withAnimation(plusMenuAnimation) {
+                isPlusMenuExpanded = true
+            }
+        } else {
+            presentPlusMenu()
+        }
+    }
+
+    private func presentPlusMenu() {
+        plusMenuAnchorMetrics = tabBarMetrics
+        isPlusMenuMounted = true
+        DispatchQueue.main.async {
+            withAnimation(plusMenuAnimation) {
+                isPlusMenuExpanded = true
+            }
+        }
+    }
+
+    private func dismissPlusMenu() {
+        guard isPlusMenuMounted else { return }
+        withAnimation(plusMenuAnimation) {
+            isPlusMenuExpanded = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + plusMenuDismissDelay) {
+            guard !isPlusMenuExpanded else { return }
+            isPlusMenuMounted = false
+            plusMenuAnchorMetrics = nil
         }
     }
 
@@ -475,6 +525,14 @@ struct PulsarRootView: View {
         let generator = UIImpactFeedbackGenerator(style: style)
         generator.prepare()
         generator.impactOccurred()
+    }
+
+    private var plusMenuAnimation: Animation {
+        .spring(response: 0.44, dampingFraction: 0.88, blendDuration: 0.08)
+    }
+
+    private var plusMenuDismissDelay: TimeInterval {
+        0.46
     }
 
     private func openActiveWorkoutMiniPlayer() {
@@ -1422,6 +1480,275 @@ private enum PulsarPlusDestination: String, Identifiable {
     case cycle
 
     var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .lab: "Lab"
+        case .cycle: "Cycle"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .lab: "flask"
+        case .cycle: "arrow.triangle.2.circlepath"
+        }
+    }
+}
+
+private struct PulsarPlusMorphingMenu: View {
+    let isExpanded: Bool
+    let tabBarMetrics: PulsarTabBarMetrics
+    let onOpenDestination: (PulsarPlusDestination) -> Void
+    let onDismiss: () -> Void
+    @Namespace private var morphNamespace
+
+    var body: some View {
+        GeometryReader { proxy in
+            let layout = layout(in: proxy)
+
+            ZStack(alignment: .bottomTrailing) {
+                VStack(spacing: 0) {
+                    Color.clear
+                        .frame(height: layout.dismissLayerHeight)
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: onDismiss)
+
+                    Spacer(minLength: 0)
+                        .allowsHitTesting(false)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                if isExpanded {
+                    expandedMenu(layout: layout)
+                        .transition(.identity)
+                } else {
+                    compactPlusButton(layout: layout)
+                        .transition(.identity)
+                }
+            }
+        }
+        .ignoresSafeArea(edges: .bottom)
+    }
+
+    private func compactPlusButton(layout: PulsarPlusMenuLayout) -> some View {
+        ZStack {
+            morphSurface(cornerRadius: layout.plusButtonFrame.width / 2)
+                .matchedGeometryEffect(
+                    id: "plusMorphSurface",
+                    in: morphNamespace,
+                    properties: .frame,
+                    anchor: .center
+                )
+
+            Image(systemName: "plus")
+                .font(.system(size: 30, weight: .regular))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(Color.black.opacity(0.92))
+                .transition(.opacity.combined(with: .scale(scale: 0.78)))
+        }
+        .frame(width: layout.plusButtonFrame.width, height: layout.plusButtonFrame.height)
+        .position(x: layout.plusButtonFrame.midX, y: layout.plusButtonFrame.midY)
+        .accessibilityHidden(true)
+    }
+
+    private func expandedMenu(layout: PulsarPlusMenuLayout) -> some View {
+        ZStack {
+            morphSurface(cornerRadius: expandedCornerRadius)
+                .matchedGeometryEffect(
+                    id: "plusMorphSurface",
+                    in: morphNamespace,
+                    properties: .frame,
+                    anchor: .center
+                )
+
+            VStack(alignment: .leading, spacing: 8) {
+                PulsarPlusActionItem(destination: .lab) {
+                    onOpenDestination(.lab)
+                }
+
+                PulsarPlusActionItem(destination: .cycle) {
+                    onOpenDestination(.cycle)
+                }
+            }
+            .padding(.horizontal, 22)
+            .padding(.vertical, 18)
+            .opacity(isExpanded ? 1 : 0)
+            .offset(y: isExpanded ? 0 : 12)
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+            .animation(.easeOut(duration: 0.22).delay(0.1), value: isExpanded)
+        }
+        .frame(width: layout.expandedFrame.width, height: layout.expandedFrame.height)
+        .contentShape(.rect(cornerRadius: expandedCornerRadius, style: .continuous))
+        .position(x: layout.expandedFrame.midX, y: layout.expandedFrame.midY)
+        .allowsHitTesting(isExpanded)
+    }
+
+    @ViewBuilder
+    private func morphSurface(cornerRadius: CGFloat) -> some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: 0) {
+                Color.clear
+                    .modifier(PulsarPlusPanelGlassBackground(cornerRadius: cornerRadius))
+                    .compositingGroup()
+            }
+        } else {
+            Color.clear
+                .modifier(PulsarPlusPanelGlassBackground(cornerRadius: cornerRadius))
+                .compositingGroup()
+        }
+    }
+
+    private func layout(in proxy: GeometryProxy) -> PulsarPlusMenuLayout {
+        let tabChromeHeight = tabBarChromeHeight(in: proxy)
+        let width = menuWidth(in: proxy)
+        let height = menuHeight
+        let trailingPadding = trailingPadding(in: proxy)
+        let bottomPadding = tabChromeHeight + verticalGapAboveTabBar
+        let expandedFrame = CGRect(
+            x: proxy.size.width - trailingPadding - width,
+            y: proxy.size.height - bottomPadding - height,
+            width: width,
+            height: height
+        )
+        let plusButtonFrame = plusButtonFrame(in: proxy, tabChromeHeight: tabChromeHeight)
+
+        return PulsarPlusMenuLayout(
+            expandedFrame: expandedFrame,
+            plusButtonFrame: plusButtonFrame,
+            dismissLayerHeight: max(0, proxy.size.height - tabChromeHeight)
+        )
+    }
+
+    private var menuHeight: CGFloat {
+        152
+    }
+
+    private var expandedCornerRadius: CGFloat {
+        36
+    }
+
+    private func menuWidth(in proxy: GeometryProxy) -> CGFloat {
+        min(max(204, proxy.size.width - 64), 224)
+    }
+
+    private func trailingPadding(in proxy: GeometryProxy) -> CGFloat {
+        guard tabBarMetrics.maxX > 0 else { return 16 }
+        let tabTrailingEdge = min(tabBarMetrics.maxX, proxy.size.width)
+        return max(12, proxy.size.width - tabTrailingEdge + 8)
+    }
+
+    private func tabBarChromeHeight(in proxy: GeometryProxy) -> CGFloat {
+        if tabBarMetrics.minY > 0, tabBarMetrics.minY < proxy.size.height {
+            return max(proxy.size.height - tabBarMetrics.minY, proxy.safeAreaInsets.bottom + 58)
+        }
+
+        return max(
+            tabBarMetrics.visibleHeight,
+            tabBarMetrics.bottomSafeAreaInset + 58,
+            72
+        )
+    }
+
+    private var verticalGapAboveTabBar: CGFloat {
+        42
+    }
+
+    private func plusButtonFrame(in proxy: GeometryProxy, tabChromeHeight: CGFloat) -> CGRect {
+        let tabHeight = max(tabBarMetrics.height, 58)
+        let sideLength = min(72, max(48, tabHeight))
+        let horizontalInset = max(0, (tabHeight - sideLength) / 2)
+        let tabMaxX = tabBarMetrics.maxX > 0 ? min(tabBarMetrics.maxX, proxy.size.width) : proxy.size.width
+        let tabMinY = tabBarMetrics.minY > 0 && tabBarMetrics.minY < proxy.size.height
+            ? tabBarMetrics.minY
+            : proxy.size.height - tabChromeHeight
+        let tabMidY = tabMinY + tabHeight / 2
+
+        return CGRect(
+            x: tabMaxX - sideLength - horizontalInset,
+            y: tabMidY - sideLength / 2,
+            width: sideLength,
+            height: sideLength
+        )
+    }
+}
+
+private struct PulsarPlusActionItem: View {
+    let destination: PulsarPlusDestination
+    let action: () -> Void
+    @ScaledMetric(relativeTo: .body) private var iconSize: CGFloat = 24
+    @ScaledMetric(relativeTo: .body) private var iconFrame: CGFloat = 32
+    @ScaledMetric(relativeTo: .body) private var rowMinHeight: CGFloat = 58
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                Image(systemName: destination.symbolName)
+                    .font(.system(size: iconSize, weight: .regular))
+                    .symbolRenderingMode(.monochrome)
+                    .frame(width: iconFrame, height: iconFrame)
+
+                Text(destination.title)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.86)
+
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Color.black.opacity(0.92))
+            .frame(maxWidth: .infinity, minHeight: rowMinHeight, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open \(destination.title)")
+    }
+}
+
+private struct PulsarPlusMenuLayout {
+    let expandedFrame: CGRect
+    let plusButtonFrame: CGRect
+    let dismissLayerHeight: CGFloat
+}
+
+private struct PulsarPlusPanelGlassBackground: ViewModifier {
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(
+                    .regular.interactive(),
+                    in: .rect(cornerRadius: cornerRadius, style: .continuous)
+                )
+                .overlay {
+                    shape
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    .white.opacity(0.46),
+                                    .white.opacity(0.18),
+                                    .white.opacity(0.08)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 0.8
+                        )
+                        .blendMode(.plusLighter)
+                }
+                .shadow(color: .black.opacity(0.11), radius: 28, x: 0, y: 16)
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+                .overlay {
+                    shape
+                        .stroke(.white.opacity(0.28), lineWidth: 0.7)
+                }
+                .shadow(color: .black.opacity(0.11), radius: 26, x: 0, y: 15)
+        }
+    }
 }
 
 private struct PulsarNativeTabController: UIViewControllerRepresentable {
@@ -1430,7 +1757,8 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
     let homeViewModel: HomeViewModel
     let activeWorkoutManager: PulsarActiveWorkoutManager
     let runCoordinator: PulsarRunCoordinator
-    let onOpenDestination: (PulsarPlusDestination) -> Void
+    let isPlusActionHidden: Bool
+    let onTogglePlusMenu: () -> Void
     let activeWorkoutMiniPlayerState: PulsarWorkoutMiniPlayerState?
     let onOpenActiveWorkout: () -> Void
     let onPrimaryActiveWorkoutAction: () -> Void
@@ -1439,7 +1767,7 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(
             selectedTab: $selectedTab,
-            onOpenDestination: onOpenDestination,
+            onTogglePlusMenu: onTogglePlusMenu,
             onMetricsChange: onMetricsChange
         )
     }
@@ -1448,6 +1776,7 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
         let controller = PulsarNativeTabBarController()
         context.coordinator.configure(controller)
         controller.installTabs(nativeTabs, selectedRootTab: selectedTab)
+        controller.updatePlusActionVisibility(isHidden: isPlusActionHidden)
         controller.updateMiniWorkoutAccessory(
             state: activeWorkoutMiniPlayerState,
             onOpen: onOpenActiveWorkout,
@@ -1458,13 +1787,14 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: PulsarNativeTabBarController, context: Context) {
         context.coordinator.selectedTab = $selectedTab
-        context.coordinator.onOpenDestination = onOpenDestination
+        context.coordinator.onTogglePlusMenu = onTogglePlusMenu
         context.coordinator.onMetricsChange = onMetricsChange
         context.coordinator.configure(uiViewController)
 
         if !uiViewController.hasExpectedRootTabs(PulsarRootTab.allCases.map(\.identifier)) {
             uiViewController.installTabs(nativeTabs, selectedRootTab: selectedTab)
         }
+        uiViewController.updatePlusActionVisibility(isHidden: isPlusActionHidden)
         uiViewController.selectRootTab(selectedTab)
         uiViewController.updateMiniWorkoutAccessory(
             state: activeWorkoutMiniPlayerState,
@@ -1503,6 +1833,7 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
         tab.automaticallyActivatesSearch = false
         tab.userInfo = PulsarNativeTabBarController.plusActionUserInfo
         tab.accessibilityIdentifier = "pulsar.plus.action"
+        tab.accessibilityLabel = "Open quick actions"
         return tab
     }
 
@@ -1540,16 +1871,16 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
 
     final class Coordinator {
         var selectedTab: Binding<PulsarRootTab>
-        var onOpenDestination: (PulsarPlusDestination) -> Void
+        var onTogglePlusMenu: () -> Void
         var onMetricsChange: (PulsarTabBarMetrics) -> Void
 
         init(
             selectedTab: Binding<PulsarRootTab>,
-            onOpenDestination: @escaping (PulsarPlusDestination) -> Void,
+            onTogglePlusMenu: @escaping () -> Void,
             onMetricsChange: @escaping (PulsarTabBarMetrics) -> Void
         ) {
             self.selectedTab = selectedTab
-            self.onOpenDestination = onOpenDestination
+            self.onTogglePlusMenu = onTogglePlusMenu
             self.onMetricsChange = onMetricsChange
         }
 
@@ -1557,8 +1888,8 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
             controller.onTabSelected = { [weak self] tab in
                 self?.selectedTab.wrappedValue = tab
             }
-            controller.onOpenDestination = { [weak self] destination in
-                self?.onOpenDestination(destination)
+            controller.onTogglePlusMenu = { [weak self] in
+                self?.onTogglePlusMenu()
             }
             controller.onMetricsChange = { [weak self] metrics in
                 self?.onMetricsChange(metrics)
@@ -1567,16 +1898,14 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
     }
 }
 
-private final class PulsarNativeTabBarController: UITabBarController, UITabBarControllerDelegate, UIEditMenuInteractionDelegate {
+private final class PulsarNativeTabBarController: UITabBarController, UITabBarControllerDelegate {
     static let plusActionUserInfo = "pulsar.plus.action"
 
     var onTabSelected: ((PulsarRootTab) -> Void)?
-    var onOpenDestination: ((PulsarPlusDestination) -> Void)?
+    var onTogglePlusMenu: (() -> Void)?
     var onMetricsChange: ((PulsarTabBarMetrics) -> Void)?
 
     private var lastSelectedRootTab: PulsarRootTab = .home
-    private lazy var plusMenuInteraction = UIEditMenuInteraction(delegate: self)
-    private var plusMenuTargetRect: CGRect = .null
     private var lastMetrics = PulsarTabBarMetrics()
     private var miniWorkoutAccessoryContentView: UIView?
     private var miniWorkoutAccessoryHostingController: UIViewController?
@@ -1590,7 +1919,6 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
         mode = .tabBar
         tabBarMinimizeBehavior = .onScrollDown
         tabBar.isTranslucent = true
-        view.addInteraction(plusMenuInteraction)
     }
 
     override func viewDidLayoutSubviews() {
@@ -1616,6 +1944,13 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
         guard selectedTab?.identifier != rootTab.identifier,
               let tab = tab(forIdentifier: rootTab.identifier) else { return }
         selectedTab = tab
+    }
+
+    func updatePlusActionVisibility(isHidden: Bool) {
+        guard let tab = tabs.first(where: isPlusActionTab),
+              tab.isHidden != isHidden else { return }
+        tab.isHidden = isHidden
+        tab.isEnabled = !isHidden
     }
 
     func updateMiniWorkoutAccessory(
@@ -1671,7 +2006,7 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
 
     func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
         guard isPlusActionTab(tab) else { return true }
-        presentPlusMenu(from: tab)
+        onTogglePlusMenu?()
         selectRootTab(lastSelectedRootTab)
         return false
     }
@@ -1684,58 +2019,6 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
 
     private func isPlusActionTab(_ tab: UITab) -> Bool {
         (tab.userInfo as? String) == Self.plusActionUserInfo
-    }
-
-    private func presentPlusMenu(from tab: UITab) {
-        plusMenuTargetRect = plusTargetRect(for: tab)
-        let configuration = UIEditMenuConfiguration(
-            identifier: Self.plusActionUserInfo,
-            sourcePoint: CGPoint(x: plusMenuTargetRect.midX, y: plusMenuTargetRect.minY)
-        )
-        configuration.preferredArrowDirection = .down
-        plusMenuInteraction.presentEditMenu(with: configuration)
-    }
-
-    private func plusTargetRect(for tab: UITab) -> CGRect {
-        guard isPlusActionTab(tab) else { return .null }
-        let tabBarFrame = tabBar.convert(tabBar.bounds, to: view)
-        let sideLength = min(72, max(48, tabBarFrame.height))
-        let horizontalInset = max(0, (tabBarFrame.height - sideLength) / 2)
-        return CGRect(
-            x: tabBarFrame.maxX - sideLength - horizontalInset,
-            y: tabBarFrame.midY - sideLength / 2,
-            width: sideLength,
-            height: sideLength
-        )
-    }
-
-    func editMenuInteraction(
-        _ interaction: UIEditMenuInteraction,
-        menuFor configuration: UIEditMenuConfiguration,
-        suggestedActions: [UIMenuElement]
-    ) -> UIMenu? {
-        let menu = UIMenu(children: [
-            UIAction(title: "Lab", image: UIImage(systemName: "testtube.2")) { [weak self] _ in
-                self?.openPlusDestination(.lab)
-            },
-            UIAction(title: "Cycle", image: UIImage(systemName: "moonphase.first.quarter") ?? UIImage(systemName: "calendar")) { [weak self] _ in
-                self?.openPlusDestination(.cycle)
-            }
-        ])
-        menu.preferredElementSize = .large
-        return menu
-    }
-
-    func editMenuInteraction(
-        _ interaction: UIEditMenuInteraction,
-        targetRectFor configuration: UIEditMenuConfiguration
-    ) -> CGRect {
-        plusMenuTargetRect
-    }
-
-    private func openPlusDestination(_ destination: PulsarPlusDestination) {
-        selectRootTab(lastSelectedRootTab)
-        onOpenDestination?(destination)
     }
 
     private func reportMetrics(for controlsFrame: CGRect) {

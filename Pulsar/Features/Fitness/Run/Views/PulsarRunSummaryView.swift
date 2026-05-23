@@ -79,7 +79,7 @@ struct PulsarRunSummaryView: View {
                 RoundedRectangle(cornerRadius: 30, style: .continuous)
                     .stroke(.white.opacity(0.22), lineWidth: 1)
             }
-        } else {
+        } else if shouldShowDistanceMetrics {
             PulsarRunGlassCard {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Route", systemImage: "map")
@@ -94,16 +94,43 @@ struct PulsarRunSummaryView: View {
 
     private var heroStats: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            SummaryTile(title: "Distance", value: PulsarRunFormatters.distance(summary.distanceMeters), symbol: "point.topleft.down.curvedto.point.bottomright.up")
-            SummaryTile(title: "Moving Time", value: PulsarRunFormatters.duration(summary.movingTime), symbol: summary.workoutKind.systemImageName, tint: summary.workoutKind.accentColor)
-            SummaryTile(title: "Stopped", value: PulsarRunFormatters.duration(summary.stoppedTime), symbol: "pause.circle.fill", tint: .orange)
-            SummaryTile(title: "Elapsed", value: PulsarRunFormatters.duration(summary.elapsedTime), symbol: "timer")
-            SummaryTile(title: PulsarRunFormatters.paceOrSpeedTitle(for: summary.workoutKind, average: true), value: PulsarRunFormatters.paceOrSpeed(workoutKind: summary.workoutKind, paceSecondsPerKilometer: summary.averagePaceSecondsPerKilometer, speedMetersPerSecond: summary.averageSpeedMetersPerSecond), symbol: "speedometer")
+            SummaryTile(title: "Duration", value: PulsarRunFormatters.duration(summary.elapsedTime), symbol: "timer")
+
+            if shouldShowDistanceMetrics {
+                SummaryTile(title: "Distance", value: PulsarRunFormatters.distance(summary.distanceMeters), symbol: "point.topleft.down.curvedto.point.bottomright.up")
+                SummaryTile(title: PulsarRunFormatters.paceOrSpeedTitle(for: summary.workoutKind, average: true), value: PulsarRunFormatters.paceOrSpeed(workoutKind: summary.workoutKind, paceSecondsPerKilometer: summary.averagePaceSecondsPerKilometer, speedMetersPerSecond: summary.averageSpeedMetersPerSecond), symbol: "speedometer")
+            }
+
+            if summary.movingTime > 0, abs(summary.elapsedTime - summary.movingTime) > 1 {
+                SummaryTile(title: "Moving Time", value: PulsarRunFormatters.duration(summary.movingTime), symbol: summary.workoutKind.systemImageName, tint: summary.workoutKind.accentColor)
+            }
+
+            if summary.stoppedTime > 1 {
+                SummaryTile(title: "Stopped", value: PulsarRunFormatters.duration(summary.stoppedTime), symbol: "pause.circle.fill", tint: .orange)
+            }
+
             SummaryTile(title: "Calories", value: PulsarRunFormatters.calories(summary.activeEnergyKilocalories), symbol: "flame.fill", tint: .orange)
-            SummaryTile(title: "Gain", value: PulsarRunFormatters.elevation(summary.effectiveElevationGainMeters), symbol: "mountain.2.fill", tint: summary.workoutKind.accentColor)
-            SummaryTile(title: "Loss", value: PulsarRunFormatters.elevation(summary.effectiveElevationLossMeters), symbol: "arrow.down.to.line.compact", tint: .blue)
-            SummaryTile(title: "Avg HR", value: PulsarRunFormatters.heartRate(summary.averageHeartRate), unit: "bpm", symbol: "heart.fill", tint: .red)
-            SummaryTile(title: "Max HR", value: PulsarRunFormatters.heartRate(summary.maxHeartRate), unit: "bpm", symbol: "bolt.heart.fill", tint: .red)
+
+            if shouldShowDistanceMetrics, summary.effectiveElevationGainMeters > 0 {
+                SummaryTile(title: "Gain", value: PulsarRunFormatters.elevation(summary.effectiveElevationGainMeters), symbol: "mountain.2.fill", tint: summary.workoutKind.accentColor)
+            }
+
+            if shouldShowDistanceMetrics, summary.effectiveElevationLossMeters > 0 {
+                SummaryTile(title: "Loss", value: PulsarRunFormatters.elevation(summary.effectiveElevationLossMeters), symbol: "arrow.down.to.line.compact", tint: .blue)
+            }
+
+            if summary.averageHeartRate != nil {
+                SummaryTile(title: "Avg HR", value: PulsarRunFormatters.heartRate(summary.averageHeartRate), unit: "bpm", symbol: "heart.fill", tint: .red)
+            }
+
+            if summary.maxHeartRate != nil {
+                SummaryTile(title: "Max HR", value: PulsarRunFormatters.heartRate(summary.maxHeartRate), unit: "bpm", symbol: "bolt.heart.fill", tint: .red)
+            }
+
+            if let steps = summary.steps, steps > 0 {
+                SummaryTile(title: "Steps", value: steps.formatted(), symbol: "shoeprints.fill", tint: summary.workoutKind.accentColor)
+            }
+
             SummaryTile(title: "Source", value: summary.sourceDeviceName, symbol: summary.source == .appleWatch ? "applewatch" : "iphone", tint: summary.workoutKind.accentColor)
         }
     }
@@ -229,8 +256,12 @@ struct PulsarRunSummaryView: View {
         summary.route.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
     }
 
+    private var shouldShowDistanceMetrics: Bool {
+        summary.workoutKind.isOutdoorDistanceWorkout || summary.distanceMeters > 10 || routeCoordinates.count > 1
+    }
+
     private var routeAltitudeSamples: [ElevationSample] {
-        summary.gpsRoute.elevationSamples
+        shouldShowDistanceMetrics ? summary.gpsRoute.elevationSamples : []
     }
 }
 

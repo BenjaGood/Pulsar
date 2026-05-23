@@ -1046,6 +1046,9 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
         snapshot.endedAt = end
         updateTimeMetrics(date: end)
         snapshot.phase = .finished
+        let finishedSummary = makeSummary(workoutUUID: nil)
+        summary = finishedSummary
+        Task { await historyStore.save(finishedSummary) }
         publishActiveWorkoutState(phase: .ended, updatedFrom: .iPhone, reason: reason)
         if let sessionID {
             syncStore.tombstoneActiveWorkoutSession(sessionID, reason: reason)
@@ -1436,8 +1439,15 @@ extension PulsarRunCoordinator: HKWorkoutSessionDelegate {
 
     nonisolated func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
         Task { @MainActor in
+            self.snapshot.endedAt = Date()
             self.snapshot.phase = .failed
             self.snapshot.statusMessage = error.localizedDescription
+            self.publishActiveWorkoutState(phase: .failed, updatedFrom: self.snapshot.source == .appleWatch ? .appleWatch : .iPhone, reason: "RunHealthKitSessionFailed")
+            if let sessionID = self.snapshot.pulsarWorkoutSessionId {
+                self.syncStore.tombstoneActiveWorkoutSession(sessionID, reason: "RunHealthKitSessionFailed")
+            }
+            self.endLiveActivity(reason: "RunHealthKitSessionFailed")
+            self.cleanupRuntime()
         }
     }
 

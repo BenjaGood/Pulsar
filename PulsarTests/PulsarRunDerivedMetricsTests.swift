@@ -261,6 +261,47 @@ struct PulsarRunDerivedMetricsTests {
         #expect(PulsarOutdoorWorkoutKind(metadata: metadata, fallbackActivityType: .running) == .cycling)
     }
 
+    @Test func runWorkoutTypeAliasesCanonicalizeToRunning() {
+        for alias in ["running", "Running", "Run", "run", "RUN"] {
+            #expect(PulsarOutdoorWorkoutKind(workoutTypeRawValue: alias) == .running)
+            #expect(PulsarWorkoutMetadata.canonicalWorkoutType(alias) == PulsarOutdoorWorkoutKind.running.rawValue)
+        }
+
+        let legacyMetadata: [String: Any] = [
+            PulsarWorkoutMetadata.workoutTypeKey: "Run"
+        ]
+        let writtenMetadata = PulsarWorkoutMetadata.base(
+            sessionId: UUID(),
+            workoutType: "Running",
+            startedFrom: .iPhone
+        )
+
+        #expect(PulsarWorkoutMetadata.workoutType(from: legacyMetadata) == PulsarOutdoorWorkoutKind.running.rawValue)
+        #expect(PulsarOutdoorWorkoutKind(metadata: legacyMetadata, fallbackActivityType: .cycling) == .running)
+        #expect(writtenMetadata[PulsarWorkoutMetadata.workoutTypeKey] as? String == PulsarOutdoorWorkoutKind.running.rawValue)
+    }
+
+    @Test func activeWorkoutSyncDecodesLegacyRunTypeAsRunning() throws {
+        let state = PulsarActiveWorkoutSyncState(
+            sessionId: UUID(),
+            kind: .outdoor(.running),
+            startedAt: Date(timeIntervalSince1970: 1_800_000_000),
+            startedFrom: .iPhone,
+            lastUpdatedFrom: .iPhone,
+            phase: .active,
+            elapsedSeconds: 42
+        )
+        let data = try JSONEncoder().encode(state)
+        let json = try #require(String(data: data, encoding: .utf8))
+            .replacingOccurrences(of: "\"outdoor\":\"running\"", with: "\"outdoor\":\"Run\"")
+        let decoded = try JSONDecoder().decode(PulsarActiveWorkoutSyncState.self, from: Data(json.utf8))
+        let reencoded = try #require(String(data: JSONEncoder().encode(decoded), encoding: .utf8))
+
+        #expect(decoded.kind == .outdoor(.running))
+        #expect(reencoded.contains("\"outdoor\":\"running\""))
+        #expect(!reencoded.contains("\"outdoor\":\"Run\""))
+    }
+
     @Test func iPhoneRequestedWatchStartStillUsesAppleWatchRecorder() {
         #expect(PulsarWorkoutStartedFrom.iPhoneRequestedWatchStart.isAppleWatchRecorder)
         #expect(PulsarWorkoutStartedFrom.appleWatch.isAppleWatchRecorder)

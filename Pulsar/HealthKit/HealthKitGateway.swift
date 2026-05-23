@@ -3,6 +3,7 @@
 //  Pulsar
 //
 
+import CoreLocation
 import Foundation
 import HealthKit
 
@@ -171,7 +172,7 @@ actor HealthKitGateway {
         }
         var results: [WorkoutLoadInput] = []
         for workout in workouts {
-            let heartRateSamples = await fetchHeartRateSamples(start: workout.startDate, end: workout.endDate)
+            let heartRateSamples = await fetchHeartRateSamples(for: workout)
             let gymMetadata = pulsarGymMetadata(for: workout)
             let pulsarMetadata = pulsarWorkoutMetadata(for: workout)
             let workoutProvenance = provenance(for: workout)
@@ -201,16 +202,21 @@ actor HealthKitGateway {
         var activities: [WeeklyActivity] = []
 
         for workout in workouts {
-            let heartRateSamples = includesHeartRate ? await fetchHeartRateSamples(start: workout.startDate, end: workout.endDate) : []
+            let heartRateSamples = includesHeartRate ? await fetchHeartRateSamples(for: workout) : []
             let heartRates = heartRateSamples.map(\.bpm).filter { $0 > 0 }
             let gymMetadata = pulsarGymMetadata(for: workout)
             let pulsarMetadata = pulsarWorkoutMetadata(for: workout)
-            let metadataOutdoorKind = pulsarMetadata.workoutType.flatMap(PulsarOutdoorWorkoutKind.init(rawValue:))
+            let metadataOutdoorKind = pulsarMetadata.workoutType.flatMap(PulsarOutdoorWorkoutKind.init(workoutTypeRawValue:))
             let displayActivityType = metadataOutdoorKind?.healthKitActivityType ?? workout.workoutActivityType
             let category = gymMetadata == nil ? fitnessCategory(for: displayActivityType) : .gym
             let workoutType = gymMetadata?.categoryName ?? metadataOutdoorKind?.displayName ?? workout.workoutActivityType.fitnessDisplayName
             let displayName = gymMetadata?.displayName ?? metadataOutdoorKind?.displayName ?? workout.workoutActivityType.fitnessDisplayName
             let provenance = provenance(for: workout)
+            let route = gymMetadata == nil && Self.isRouteActivity(displayActivityType)
+                ? await PulsarHealthKitWorkoutRouteImporter.route(for: workout, healthStore: store)
+                : nil
+            let routeSplits = Self.splitEstimates(from: route)
+            let distanceMeters = workout.totalDistance?.doubleValue(for: .meter()) ?? Self.distanceMeters(for: route)
             await recordAppleWatchHealthKitSourceIfNeeded(
                 workout: workout,
                 pulsarMetadata: pulsarMetadata,
@@ -218,6 +224,27 @@ actor HealthKitGateway {
                 reason: "healthKitActivityLogMetadata"
             )
             PulsarSyncDebugLogger.log("HealthKit Activity Log metadata received session=\(pulsarMetadata.sessionId?.uuidString ?? "none") type=\(pulsarMetadata.workoutType ?? workout.workoutActivityType.fitnessDisplayName) startedFrom=\(pulsarMetadata.startedFrom?.rawValue ?? "unknown") hkType=\(workout.workoutActivityType.rawValue) source=\(provenance.displayName)")
+            var detailMetadata = [
+                FitnessWorkoutMetadataItem(title: "App Source", value: provenance.sourceName)
+            ]
+            if let sourceVersion = provenance.sourceVersion {
+                detailMetadata.append(FitnessWorkoutMetadataItem(title: "Source Version", value: sourceVersion))
+            }
+            if let productType = provenance.productType {
+                detailMetadata.append(FitnessWorkoutMetadataItem(title: "Product", value: productType))
+            }
+            if let deviceModel = provenance.deviceModel {
+                detailMetadata.append(FitnessWorkoutMetadataItem(title: "Device Model", value: deviceModel))
+            }
+            if let workoutType = pulsarMetadata.workoutType {
+                detailMetadata.append(FitnessWorkoutMetadataItem(title: "Pulsar Type", value: workoutType))
+            }
+            if let sessionId = pulsarMetadata.sessionId {
+                detailMetadata.append(FitnessWorkoutMetadataItem(title: "Session", value: sessionId.uuidString))
+            }
+            if let route {
+                detailMetadata.append(FitnessWorkoutMetadataItem(title: "Route Points", value: "\(route.points.count)"))
+            }
 
             activities.append(
                 WeeklyActivity(
@@ -231,11 +258,16 @@ actor HealthKitGateway {
                     endDate: workout.endDate,
                     duration: workout.duration,
                     calories: Self.activeEnergyKilocalories(for: workout),
-                    distanceMeters: workout.totalDistance?.doubleValue(for: .meter()),
+                    distanceMeters: distanceMeters,
                     averageHeartRate: heartRates.isEmpty ? nil : heartRates.reduce(0, +) / Double(heartRates.count),
                     maxHeartRate: heartRates.max(),
                     source: .healthKit,
-                    sourceName: pulsarMetadata.isPulsarWorkout ? PulsarWorkoutMetadata.brandName : provenance.displayName
+                    sourceName: pulsarMetadata.isPulsarWorkout ? PulsarWorkoutMetadata.brandName : provenance.displayName,
+                    sourceDeviceName: pulsarMetadata.startedFrom?.displayName ?? provenance.displayName,
+                    trainingType: workoutType,
+                    route: route?.runCoordinates ?? [],
+                    splits: routeSplits,
+                    metadata: detailMetadata
                 )
             )
         }
@@ -259,7 +291,7 @@ actor HealthKitGateway {
 
         var events: [WorkoutNotificationEvent] = []
         for workout in workouts {
-            let heartRateSamples = await fetchHeartRateSamples(start: workout.startDate, end: workout.endDate)
+            let heartRateSamples = await fetchHeartRateSamples(for: workout)
             let heartRates = heartRateSamples.map(\.bpm).filter { $0 > 0 }
             events.append(
                 WorkoutNotificationEvent(
@@ -280,6 +312,25 @@ actor HealthKitGateway {
     func fetchHeartRateSamples(start: Date, end: Date) async -> [HeartRateSample] {
         guard let type = HKObjectType.quantityType(forIdentifier: .heartRate) else { return [] }
         let samples = await fetchQuantitySamples(type: type, start: start, end: end)
+        return heartRateSamples(from: samples)
+    }
+
+    private func fetchHeartRateSamples(for workout: HKWorkout) async -> [HeartRateSample] {
+        guard let type = HKObjectType.quantityType(forIdentifier: .heartRate) else { return [] }
+        let associatedSamples = await fetchQuantitySamples(
+            type: type,
+            predicate: HKQuery.predicateForObjects(from: workout)
+        )
+        let samples: [HKQuantitySample]
+        if associatedSamples.isEmpty {
+            samples = await fetchQuantitySamples(type: type, start: workout.startDate, end: workout.endDate)
+        } else {
+            samples = associatedSamples
+        }
+        return heartRateSamples(from: samples)
+    }
+
+    private func heartRateSamples(from samples: [HKQuantitySample]) -> [HeartRateSample] {
         let unit = HKUnit.count().unitDivided(by: .minute())
         return samples.map { sample in
             HeartRateSample(
@@ -384,6 +435,10 @@ actor HealthKitGateway {
 
     private func fetchQuantitySamples(type: HKQuantityType, start: Date, end: Date) async -> [HKQuantitySample] {
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        return await fetchQuantitySamples(type: type, predicate: predicate)
+    }
+
+    private func fetchQuantitySamples(type: HKQuantityType, predicate: NSPredicate) async -> [HKQuantitySample] {
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
         return await withCheckedContinuation { continuation in
             let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, samples, _ in
@@ -555,6 +610,75 @@ actor HealthKitGateway {
             .doubleValue(for: .kilocalorie())
     }
 
+    nonisolated private static func distanceMeters(for route: GPSWorkoutRoute?) -> Double? {
+        guard let points = route?.points, points.count > 1 else { return nil }
+        var distance = 0.0
+        var previousLocation: CLLocation?
+        for point in points {
+            let location = CLLocation(
+                coordinate: point.coordinate,
+                altitude: point.altitude ?? 0,
+                horizontalAccuracy: point.horizontalAccuracy ?? -1,
+                verticalAccuracy: point.verticalAccuracy ?? -1,
+                timestamp: point.timestamp
+            )
+            if let previousLocation {
+                distance += max(0, location.distance(from: previousLocation))
+            }
+            previousLocation = location
+        }
+        return distance > 0 ? distance : nil
+    }
+
+    nonisolated private static func splitEstimates(from route: GPSWorkoutRoute?) -> [FitnessWorkoutSplit] {
+        guard let points = route?.points, points.count > 1 else { return [] }
+        var splits: [FitnessWorkoutSplit] = []
+        var previousLocation: CLLocation?
+        var cumulativeDistance = 0.0
+        var splitStartDistance = 0.0
+        var splitStartTime = points.first?.timestamp ?? Date()
+
+        for point in points {
+            let location = CLLocation(
+                coordinate: point.coordinate,
+                altitude: point.altitude ?? 0,
+                horizontalAccuracy: point.horizontalAccuracy ?? -1,
+                verticalAccuracy: point.verticalAccuracy ?? -1,
+                timestamp: point.timestamp
+            )
+            if let previousLocation {
+                cumulativeDistance += max(0, location.distance(from: previousLocation))
+            }
+            previousLocation = location
+
+            while cumulativeDistance - splitStartDistance >= 1_000 {
+                let movingTime = max(0, point.timestamp.timeIntervalSince(splitStartTime))
+                splits.append(
+                    FitnessWorkoutSplit(
+                        index: splits.count + 1,
+                        distanceMeters: 1_000,
+                        movingTime: movingTime,
+                        paceSecondsPerKilometer: movingTime > 0 ? movingTime : nil,
+                        averageHeartRate: nil
+                    )
+                )
+                splitStartDistance += 1_000
+                splitStartTime = point.timestamp
+            }
+        }
+
+        return splits
+    }
+
+    nonisolated private static func isRouteActivity(_ activityType: HKWorkoutActivityType) -> Bool {
+        switch activityType {
+        case .running, .walking, .hiking, .cycling:
+            return true
+        default:
+            return false
+        }
+    }
+
     nonisolated private func fitnessCategory(for activityType: HKWorkoutActivityType) -> WeeklyActivityCategory {
         switch activityType {
         case .running: return .running
@@ -601,6 +725,7 @@ extension HealthKitGateway {
         quantityIdentifiers.compactMap { HKObjectType.quantityType(forIdentifier: $0) }.forEach { types.insert($0) }
         if let sleep = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) { types.insert(sleep) }
         types.insert(HKObjectType.workoutType())
+        types.insert(HKSeriesType.workoutRoute())
         types.insert(HKObjectType.characteristicType(forIdentifier: .biologicalSex)!)
         types.insert(HKObjectType.characteristicType(forIdentifier: .dateOfBirth)!)
         return types

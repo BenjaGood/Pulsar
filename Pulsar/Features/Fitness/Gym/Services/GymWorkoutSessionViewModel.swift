@@ -620,7 +620,7 @@ final class GymWorkoutSessionViewModel: ObservableObject {
             routineName: session.routineName,
             routineEmoji: session.routineEmoji,
             workoutKind: session.workoutKind,
-            startedFrom: .iPhone,
+            startedFrom: session.startedFrom ?? .iPhone,
             startedAt: session.startedAt,
             elapsedSeconds: elapsedSeconds,
             currentExerciseIndex: currentExerciseIndex,

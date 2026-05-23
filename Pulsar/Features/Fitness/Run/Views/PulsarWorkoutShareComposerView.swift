@@ -8,7 +8,7 @@ import SwiftUI
 import UIKit
 
 struct PulsarWorkoutShareComposerView: View {
-    var summary: PulsarRunSummary
+    private var content: PulsarWorkoutShareContent
 
     @Environment(\.dismiss) private var dismiss
     @State private var selectedPhotoItem: PhotosPickerItem?
@@ -17,11 +17,19 @@ struct PulsarWorkoutShareComposerView: View {
     @State private var isShowingShareSheet = false
     @State private var renderedImage: UIImage?
 
+    init(summary: PulsarRunSummary) {
+        content = .outdoor(summary)
+    }
+
+    init(gymSummary: PulsarGymWorkoutSummary) {
+        content = .gym(gymSummary)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {
-                    PulsarWorkoutShareCard(summary: summary, photo: selectedImage)
+                    PulsarWorkoutShareCard(content: content, photo: selectedImage)
                         .aspectRatio(4 / 5, contentMode: .fit)
                         .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
                         .shadow(color: .black.opacity(0.24), radius: 22, y: 14)
@@ -31,7 +39,7 @@ struct PulsarWorkoutShareComposerView: View {
                             Label("Photo", systemImage: "photo")
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(PulsarShareControlButtonStyle(tint: summary.workoutKind.accentColor))
+                        .buttonStyle(PulsarShareControlButtonStyle(tint: content.tint))
 
                         Button {
                             isShowingCamera = true
@@ -39,7 +47,7 @@ struct PulsarWorkoutShareComposerView: View {
                             Label("Camera", systemImage: "camera.fill")
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(PulsarShareControlButtonStyle(tint: summary.workoutKind.accentColor))
+                        .buttonStyle(PulsarShareControlButtonStyle(tint: content.tint))
                         .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
                     }
 
@@ -50,7 +58,7 @@ struct PulsarWorkoutShareComposerView: View {
                             .font(.headline.weight(.bold))
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(PulsarShareControlButtonStyle(tint: summary.workoutKind.accentColor, isProminent: true))
+                    .buttonStyle(PulsarShareControlButtonStyle(tint: content.tint, isProminent: true))
                 }
                 .padding(18)
             }
@@ -84,7 +92,7 @@ struct PulsarWorkoutShareComposerView: View {
 
     @MainActor
     private func renderShareImage() {
-        let card = PulsarWorkoutShareCard(summary: summary, photo: selectedImage)
+        let card = PulsarWorkoutShareCard(content: content, photo: selectedImage)
             .frame(width: 1080, height: 1350)
         let renderer = ImageRenderer(content: card)
         renderer.scale = 1
@@ -93,11 +101,102 @@ struct PulsarWorkoutShareComposerView: View {
     }
 }
 
-private struct PulsarWorkoutShareCard: View {
-    var summary: PulsarRunSummary
-    var photo: UIImage?
+private enum PulsarWorkoutShareContent {
+    case outdoor(PulsarRunSummary)
+    case gym(PulsarGymWorkoutSummary)
 
-    private var routePoints: [CGPoint] {
+    var title: String {
+        switch self {
+        case .outdoor(let summary):
+            summary.workoutKind.outdoorTitle
+        case .gym(let summary):
+            summary.routineName
+        }
+    }
+
+    var workoutLabel: String {
+        switch self {
+        case .outdoor(let summary):
+            summary.workoutKind.displayName
+        case .gym:
+            "Strength"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .outdoor(let summary):
+            summary.workoutKind.systemImageName
+        case .gym:
+            "dumbbell.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .outdoor(let summary):
+            summary.workoutKind.accentColor
+        case .gym:
+            Color(red: 0.70, green: 1.0, blue: 0.76)
+        }
+    }
+
+    var startedAt: Date {
+        switch self {
+        case .outdoor(let summary):
+            summary.startedAt
+        case .gym(let summary):
+            summary.startedAt ?? summary.endedAt ?? Date()
+        }
+    }
+
+    var sourceDeviceName: String {
+        switch self {
+        case .outdoor(let summary):
+            summary.sourceDeviceName
+        case .gym(let summary):
+            summary.sourceDeviceName
+        }
+    }
+
+    var primaryMetrics: [PulsarWorkoutShareMetric] {
+        switch self {
+        case .outdoor(let summary):
+            var metrics = [
+                PulsarWorkoutShareMetric(title: "Duration", value: PulsarRunFormatters.duration(summary.elapsedTime))
+            ]
+            if summary.workoutKind.isOutdoorDistanceWorkout || summary.distanceMeters > 10 || summary.route.count > 1 {
+                metrics.append(PulsarWorkoutShareMetric(title: "Distance", value: PulsarRunFormatters.distance(summary.distanceMeters)))
+                metrics.append(PulsarWorkoutShareMetric(title: PulsarRunFormatters.paceOrSpeedTitle(for: summary.workoutKind, average: true), value: PulsarRunFormatters.paceOrSpeed(workoutKind: summary.workoutKind, paceSecondsPerKilometer: summary.averagePaceSecondsPerKilometer, speedMetersPerSecond: summary.averageSpeedMetersPerSecond)))
+            }
+            if let activeEnergyKilocalories = summary.activeEnergyKilocalories {
+                metrics.append(PulsarWorkoutShareMetric(title: "Calories", value: "\(Int(activeEnergyKilocalories.rounded())) kcal"))
+            }
+            if let averageHeartRate = summary.averageHeartRate {
+                metrics.append(PulsarWorkoutShareMetric(title: "Avg HR", value: "\(Int(averageHeartRate.rounded())) bpm"))
+            }
+            return metrics
+        case .gym(let summary):
+            var metrics = [
+                PulsarWorkoutShareMetric(title: "Duration", value: summary.durationSeconds.formattedGymDuration),
+                PulsarWorkoutShareMetric(title: "Exercises", value: "\(summary.exercisesCompleted)/\(summary.totalExercises)"),
+                PulsarWorkoutShareMetric(title: "Sets", value: "\(summary.setsCompleted)/\(summary.totalSets)")
+            ]
+            if summary.totalVolume > 0 {
+                metrics.append(PulsarWorkoutShareMetric(title: "Volume", value: "\(summary.totalVolume.formattedGymDecimal) \(summary.weightUnit.displayName)"))
+            }
+            if let activeEnergyKilocalories = summary.activeEnergyKilocalories {
+                metrics.append(PulsarWorkoutShareMetric(title: "Calories", value: "\(Int(activeEnergyKilocalories.rounded())) kcal"))
+            }
+            if let averageHeartRate = summary.averageHeartRate {
+                metrics.append(PulsarWorkoutShareMetric(title: "Avg HR", value: "\(Int(averageHeartRate.rounded())) bpm"))
+            }
+            return metrics
+        }
+    }
+
+    var routePoints: [CGPoint] {
+        guard case .outdoor(let summary) = self else { return [] }
         let points = summary.gpsRoute.points
         guard let bounds = summary.gpsRoute.bounds,
               bounds.maximumLatitude > bounds.minimumLatitude,
@@ -109,6 +208,17 @@ private struct PulsarWorkoutShareCard: View {
             )
         }
     }
+}
+
+private struct PulsarWorkoutShareMetric: Identifiable {
+    let id = UUID()
+    var title: String
+    var value: String
+}
+
+private struct PulsarWorkoutShareCard: View {
+    var content: PulsarWorkoutShareContent
+    var photo: UIImage?
 
     var body: some View {
         ZStack {
@@ -129,7 +239,7 @@ private struct PulsarWorkoutShareCard: View {
                     Text("Pulsar")
                         .font(.system(size: 28, weight: .black, design: .rounded))
                     Spacer()
-                    Text(summary.startedAt.formatted(.dateTime.month(.abbreviated).day()))
+                    Text(content.startedAt.formatted(.dateTime.month(.abbreviated).day()))
                         .font(.system(size: 20, weight: .bold, design: .rounded))
                 }
                 .foregroundStyle(.white)
@@ -137,26 +247,30 @@ private struct PulsarWorkoutShareCard: View {
                 Spacer()
 
                 VStack(alignment: .leading, spacing: 18) {
-                    Text(summary.workoutKind.displayName.uppercased())
+                    Label(content.workoutLabel.uppercased(), systemImage: content.symbolName)
                         .font(.system(size: 19, weight: .black, design: .rounded))
                         .foregroundStyle(.white.opacity(0.74))
 
-                    RouteMiniLine(points: routePoints, tint: summary.workoutKind.accentColor)
-                        .frame(height: 120)
-
-                    HStack(alignment: .bottom) {
-                        shareMetric("Distance", PulsarRunFormatters.distance(summary.distanceMeters))
-                        Spacer()
-                        shareMetric(PulsarRunFormatters.paceOrSpeedTitle(for: summary.workoutKind, average: true), PulsarRunFormatters.paceOrSpeed(workoutKind: summary.workoutKind, paceSecondsPerKilometer: summary.averagePaceSecondsPerKilometer, speedMetersPerSecond: summary.averageSpeedMetersPerSecond))
-                        Spacer()
-                        shareMetric("Time", PulsarRunFormatters.duration(summary.movingTime))
+                    if content.routePoints.count > 1 {
+                        RouteMiniLine(points: content.routePoints, tint: content.tint)
+                            .frame(height: 120)
                     }
 
-                    if summary.effectiveElevationGainMeters > 0 {
-                        Label("Elevation gain \(PulsarRunFormatters.elevation(summary.effectiveElevationGainMeters))", systemImage: "mountain.2.fill")
-                            .font(.system(size: 22, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.86))
+                    Text(content.title)
+                        .font(.system(size: 40, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.62)
+
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
+                        ForEach(content.primaryMetrics) { metric in
+                            shareMetric(metric.title, metric.value)
+                        }
                     }
+
+                    Label("\(content.startedAt.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())) · \(content.sourceDeviceName)", systemImage: "sparkles")
+                        .font(.system(size: 19, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.82))
                 }
                 .padding(26)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
@@ -179,15 +293,21 @@ private struct PulsarWorkoutShareCard: View {
         } else {
             LinearGradient(
                 colors: [
-                    summary.workoutKind.accentColor.opacity(0.82),
+                    content.tint.opacity(0.82),
                     Color(red: 0.05, green: 0.07, blue: 0.09),
                     Color(red: 0.02, green: 0.03, blue: 0.05)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            RouteMiniLine(points: routePoints, tint: .white.opacity(0.25))
-                .padding(90)
+            if content.routePoints.count > 1 {
+                RouteMiniLine(points: content.routePoints, tint: .white.opacity(0.25))
+                    .padding(90)
+            } else {
+                Image(systemName: content.symbolName)
+                    .font(.system(size: 260, weight: .black))
+                    .foregroundStyle(.white.opacity(0.12))
+            }
         }
     }
 

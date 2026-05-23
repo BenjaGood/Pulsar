@@ -45,7 +45,7 @@ enum PulsarWorkoutMetadata {
         [
             HKMetadataKeyWorkoutBrandName: brandName,
             sessionIdKey: sessionId.uuidString,
-            workoutTypeKey: workoutType,
+            workoutTypeKey: canonicalWorkoutType(workoutType) ?? workoutType,
             startedFromKey: startedFrom.rawValue
         ]
     }
@@ -57,14 +57,24 @@ enum PulsarWorkoutMetadata {
     }
 
     nonisolated static func workoutType(from metadata: [String: Any]?) -> String? {
-        (metadata?[workoutTypeKey] as? String)?
+        let rawValue = (metadata?[workoutTypeKey] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        return canonicalWorkoutType(rawValue) ?? rawValue
     }
 
     nonisolated static func startedFrom(from metadata: [String: Any]?) -> PulsarWorkoutStartedFrom? {
         guard let rawValue = (metadata?[startedFromKey] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
         return PulsarWorkoutStartedFrom(rawValue: rawValue)
+    }
+
+    nonisolated static func canonicalWorkoutType(_ rawValue: String?) -> String? {
+        guard let rawValue = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawValue.isEmpty else { return nil }
+        if let outdoorKind = PulsarOutdoorWorkoutKind(workoutTypeRawValue: rawValue) {
+            return outdoorKind.rawValue
+        }
+        return nil
     }
 }
 
@@ -90,6 +100,48 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
     case other
 
     nonisolated var id: String { rawValue }
+
+    nonisolated init?(workoutTypeRawValue rawValue: String) {
+        let normalized = rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: " ", with: "")
+            .lowercased()
+
+        for kind in Self.allCases {
+            if normalized == kind.rawValue.lowercased() ||
+                normalized == kind.displayName
+                    .replacingOccurrences(of: " ", with: "")
+                    .lowercased() ||
+                normalized == kind.shortName
+                    .replacingOccurrences(of: " ", with: "")
+                    .lowercased() {
+                self = kind
+                return
+            }
+        }
+
+        return nil
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        if let kind = Self(workoutTypeRawValue: rawValue) {
+            self = kind
+            return
+        }
+        throw DecodingError.dataCorruptedError(
+            in: container,
+            debugDescription: "Invalid Pulsar outdoor workout kind: \(rawValue)"
+        )
+    }
+
+    nonisolated func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 
     nonisolated var displayName: String {
         switch self {
@@ -286,7 +338,7 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
 
     nonisolated init(metadata: [String: Any]?, fallbackActivityType: HKWorkoutActivityType) {
         if let rawType = PulsarWorkoutMetadata.workoutType(from: metadata),
-           let workoutKind = PulsarOutdoorWorkoutKind(rawValue: rawType) {
+           let workoutKind = PulsarOutdoorWorkoutKind(workoutTypeRawValue: rawType) {
             self = workoutKind
         } else {
             self = PulsarOutdoorWorkoutKind(activityType: fallbackActivityType)
@@ -962,6 +1014,7 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
     var startedAt: Date
     var endedAt: Date
     var source: PulsarRunRecordingSource
+    var sourceName: String?
     var distanceMeters: Double
     var elapsedTime: TimeInterval
     var movingTime: TimeInterval
@@ -1009,7 +1062,11 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
     }
 
     nonisolated var sourceDeviceName: String {
-        source.label
+        if let trimmedSourceName = sourceName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !trimmedSourceName.isEmpty {
+            return trimmedSourceName
+        }
+        return source.label
     }
 
     nonisolated init(
@@ -1020,6 +1077,7 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
         startedAt: Date,
         endedAt: Date,
         source: PulsarRunRecordingSource,
+        sourceName: String? = nil,
         distanceMeters: Double,
         elapsedTime: TimeInterval,
         movingTime: TimeInterval,
@@ -1043,6 +1101,7 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.source = source
+        self.sourceName = sourceName
         self.distanceMeters = distanceMeters
         self.elapsedTime = elapsedTime
         self.movingTime = movingTime
@@ -1068,6 +1127,7 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
         case startedAt
         case endedAt
         case source
+        case sourceName
         case distanceMeters
         case elapsedTime
         case movingTime
@@ -1094,6 +1154,7 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
         startedAt = try container.decode(Date.self, forKey: .startedAt)
         endedAt = try container.decode(Date.self, forKey: .endedAt)
         source = try container.decode(PulsarRunRecordingSource.self, forKey: .source)
+        sourceName = try container.decodeIfPresent(String.self, forKey: .sourceName)
         distanceMeters = try container.decode(Double.self, forKey: .distanceMeters)
         elapsedTime = try container.decode(TimeInterval.self, forKey: .elapsedTime)
         movingTime = try container.decode(TimeInterval.self, forKey: .movingTime)

@@ -1098,80 +1098,119 @@ private struct GymEmptySessionExerciseView: View {
     }
 }
 
-private struct GymWorkoutSummaryOverlay: View {
+struct GymWorkoutSummaryOverlay: View {
     var summary: PulsarGymWorkoutSummary
     var onDone: () -> Void
+    @State private var isShowingShareComposer = false
 
     var body: some View {
         ZStack {
             Color.black.opacity(0.52)
                 .ignoresSafeArea()
 
-            VStack(spacing: 18) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 44, weight: .bold))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(Color(red: 0.70, green: 1.0, blue: 0.76))
+            ScrollView {
+                VStack(spacing: 18) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 44, weight: .bold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(Color(red: 0.70, green: 1.0, blue: 0.76))
 
-                VStack(spacing: 7) {
-                    Text("Workout Complete")
-                        .font(.system(size: 27, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                    VStack(spacing: 7) {
+                        Text("Workout Complete")
+                            .font(.system(size: 27, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
 
-                    HStack(spacing: 6) {
-                        Text(summary.routineEmoji)
-                        Text(summary.routineName)
+                        HStack(spacing: 6) {
+                            Text(summary.routineEmoji)
+                            Text(summary.routineName)
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.62))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+
+                        Label(summary.sourceDeviceName, systemImage: summary.source == .appleWatch || summary.source == .iPhoneRequestedWatchStart ? "applewatch" : "iphone")
+                            .font(.caption.weight(.black))
+                            .foregroundStyle(.white.opacity(0.56))
+
+                        if let startedAt = summary.startedAt {
+                            Text(startedAt.formatted(.dateTime.weekday(.wide).month(.abbreviated).day().hour().minute()))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white.opacity(0.50))
+                                .multilineTextAlignment(.center)
+                        }
                     }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.62))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
+
+                    VStack(spacing: 10) {
+                        HStack(spacing: 10) {
+                            GymSummaryMetric(title: "Duration", value: summary.durationSeconds.formattedGymDuration)
+                            GymSummaryMetric(title: "Exercises", value: "\(summary.exercisesCompleted)/\(summary.totalExercises)")
+                        }
+
+                        HStack(spacing: 10) {
+                            GymSummaryMetric(title: "Sets", value: "\(summary.setsCompleted)/\(summary.totalSets)")
+                            GymSummaryMetric(title: "Volume", value: "\(summary.totalVolume.formattedGymDecimal) \(summary.weightUnit.displayName)")
+                        }
+
+                        if summary.averageHeartRate != nil || summary.maxHeartRate != nil {
+                            HStack(spacing: 10) {
+                                GymSummaryMetric(title: "Avg HR", value: summary.averageHeartRate.map { "\(Int($0.rounded())) bpm" } ?? "--")
+                                GymSummaryMetric(title: "Max HR", value: summary.maxHeartRate.map { "\(Int($0.rounded())) bpm" } ?? "--")
+                            }
+                        }
+
+                        GymSummaryMetric(title: "Active Calories", value: summary.activeEnergyKilocalories.map { "\(Int($0.rounded())) kcal" } ?? "--")
+                    }
+
+                    VStack(spacing: 10) {
+                        Button {
+                            isShowingShareComposer = true
+                        } label: {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(
+                                    LinearGradient(
+                                        colors: [.white.opacity(0.98), Color(red: 0.74, green: 1.0, blue: 0.78)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    in: Capsule(style: .continuous)
+                                )
+                        }
+                        .buttonStyle(PulsarGymPressButtonStyle())
+
+                        Button(action: onDone) {
+                            Text("Done")
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(.white.opacity(0.90))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(.white.opacity(0.10), in: Capsule(style: .continuous))
+                                .overlay {
+                                    Capsule(style: .continuous)
+                                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                                }
+                        }
+                        .buttonStyle(PulsarGymPressButtonStyle())
+                    }
                 }
-
-                VStack(spacing: 10) {
-                    HStack(spacing: 10) {
-                        GymSummaryMetric(title: "Duration", value: summary.durationSeconds.formattedGymDuration)
-                        GymSummaryMetric(title: "Exercises", value: "\(summary.exercisesCompleted)/\(summary.totalExercises)")
-                    }
-
-                    HStack(spacing: 10) {
-                        GymSummaryMetric(title: "Sets", value: "\(summary.setsCompleted)/\(summary.totalSets)")
-                        GymSummaryMetric(title: "Volume", value: "\(summary.totalVolume.formattedGymDecimal) \(summary.weightUnit.displayName)")
-                    }
-
-                    HStack(spacing: 10) {
-                        GymSummaryMetric(title: "Avg HR", value: summary.averageHeartRate.map { "\(Int($0.rounded())) bpm" } ?? "--")
-                        GymSummaryMetric(title: "Max HR", value: summary.maxHeartRate.map { "\(Int($0.rounded())) bpm" } ?? "--")
-                    }
-
-                    GymSummaryMetric(title: "Active Calories", value: summary.activeEnergyKilocalories.map { "\(Int($0.rounded())) kcal" } ?? "--")
+                .padding(20)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 30, style: .continuous)
+                        .stroke(.white.opacity(0.18), lineWidth: 1)
                 }
-
-                Button(action: onDone) {
-                    Text("Done")
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(
-                            LinearGradient(
-                                colors: [.white.opacity(0.98), Color(red: 0.74, green: 1.0, blue: 0.78)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            in: Capsule(style: .continuous)
-                        )
-                }
-                .buttonStyle(PulsarGymPressButtonStyle())
+                .shadow(color: .black.opacity(0.30), radius: 28, y: 18)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 28)
             }
-            .padding(20)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 30, style: .continuous)
-                    .stroke(.white.opacity(0.18), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.30), radius: 28, y: 18)
-            .padding(.horizontal, 24)
+            .scrollIndicators(.hidden)
+        }
+        .sheet(isPresented: $isShowingShareComposer) {
+            PulsarWorkoutShareComposerView(gymSummary: summary)
         }
     }
 }

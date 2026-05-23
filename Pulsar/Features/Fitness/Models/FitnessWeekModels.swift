@@ -47,6 +47,12 @@ struct WeeklyActivity: Identifiable, Hashable {
     var maxHeartRate: Double?
     var source: WeeklyActivitySource
     var sourceName: String
+    var sourceDeviceName: String? = nil
+    var trainingType: String? = nil
+    var route: [PulsarRunCoordinate] = []
+    var splits: [FitnessWorkoutSplit] = []
+    var notes: [String] = []
+    var metadata: [FitnessWorkoutMetadataItem] = []
     var completedSets: Int? = nil
     var totalSets: Int? = nil
     var mainMuscleGroups: [String] = []
@@ -54,6 +60,30 @@ struct WeeklyActivity: Identifiable, Hashable {
     var muscleExercisesByMatrixGroup: [MuscleMatrixGroup: [String]] = [:]
 
     var durationMinutes: Double { max(0, duration / 60) }
+
+    var effectiveSourceDeviceName: String {
+        let trimmed = sourceDeviceName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? sourceName : trimmed
+    }
+
+    var isRouteWorkout: Bool {
+        category.isRouteTraining || !(route.isEmpty && (distanceMeters ?? 0) <= 0)
+    }
+}
+
+struct FitnessWorkoutSplit: Identifiable, Hashable {
+    var id: Int { index }
+    var index: Int
+    var distanceMeters: Double
+    var movingTime: TimeInterval
+    var paceSecondsPerKilometer: Double?
+    var averageHeartRate: Double?
+}
+
+struct FitnessWorkoutMetadataItem: Identifiable, Hashable {
+    var id: String { "\(title)-\(value)" }
+    var title: String
+    var value: String
 }
 
 enum WeeklyActivitySource: String, Hashable {
@@ -82,6 +112,15 @@ enum WeeklyActivityCategory: String, Hashable {
         case .running, .walking, .hiking, .cycling, .hiit, .swimming, .rowing, .dance:
             return true
         case .strength, .gym, .yoga, .recovery, .other:
+            return false
+        }
+    }
+
+    var isRouteTraining: Bool {
+        switch self {
+        case .running, .walking, .hiking, .cycling:
+            return true
+        case .strength, .gym, .hiit, .yoga, .swimming, .rowing, .dance, .recovery, .other:
             return false
         }
     }

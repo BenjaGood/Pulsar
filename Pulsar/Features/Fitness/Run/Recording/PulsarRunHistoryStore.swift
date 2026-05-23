@@ -26,9 +26,7 @@ actor PulsarRunHistoryStore {
             PulsarSyncDebugLogger.log("Run Activity Log created session=\(summary.pulsarWorkoutSessionId?.uuidString ?? "none") type=\(summary.workoutKind.rawValue) workoutUUID=\(summary.workoutUUID?.uuidString ?? "none")")
         }
         runs = Array(runs.prefix(80))
-        if let data = try? JSONEncoder().encode(runs) {
-            defaults.set(data, forKey: cacheKey)
-        }
+        persist(runs)
     }
 
     func loadRuns(healthStore: HKHealthStore) async -> [PulsarRunSummary] {
@@ -46,7 +44,11 @@ actor PulsarRunHistoryStore {
             }
         }
 
-        return merged.sorted { $0.startedAt > $1.startedAt }
+        let sorted = Array(merged.sorted { $0.startedAt > $1.startedAt }.prefix(80))
+        if sorted != localRuns {
+            persist(sorted)
+        }
+        return sorted
     }
 
     func loadCachedRuns() -> [PulsarRunSummary] {
@@ -60,7 +62,7 @@ actor PulsarRunHistoryStore {
         let predicate = NSCompoundPredicate(orPredicateWithSubpredicates: predicates)
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
         let workouts: [HKWorkout] = await withCheckedContinuation { continuation in
-            let query = HKSampleQuery(sampleType: .workoutType(), predicate: predicate, limit: 20, sortDescriptors: [sort]) { _, samples, _ in
+            let query = HKSampleQuery(sampleType: .workoutType(), predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, samples, _ in
                 continuation.resume(returning: samples as? [HKWorkout] ?? [])
             }
             healthStore.execute(query)
@@ -93,9 +95,9 @@ actor PulsarRunHistoryStore {
             let elevationMetrics = importedRoute?.elevationMetrics
             let heartRateMetrics = await fetchHeartRateMetrics(
                 healthStore: healthStore,
-                startDate: workout.startDate,
-                endDate: workout.endDate
+                workout: workout
             )
+            let sourceName = Self.sourceName(for: workout, isAppleWatchSource: isAppleWatchSource)
             summaries.append(PulsarRunSummary(
                 id: workout.uuid,
                 pulsarWorkoutSessionId: sessionId,
@@ -104,6 +106,7 @@ actor PulsarRunHistoryStore {
                 startedAt: workout.startDate,
                 endedAt: workout.endDate,
                 source: isAppleWatchSource ? .appleWatch : .iPhone,
+                sourceName: sourceName,
                 distanceMeters: workout.totalDistance?.doubleValue(for: .meter()) ?? 0,
                 elapsedTime: workout.duration,
                 movingTime: workout.duration,
@@ -125,16 +128,42 @@ actor PulsarRunHistoryStore {
 
     private func fetchHeartRateMetrics(
         healthStore: HKHealthStore,
-        startDate: Date,
-        endDate: Date
+        workout: HKWorkout
     ) async -> (average: Double?, maximum: Double?) {
         guard let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
             return (nil, nil)
         }
-        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate)
+        let associatedSamples = await fetchHeartRateSamples(
+            healthStore: healthStore,
+            type: heartRateType,
+            predicate: HKQuery.predicateForObjects(from: workout)
+        )
+        let samples: [HKQuantitySample]
+        if associatedSamples.isEmpty {
+            let fallbackPredicate = HKQuery.predicateForSamples(withStart: workout.startDate, end: workout.endDate)
+            samples = await fetchHeartRateSamples(
+                healthStore: healthStore,
+                type: heartRateType,
+                predicate: fallbackPredicate
+            )
+        } else {
+            samples = associatedSamples
+        }
+
+        let values = samples.map { $0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute())) }
+            .filter { $0 > 0 }
+        guard !values.isEmpty else { return (nil, nil) }
+        return (values.reduce(0, +) / Double(values.count), values.max())
+    }
+
+    private func fetchHeartRateSamples(
+        healthStore: HKHealthStore,
+        type: HKQuantityType,
+        predicate: NSPredicate
+    ) async -> [HKQuantitySample] {
         let samples: [HKQuantitySample] = await withCheckedContinuation { continuation in
             let query = HKSampleQuery(
-                sampleType: heartRateType,
+                sampleType: type,
                 predicate: predicate,
                 limit: HKObjectQueryNoLimit,
                 sortDescriptors: nil
@@ -143,10 +172,7 @@ actor PulsarRunHistoryStore {
             }
             healthStore.execute(query)
         }
-        let values = samples.map { $0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute())) }
-            .filter { $0 > 0 }
-        guard !values.isEmpty else { return (nil, nil) }
-        return (values.reduce(0, +) / Double(values.count), values.max())
+        return samples
     }
 
     private func isSameWorkout(_ first: PulsarRunSummary, _ second: PulsarRunSummary) -> Bool {
@@ -172,6 +198,24 @@ actor PulsarRunHistoryStore {
             .doubleValue(for: .kilocalorie())
     }
 
+    private nonisolated static func sourceName(for workout: HKWorkout, isAppleWatchSource: Bool) -> String? {
+        let candidates = [
+            workout.device?.name,
+            workout.sourceRevision.productType,
+            workout.sourceRevision.source.name
+        ]
+        let sourceName = candidates
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+        return sourceName ?? (isAppleWatchSource ? PulsarRunRecordingSource.appleWatch.label : nil)
+    }
+
+    private func persist(_ runs: [PulsarRunSummary]) {
+        if let data = try? JSONEncoder().encode(runs) {
+            defaults.set(data, forKey: cacheKey)
+        }
+    }
+
     private nonisolated static func isPulsarGymWorkout(_ metadata: [String: Any]?) -> Bool {
         guard let metadata else { return false }
         let rawType = PulsarWorkoutMetadata.workoutType(from: metadata)
@@ -189,6 +233,7 @@ private extension PulsarRunSummary {
         var merged = incoming
         merged.pulsarWorkoutSessionId = incoming.pulsarWorkoutSessionId ?? pulsarWorkoutSessionId
         merged.workoutUUID = incoming.workoutUUID ?? workoutUUID
+        merged.sourceName = incoming.sourceName ?? sourceName
         if incoming.workoutKind == .other, workoutKind != .other {
             merged.workoutKind = workoutKind
         }

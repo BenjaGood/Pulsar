@@ -3,7 +3,9 @@
 //  Pulsar
 //
 
+import MapKit
 import SwiftUI
+import UIKit
 
 struct FitnessWeekHeaderView: View {
     var week: WeekPeriod
@@ -326,6 +328,7 @@ struct FitnessActivityLogSection: View {
     var isLoading: Bool
     var isExpanded: Bool
     var onToggleExpanded: () -> Void
+    var onSelectActivity: (WeeklyActivity) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -358,7 +361,13 @@ struct FitnessActivityLogSection: View {
             } else {
                 VStack(spacing: 12) {
                     ForEach(visibleActivities) { activity in
-                        FitnessActivityRow(activity: activity)
+                        Button {
+                            onSelectActivity(activity)
+                        } label: {
+                            FitnessActivityRow(activity: activity)
+                        }
+                        .buttonStyle(FitnessWeekPressStyle())
+                        .accessibilityHint("Opens workout details")
                     }
 
                     if activities.count > 4 {
@@ -481,6 +490,11 @@ private struct FitnessActivityRow: View {
                     }
                 }
             }
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(secondaryText.opacity(0.72))
+                .padding(.top, 17)
         }
         .padding(15)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -537,6 +551,613 @@ private struct FitnessActivityMetricChip: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
         .background(.white.opacity(colorScheme == .dark ? 0.075 : 0.64), in: Capsule(style: .continuous))
+    }
+}
+
+struct FitnessWorkoutDetailView: View {
+    var activity: WeeklyActivity
+
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var renderedShareImage: FitnessWorkoutRenderedImage?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                routeSection
+                metricGrid
+                splitsSection
+                trainingSection
+                metadataSection
+                shareButton
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 18)
+            .padding(.bottom, 34)
+        }
+        .background(FitnessWeeklyBackground())
+        .navigationTitle(activity.displayName)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    renderShareImage()
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .accessibilityLabel("Share workout summary")
+            }
+        }
+        .sheet(item: $renderedShareImage) { renderedImage in
+            FitnessWorkoutActivityView(activityItems: [renderedImage.image])
+        }
+    }
+
+    private var header: some View {
+        FitnessGlassCard(cornerRadius: 32) {
+            HStack(alignment: .top, spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(activity.category.accent.opacity(colorScheme == .dark ? 0.22 : 0.15))
+                        .frame(width: 58, height: 58)
+
+                    Image(systemName: activity.category.symbolName)
+                        .font(.system(size: 25, weight: .bold))
+                        .foregroundStyle(activity.category.accent)
+                }
+
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(activity.displayName)
+                        .font(.system(size: 30, weight: .black, design: .rounded))
+                        .foregroundStyle(primaryText)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.72)
+
+                    Text(activity.startDate.formatted(.dateTime.weekday(.wide).month(.abbreviated).day().hour().minute()))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(secondaryText)
+
+                    Label(activity.effectiveSourceDeviceName, systemImage: sourceSymbolName)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(primaryText)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(.white.opacity(colorScheme == .dark ? 0.08 : 0.62), in: Capsule(style: .continuous))
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var routeSection: some View {
+        if routeCoordinates.count > 1 {
+            FitnessGlassCard(cornerRadius: 30, padding: 12) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Route", systemImage: "map.fill")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(primaryText)
+                        .padding(.horizontal, 4)
+
+                    Map {
+                        MapPolyline(coordinates: routeCoordinates)
+                            .stroke(activity.category.accent, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+
+                        if let start = routeCoordinates.first {
+                            Marker("Start", systemImage: "record.circle", coordinate: start)
+                                .tint(.green)
+                        }
+
+                        if let finish = routeCoordinates.last {
+                            Marker("Finish", systemImage: "flag.checkered", coordinate: finish)
+                                .tint(activity.category.accent)
+                        }
+                    }
+                    .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
+                    .frame(height: 270)
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                }
+            }
+        } else if activity.category.isRouteTraining {
+            FitnessGlassCard(cornerRadius: 30) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Route", systemImage: "map")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(primaryText)
+
+                    Text("No route data is attached to this workout.")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(secondaryText)
+                }
+            }
+        }
+    }
+
+    private var metricGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+            ForEach(detailMetrics) { metric in
+                FitnessWorkoutDetailMetricTile(metric: metric)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var splitsSection: some View {
+        if !activity.splits.isEmpty {
+            FitnessGlassCard(cornerRadius: 30) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Splits", systemImage: "chart.bar.fill")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(primaryText)
+
+                    ForEach(activity.splits) { split in
+                        HStack(spacing: 12) {
+                            Text("\(split.index)")
+                                .font(.headline.weight(.black).monospacedDigit())
+                                .frame(width: 30, alignment: .leading)
+
+                            Text(FitnessWeekFormatters.distance(split.distanceMeters))
+                                .font(.subheadline.weight(.semibold))
+
+                            Spacer()
+
+                            Text(PulsarRunFormatters.pace(split.paceSecondsPerKilometer))
+                                .font(.subheadline.weight(.bold).monospacedDigit())
+                        }
+                        .foregroundStyle(primaryText)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var trainingSection: some View {
+        if !activity.mainMuscleGroups.isEmpty || !activity.notes.isEmpty {
+            FitnessGlassCard(cornerRadius: 30) {
+                VStack(alignment: .leading, spacing: 14) {
+                    Label("Training", systemImage: activity.category.symbolName)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(primaryText)
+
+                    if !activity.mainMuscleGroups.isEmpty {
+                        FlowLayout(spacing: 8, rowSpacing: 8) {
+                            ForEach(activity.mainMuscleGroups, id: \.self) { muscleGroup in
+                                Text(muscleGroup)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(primaryText)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 7)
+                                    .background(activity.category.accent.opacity(colorScheme == .dark ? 0.18 : 0.12), in: Capsule(style: .continuous))
+                            }
+                        }
+                    }
+
+                    if !activity.notes.isEmpty {
+                        VStack(alignment: .leading, spacing: 9) {
+                            ForEach(activity.notes, id: \.self) { note in
+                                Label(note, systemImage: "note.text")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(secondaryText)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var metadataSection: some View {
+        if !activity.metadata.isEmpty {
+            FitnessGlassCard(cornerRadius: 30) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Details", systemImage: "info.circle.fill")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(primaryText)
+
+                    ForEach(activity.metadata) { item in
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text(item.title)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(secondaryText)
+                                .frame(width: 118, alignment: .leading)
+
+                            Text(item.value)
+                                .font(.caption.weight(.semibold).monospaced())
+                                .foregroundStyle(primaryText)
+                                .lineLimit(3)
+                                .minimumScaleFactor(0.72)
+
+                            Spacer(minLength: 0)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var shareButton: some View {
+        Button {
+            renderShareImage()
+        } label: {
+            Label("Share Summary", systemImage: "square.and.arrow.up")
+                .font(.headline.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(activity.category.accent.gradient, in: Capsule(style: .continuous))
+        }
+        .buttonStyle(FitnessWeekPressStyle())
+    }
+
+    private var detailMetrics: [FitnessWorkoutDetailMetric] {
+        var metrics = [
+            FitnessWorkoutDetailMetric(title: "Duration", value: FitnessWeekFormatters.duration(activity.duration), symbolName: "timer", tint: .green)
+        ]
+
+        if let calories = activity.calories, calories > 0 {
+            metrics.append(FitnessWorkoutDetailMetric(title: "Calories", value: FitnessWeekFormatters.calories(calories), symbolName: "flame.fill", tint: .orange))
+        }
+
+        if let distance = activity.distanceMeters, distance > 0 {
+            metrics.append(FitnessWorkoutDetailMetric(title: "Distance", value: FitnessWeekFormatters.distance(distance), symbolName: "point.topleft.down.curvedto.point.bottomright.up", tint: activity.category.accent))
+            if let paceMetric {
+                metrics.append(paceMetric)
+            }
+        }
+
+        if let averageHeartRate = activity.averageHeartRate, averageHeartRate > 0 {
+            metrics.append(FitnessWorkoutDetailMetric(title: "Avg HR", value: "\(Int(averageHeartRate.rounded())) bpm", symbolName: "heart.fill", tint: .red))
+        }
+
+        if let maxHeartRate = activity.maxHeartRate, maxHeartRate > 0 {
+            metrics.append(FitnessWorkoutDetailMetric(title: "Max HR", value: "\(Int(maxHeartRate.rounded())) bpm", symbolName: "bolt.heart.fill", tint: .red))
+        }
+
+        if let completedSets = activity.completedSets, completedSets > 0 {
+            let setValue = activity.totalSets.map { "\(completedSets)/\($0)" } ?? "\(completedSets)"
+            metrics.append(FitnessWorkoutDetailMetric(title: "Sets", value: setValue, symbolName: "checkmark.circle.fill", tint: activity.category.accent))
+        }
+
+        if let trainingType = activity.trainingType, !trainingType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            metrics.append(FitnessWorkoutDetailMetric(title: "Type", value: trainingType, symbolName: activity.category.symbolName, tint: activity.category.accent))
+        }
+
+        metrics.append(FitnessWorkoutDetailMetric(title: "Source", value: activity.effectiveSourceDeviceName, symbolName: sourceSymbolName, tint: activity.category.accent))
+        return metrics
+    }
+
+    private var paceMetric: FitnessWorkoutDetailMetric? {
+        guard let distance = activity.distanceMeters,
+              distance > 10,
+              activity.duration > 0 else { return nil }
+        let kind = outdoorKind
+        let pace = activity.duration / (distance / 1_000)
+        let speed = distance / activity.duration
+        return FitnessWorkoutDetailMetric(
+            title: PulsarRunFormatters.paceOrSpeedTitle(for: kind, average: true),
+            value: PulsarRunFormatters.paceOrSpeed(workoutKind: kind, paceSecondsPerKilometer: pace, speedMetersPerSecond: speed),
+            symbolName: "speedometer",
+            tint: activity.category.accent
+        )
+    }
+
+    private var outdoorKind: PulsarOutdoorWorkoutKind {
+        if let kind = PulsarOutdoorWorkoutKind(workoutTypeRawValue: activity.workoutType) {
+            return kind
+        }
+        if let kind = PulsarOutdoorWorkoutKind(workoutTypeRawValue: activity.displayName) {
+            return kind
+        }
+        switch activity.category {
+        case .running: return .running
+        case .walking: return .walking
+        case .hiking: return .hiking
+        case .cycling: return .cycling
+        case .hiit: return .hiit
+        case .strength, .gym: return .strength
+        case .yoga: return .yoga
+        case .swimming: return .swimming
+        case .rowing: return .rowing
+        case .dance: return .dance
+        case .recovery: return .cooldown
+        case .other: return .other
+        }
+    }
+
+    private var sourceSymbolName: String {
+        let source = activity.effectiveSourceDeviceName.lowercased()
+        if source.contains("watch") { return "applewatch" }
+        if source.contains("iphone") { return "iphone" }
+        return "heart.text.square.fill"
+    }
+
+    private var routeCoordinates: [CLLocationCoordinate2D] {
+        activity.route.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+    }
+
+    private var primaryText: Color {
+        colorScheme == .dark ? .white.opacity(0.97) : Color(red: 0.07, green: 0.10, blue: 0.14)
+    }
+
+    private var secondaryText: Color {
+        colorScheme == .dark ? .white.opacity(0.60) : Color(red: 0.36, green: 0.40, blue: 0.48)
+    }
+
+    @MainActor
+    private func renderShareImage() {
+        let card = FitnessWorkoutHistoryShareCard(activity: activity)
+            .frame(width: 1080, height: 1350)
+        let renderer = ImageRenderer(content: card)
+        renderer.proposedSize = ProposedViewSize(width: 1080, height: 1350)
+        renderer.scale = 1
+        let image = renderer.uiImage ?? FitnessWorkoutFallbackShareRenderer.image(for: activity, size: CGSize(width: 1080, height: 1350))
+        renderedShareImage = FitnessWorkoutRenderedImage(image: image)
+    }
+}
+
+private struct FitnessWorkoutDetailMetric: Identifiable {
+    var id: String { title }
+    var title: String
+    var value: String
+    var symbolName: String
+    var tint: Color
+}
+
+private struct FitnessWorkoutDetailMetricTile: View {
+    var metric: FitnessWorkoutDetailMetric
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Image(systemName: metric.symbolName)
+                .font(.headline.weight(.bold))
+                .foregroundStyle(metric.tint)
+
+            Text(metric.value)
+                .font(.headline.weight(.black))
+                .foregroundStyle(primaryText)
+                .lineLimit(2)
+                .minimumScaleFactor(0.72)
+
+            Text(metric.title)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(secondaryText)
+        }
+        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+        .padding(15)
+        .background(.white.opacity(colorScheme == .dark ? 0.08 : 0.74), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(.white.opacity(colorScheme == .dark ? 0.13 : 0.72), lineWidth: 1)
+        }
+    }
+
+    private var primaryText: Color {
+        colorScheme == .dark ? .white.opacity(0.97) : Color(red: 0.07, green: 0.10, blue: 0.14)
+    }
+
+    private var secondaryText: Color {
+        colorScheme == .dark ? .white.opacity(0.60) : Color(red: 0.36, green: 0.40, blue: 0.48)
+    }
+}
+
+private struct FitnessWorkoutRenderedImage: Identifiable {
+    let id = UUID()
+    var image: UIImage
+}
+
+private struct FitnessWorkoutHistoryShareCard: View {
+    var activity: WeeklyActivity
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    activity.category.accent.opacity(0.86),
+                    Color(red: 0.04, green: 0.06, blue: 0.08),
+                    Color.black
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            if routePoints.count > 1 {
+                FitnessRouteMiniLine(points: routePoints, tint: .white.opacity(0.24))
+                    .padding(94)
+            } else {
+                Image(systemName: activity.category.symbolName)
+                    .font(.system(size: 270, weight: .black))
+                    .foregroundStyle(.white.opacity(0.12))
+            }
+
+            VStack(alignment: .leading) {
+                HStack {
+                    Image("PulsarLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 46, height: 46)
+                    Text("Pulsar")
+                        .font(.system(size: 28, weight: .black, design: .rounded))
+                    Spacer()
+                    Text(activity.startDate.formatted(.dateTime.month(.abbreviated).day()))
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                }
+                .foregroundStyle(.white)
+
+                Spacer()
+
+                VStack(alignment: .leading, spacing: 18) {
+                    Label(activity.workoutType.uppercased(), systemImage: activity.category.symbolName)
+                        .font(.system(size: 19, weight: .black, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.76))
+
+                    Text(activity.displayName)
+                        .font(.system(size: 42, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.62)
+
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
+                        ForEach(shareMetrics) { metric in
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(metric.value)
+                                    .font(.system(size: 32, weight: .black, design: .rounded))
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.70)
+                                Text(metric.title)
+                                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.white.opacity(0.68))
+                            }
+                        }
+                    }
+
+                    Label("\(activity.startDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())) - \(activity.effectiveSourceDeviceName)", systemImage: "sparkles")
+                        .font(.system(size: 19, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.82))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.72)
+                }
+                .padding(26)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 30, style: .continuous)
+                        .stroke(.white.opacity(0.22), lineWidth: 1)
+                }
+            }
+            .padding(34)
+        }
+        .background(Color.black)
+    }
+
+    private var shareMetrics: [FitnessWorkoutShareMetric] {
+        var metrics = [
+            FitnessWorkoutShareMetric(title: "Duration", value: FitnessWeekFormatters.duration(activity.duration))
+        ]
+        if let distance = activity.distanceMeters, distance > 0 {
+            metrics.append(FitnessWorkoutShareMetric(title: "Distance", value: FitnessWeekFormatters.distance(distance)))
+        }
+        if let calories = activity.calories, calories > 0 {
+            metrics.append(FitnessWorkoutShareMetric(title: "Calories", value: FitnessWeekFormatters.calories(calories)))
+        }
+        if let averageHeartRate = activity.averageHeartRate, averageHeartRate > 0 {
+            metrics.append(FitnessWorkoutShareMetric(title: "Avg HR", value: "\(Int(averageHeartRate.rounded())) bpm"))
+        }
+        if let completedSets = activity.completedSets, completedSets > 0 {
+            metrics.append(FitnessWorkoutShareMetric(title: "Sets", value: "\(completedSets)"))
+        }
+        if metrics.count < 3 {
+            metrics.append(FitnessWorkoutShareMetric(title: "Source", value: activity.effectiveSourceDeviceName))
+        }
+        return Array(metrics.prefix(6))
+    }
+
+    private var routePoints: [CGPoint] {
+        let route = GPSWorkoutRoute(runCoordinates: activity.route)
+        guard let bounds = route.bounds,
+              bounds.maximumLatitude > bounds.minimumLatitude,
+              bounds.maximumLongitude > bounds.minimumLongitude else { return [] }
+        return route.points.map { point in
+            CGPoint(
+                x: (point.longitude - bounds.minimumLongitude) / (bounds.maximumLongitude - bounds.minimumLongitude),
+                y: 1 - ((point.latitude - bounds.minimumLatitude) / (bounds.maximumLatitude - bounds.minimumLatitude))
+            )
+        }
+    }
+}
+
+private struct FitnessWorkoutShareMetric: Identifiable {
+    let id = UUID()
+    var title: String
+    var value: String
+}
+
+private struct FitnessRouteMiniLine: View {
+    var points: [CGPoint]
+    var tint: Color
+
+    var body: some View {
+        Canvas { context, size in
+            guard points.count > 1 else { return }
+            var path = Path()
+            let scaled = points.map { CGPoint(x: $0.x * size.width, y: $0.y * size.height) }
+            path.move(to: scaled[0])
+            for point in scaled.dropFirst() {
+                path.addLine(to: point)
+            }
+            context.stroke(path, with: .color(tint), style: StrokeStyle(lineWidth: 9, lineCap: .round, lineJoin: .round))
+            if let first = scaled.first {
+                context.fill(Path(ellipseIn: CGRect(x: first.x - 8, y: first.y - 8, width: 16, height: 16)), with: .color(.white))
+            }
+            if let last = scaled.last {
+                context.fill(Path(ellipseIn: CGRect(x: last.x - 10, y: last.y - 10, width: 20, height: 20)), with: .color(tint))
+            }
+        }
+    }
+}
+
+private struct FitnessWorkoutActivityView: UIViewControllerRepresentable {
+    var activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+private enum FitnessWorkoutFallbackShareRenderer {
+    static func image(for activity: WeeklyActivity, size: CGSize) -> UIImage {
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            UIColor.systemGreen.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: size.width, height: 18))
+
+            let titleAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 72, weight: .black),
+                .foregroundColor: UIColor.white
+            ]
+            let bodyAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 38, weight: .bold),
+                .foregroundColor: UIColor.white.withAlphaComponent(0.82)
+            ]
+
+            NSString(string: activity.displayName).draw(
+                in: CGRect(x: 72, y: 150, width: size.width - 144, height: 180),
+                withAttributes: titleAttributes
+            )
+            NSString(string: FitnessWeekFormatters.activityDateTime(activity.startDate)).draw(
+                in: CGRect(x: 72, y: 340, width: size.width - 144, height: 60),
+                withAttributes: bodyAttributes
+            )
+            NSString(string: "Duration \(FitnessWeekFormatters.duration(activity.duration))").draw(
+                in: CGRect(x: 72, y: 470, width: size.width - 144, height: 60),
+                withAttributes: bodyAttributes
+            )
+            if let calories = activity.calories, calories > 0 {
+                NSString(string: "Calories \(FitnessWeekFormatters.calories(calories))").draw(
+                    in: CGRect(x: 72, y: 540, width: size.width - 144, height: 60),
+                    withAttributes: bodyAttributes
+                )
+            }
+            if let distance = activity.distanceMeters, distance > 0 {
+                NSString(string: "Distance \(FitnessWeekFormatters.distance(distance))").draw(
+                    in: CGRect(x: 72, y: 610, width: size.width - 144, height: 60),
+                    withAttributes: bodyAttributes
+                )
+            }
+            NSString(string: "Pulsar").draw(
+                in: CGRect(x: 72, y: size.height - 150, width: size.width - 144, height: 60),
+                withAttributes: bodyAttributes
+            )
+        }
     }
 }
 
@@ -1107,7 +1728,8 @@ enum FitnessWeekFormatters {
                 activities: [],
                 isLoading: false,
                 isExpanded: false,
-                onToggleExpanded: {}
+                onToggleExpanded: {},
+                onSelectActivity: { _ in }
             )
         }
         .padding(18)

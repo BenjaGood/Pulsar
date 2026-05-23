@@ -9,6 +9,8 @@ import UIKit
 struct GymWatchMirroredWorkoutView: View {
     @ObservedObject var syncStore: PulsarWatchConnectivitySyncStore
     var onDismiss: () -> Void
+    @State private var finishedSummary: PulsarGymWorkoutSummary?
+    @State private var lastMirroredState: ActiveGymWorkoutState?
 
     private var state: ActiveGymWorkoutState? {
         guard let state = syncStore.activeGymState,
@@ -37,20 +39,35 @@ struct GymWatchMirroredWorkoutView: View {
                         .padding(.horizontal, 18)
                         .padding(.bottom, 12)
                 }
+            } else if let finishedSummary {
+                GymWorkoutSummaryOverlay(summary: finishedSummary) {
+                    onDismiss()
+                }
             } else {
                 completedState
             }
         }
         .onAppear {
+            if let activeGymState = syncStore.activeGymState, activeGymState.isFinished {
+                presentFinishedSummary(from: activeGymState)
+                return
+            }
             guard let state else {
                 onDismiss()
                 return
             }
+            lastMirroredState = state
             syncStore.sendGymAction(.requestState(sessionId: state.sessionId))
         }
-        .onChange(of: syncStore.activeGymState?.isFinished) { _, isFinished in
-            if isFinished == true {
-                onDismiss()
+        .onChange(of: syncStore.activeGymState) { _, newState in
+            if let newState {
+                if newState.isFinished {
+                    presentFinishedSummary(from: newState)
+                } else if syncStore.isRoutableActiveGymState(newState) {
+                    lastMirroredState = newState
+                }
+            } else if finishedSummary == nil, let lastMirroredState {
+                presentFinishedSummary(from: lastMirroredState)
             }
         }
     }
@@ -242,6 +259,7 @@ struct GymWatchMirroredWorkoutView: View {
     private func bottomControls(_ state: ActiveGymWorkoutState) -> some View {
         Button {
             UINotificationFeedbackGenerator().notificationOccurred(.success)
+            presentFinishedSummary(from: state)
             syncStore.sendGymAction(.finishWorkout(sessionId: state.sessionId))
         } label: {
             Text("Finish Workout")
@@ -289,6 +307,16 @@ struct GymWatchMirroredWorkoutView: View {
         let urls = ["music://nowplaying", "music://"].compactMap(URL.init(string:))
         guard let url = urls.first else { return }
         UIApplication.shared.open(url)
+    }
+
+    private func presentFinishedSummary(from state: ActiveGymWorkoutState) {
+        var finishedState = state
+        let endedAt = state.isFinished ? state.updatedAt : Date()
+        finishedState.isFinished = true
+        finishedState.updatedAt = endedAt
+        finishedState.elapsedSeconds = max(state.elapsedSeconds, Int(endedAt.timeIntervalSince(state.startedAt)))
+        lastMirroredState = finishedState
+        finishedSummary = PulsarGymWorkoutSummary(activeGymState: finishedState)
     }
 }
 

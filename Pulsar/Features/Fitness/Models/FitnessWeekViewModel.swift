@@ -393,7 +393,21 @@ final class FitnessWeekViewModel: ObservableObject {
             averageHeartRate: run.averageHeartRate,
             maxHeartRate: run.maxHeartRate,
             source: .localRun,
-            sourceName: run.source.label
+            sourceName: run.sourceDeviceName,
+            sourceDeviceName: run.sourceDeviceName,
+            trainingType: run.workoutKind.isOutdoorDistanceWorkout ? run.workoutKind.outdoorTitle : run.workoutKind.displayName,
+            route: run.route,
+            splits: run.splits.map { split in
+                FitnessWorkoutSplit(
+                    index: split.index,
+                    distanceMeters: split.distanceMeters,
+                    movingTime: split.movingTime,
+                    paceSecondsPerKilometer: split.paceSecondsPerKilometer,
+                    averageHeartRate: split.averageHeartRate
+                )
+            },
+            notes: [run.weatherSummary].compactMap(trimmedDetailText),
+            metadata: runDetailMetadata(for: run)
         )
     }
 
@@ -420,13 +434,65 @@ final class FitnessWeekViewModel: ObservableObject {
             averageHeartRate: session.averageHeartRate,
             maxHeartRate: session.maxHeartRate,
             source: .localGym,
-            sourceName: PulsarGymWorkoutKind.routine.categoryName,
+            sourceName: "Pulsar Gym",
+            sourceDeviceName: "Pulsar Gym",
+            trainingType: session.workoutKind.displayName,
+            notes: gymNotes(for: session),
+            metadata: gymDetailMetadata(for: session, muscleSummary: muscleSummary),
             completedSets: muscleSummary.completedSets,
             totalSets: muscleSummary.totalSets,
             mainMuscleGroups: muscleSummary.mainMuscleGroupNames,
             muscleLoadByMatrixGroup: muscleSummary.loadByMatrixGroup,
             muscleExercisesByMatrixGroup: muscleSummary.exercisesByMatrixGroup
         )
+    }
+
+    private func runDetailMetadata(for run: PulsarRunSummary) -> [FitnessWorkoutMetadataItem] {
+        var items = [
+            FitnessWorkoutMetadataItem(title: "Recorder", value: run.sourceDeviceName)
+        ]
+        if let workoutUUID = run.workoutUUID {
+            items.append(FitnessWorkoutMetadataItem(title: "HealthKit Workout", value: workoutUUID.uuidString))
+        }
+        if let sessionId = run.pulsarWorkoutSessionId {
+            items.append(FitnessWorkoutMetadataItem(title: "Session", value: sessionId.uuidString))
+        }
+        if !run.route.isEmpty {
+            items.append(FitnessWorkoutMetadataItem(title: "Route Points", value: "\(run.route.count)"))
+        }
+        return items
+    }
+
+    private func gymDetailMetadata(for session: PulsarGymWorkoutSession, muscleSummary: WeeklyMuscleTrainingSummary) -> [FitnessWorkoutMetadataItem] {
+        var items = [
+            FitnessWorkoutMetadataItem(title: "Routine", value: session.activityLogDisplayName),
+            FitnessWorkoutMetadataItem(title: "Training Type", value: session.workoutKind.displayName),
+            FitnessWorkoutMetadataItem(title: "Exercises", value: "\(session.exercises.count)"),
+            FitnessWorkoutMetadataItem(title: "Sets", value: "\(muscleSummary.completedSets)/\(muscleSummary.totalSets)")
+        ]
+        if let healthKitWorkoutUUID = session.healthKitWorkoutUUID {
+            items.append(FitnessWorkoutMetadataItem(title: "HealthKit Workout", value: healthKitWorkoutUUID.uuidString))
+        }
+        return items
+    }
+
+    private func gymNotes(for session: PulsarGymWorkoutSession) -> [String] {
+        var seen = Set<String>()
+        let exerciseNotes = session.exercises.compactMap { exercise in
+            trimmedDetailText(exercise.notes).map { "\(exercise.exerciseName): \($0)" }
+        }
+        var notes = exerciseNotes.filter { seen.insert($0).inserted }
+        if let healthKitStatusMessage = trimmedDetailText(session.healthKitStatusMessage),
+           seen.insert(healthKitStatusMessage).inserted {
+            notes.append(healthKitStatusMessage)
+        }
+        return notes
+    }
+
+    private func trimmedDetailText(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func mergeActivities(healthKit healthActivities: [WeeklyActivity], local localActivities: [WeeklyActivity]) -> [WeeklyActivity] {
