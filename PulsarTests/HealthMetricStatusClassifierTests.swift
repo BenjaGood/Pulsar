@@ -52,6 +52,6 @@ final class HealthMetricStatusClassifierTests: XCTestCase {
 
         XCTAssertEqual(assessment.status, .noData)
         XCTAssertNil(assessment.referenceValue)
-        XCTAssertEqual(assessment.comparisonText, "No HealthKit data was available for this metric on the selected day.")
+        XCTAssertEqual(assessment.comparisonText, "No data was available for this metric on the selected day.")
     }
 }

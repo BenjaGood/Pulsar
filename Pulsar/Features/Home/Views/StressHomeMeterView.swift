@@ -73,12 +73,14 @@ struct StressHomeMeterView: View {
                 Spacer(minLength: 0)
                 statusPill
                 confidencePill
+                sourcePill
                 Spacer(minLength: 0)
             }
 
             VStack(spacing: 8) {
                 statusPill
                 confidencePill
+                sourcePill
             }
             .frame(maxWidth: .infinity, alignment: .center)
         }
@@ -93,6 +95,17 @@ struct StressHomeMeterView: View {
             .background(statusColor.opacity(colorScheme == .dark ? 0.15 : 0.10), in: Capsule())
             .lineLimit(1)
             .minimumScaleFactor(0.75)
+    }
+
+    private var sourcePill: some View {
+        Text(sourceText)
+            .font(.caption.weight(.bold))
+            .foregroundStyle(secondaryText)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(pillBackground, in: Capsule())
+            .lineLimit(1)
+            .minimumScaleFactor(0.65)
     }
 
     private var confidencePill: some View {
@@ -130,6 +143,13 @@ struct StressHomeMeterView: View {
         let driverTitles = summary.drivers.map(\.title)
         let rows = driverTitles.isEmpty ? summary.driverInsights : driverTitles
         return Array(rows.prefix(2))
+    }
+
+    private var sourceText: String {
+        let sources = summary.sourceBadges.map(\.displayName)
+        guard !sources.isEmpty else { return "No source" }
+        let text = sources.prefix(2).joined(separator: " + ")
+        return "Source \(text)"
     }
 
     private var statusColor: Color {

@@ -488,7 +488,7 @@ struct MaxHeartRateResolution: Equatable {
 }
 
 struct SourceProvenance: Identifiable, Hashable, Codable, Equatable {
-    var id: String { [sourceBundleIdentifier, sourceName, productType, deviceName].compactMap { $0 }.joined(separator: "|") }
+    nonisolated var id: String { [sourceBundleIdentifier, sourceName, productType, deviceName].compactMap { $0 }.joined(separator: "|") }
     var sourceName: String
     var sourceBundleIdentifier: String?
     var sourceVersion: String?
@@ -509,12 +509,34 @@ struct SourceProvenance: Identifiable, Hashable, Codable, Equatable {
         deviceModel: "Apple Watch"
     )
 
-    var displayName: String {
+    nonisolated static func == (lhs: SourceProvenance, rhs: SourceProvenance) -> Bool {
+        lhs.sourceName == rhs.sourceName
+            && lhs.sourceBundleIdentifier == rhs.sourceBundleIdentifier
+            && lhs.sourceVersion == rhs.sourceVersion
+            && lhs.operatingSystemVersion == rhs.operatingSystemVersion
+            && lhs.productType == rhs.productType
+            && lhs.deviceName == rhs.deviceName
+            && lhs.deviceManufacturer == rhs.deviceManufacturer
+            && lhs.deviceModel == rhs.deviceModel
+    }
+
+    nonisolated func hash(into hasher: inout Hasher) {
+        hasher.combine(sourceName)
+        hasher.combine(sourceBundleIdentifier)
+        hasher.combine(sourceVersion)
+        hasher.combine(operatingSystemVersion)
+        hasher.combine(productType)
+        hasher.combine(deviceName)
+        hasher.combine(deviceManufacturer)
+        hasher.combine(deviceModel)
+    }
+
+    nonisolated var displayName: String {
         if let deviceName, !deviceName.isEmpty { return deviceName }
         return sourceName
     }
 
-    var isAppleWatchLike: Bool {
+    nonisolated var isAppleWatchLike: Bool {
         let text = [sourceName, sourceBundleIdentifier, productType, deviceName, deviceManufacturer, deviceModel]
             .compactMap { $0?.lowercased() }
             .joined(separator: " ")
@@ -542,7 +564,7 @@ struct SleepSegment: Identifiable, Codable, Equatable {
     var end: Date
     var provenance: SourceProvenance
 
-    var durationMinutes: Double { max(0, end.timeIntervalSince(start) / 60) }
+    nonisolated var durationMinutes: Double { max(0, end.timeIntervalSince(start) / 60) }
 }
 
 struct NightlySleepInput: Identifiable, Codable, Equatable {
@@ -551,8 +573,8 @@ struct NightlySleepInput: Identifiable, Codable, Equatable {
     var nightEnd: Date
     var segments: [SleepSegment]
 
-    var sourceBadges: [SourceProvenance] {
-        Array(Set(segments.map(\.provenance))).sorted { $0.displayName < $1.displayName }
+    nonisolated var sourceBadges: [SourceProvenance] {
+        SourceResolver.uniqueSourceBadges(segments.map(\.provenance))
     }
 }
 
@@ -1042,6 +1064,8 @@ enum StressContext: String, Codable, Equatable, Hashable {
     case workout
     case rest
     case active
+    case movementFiltered
+    case cooldown
     case recovery
     case unknown
 }
@@ -1080,6 +1104,7 @@ enum StressSummaryState: String, Codable, Equatable {
 struct StressSummary: Codable, Equatable {
     var date: Date?
     var score: Int?
+    var dailyAverageScore: Int?
     var level: StressLevel?
     var confidence: ConfidenceGrade
     var state: StressSummaryState
@@ -1109,11 +1134,12 @@ struct StressSummary: Codable, Equatable {
         score.map(Double.init)
     }
 
-    static let estimateSubtext = "Estimated from HRV, heart rate, sleep, respiration, temperature, and recent load"
+    static let estimateSubtext = "Estimated from recent HR, HRV, movement, workouts, and personal baseline"
 
     init(
         date: Date?,
         score: Int?,
+        dailyAverageScore: Int? = nil,
         level: StressLevel?,
         confidence: ConfidenceGrade,
         state: StressSummaryState,
@@ -1141,6 +1167,7 @@ struct StressSummary: Codable, Equatable {
     ) {
         self.date = date
         self.score = score
+        self.dailyAverageScore = dailyAverageScore
         self.level = level
         self.confidence = confidence
         self.state = state
@@ -1170,6 +1197,7 @@ struct StressSummary: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case date
         case score
+        case dailyAverageScore
         case level
         case band
         case confidence
@@ -1201,6 +1229,7 @@ struct StressSummary: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         date = try container.decodeIfPresent(Date.self, forKey: .date)
         score = try container.decodeIfPresent(Int.self, forKey: .score)
+        dailyAverageScore = try container.decodeIfPresent(Int.self, forKey: .dailyAverageScore)
         let legacyBand = try container.decodeIfPresent(String.self, forKey: .band)
         level = try container.decodeIfPresent(StressLevel.self, forKey: .level) ??
             StressLevel.legacyLevel(named: legacyBand) ??
@@ -1234,6 +1263,7 @@ struct StressSummary: Codable, Equatable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(date, forKey: .date)
         try container.encodeIfPresent(score, forKey: .score)
+        try container.encodeIfPresent(dailyAverageScore, forKey: .dailyAverageScore)
         try container.encodeIfPresent(level, forKey: .level)
         try container.encode(confidence, forKey: .confidence)
         try container.encode(state, forKey: .state)
@@ -1267,14 +1297,14 @@ struct StressSummary: Codable, Equatable {
         confidence: .missing,
         state: .noData,
         driverInsights: [
-            "Wearable signals are unavailable",
-            "Permissions or overnight wear may be needed"
+            "Waiting for recent HR or HRV",
+            "Allow Health access or wear a device to start stress tracking"
         ],
         drivers: [
             StressDriver(
                 id: "missing-signals",
-                title: "Wearable signals are unavailable",
-                detail: "Connect Apple Watch or allow Health access to estimate stress load.",
+                title: "Recent stress signals unavailable",
+                detail: "Stress needs recent HR or HRV plus a personal baseline.",
                 severity: .neutral,
                 relatedMetric: "Permissions"
             )
@@ -1288,7 +1318,7 @@ struct StressSummary: Codable, Equatable {
         queryEnd: nil,
         lastUpdated: nil,
         sourceBadges: [],
-        explanation: "Stress load needs wearable signals and a personal baseline.",
+        explanation: "Stress needs recent HR or HRV plus a personal baseline.",
         subtext: estimateSubtext
     )
 
@@ -1413,10 +1443,14 @@ struct HomeDashboard: Codable, Equatable {
 enum SourceResolver {
     nonisolated static func primarySleepSegments(from segments: [SleepSegment], nightStart: Date, nightEnd: Date) -> [SleepSegment] {
         guard !segments.isEmpty else { return [] }
-        let grouped = Dictionary(grouping: segments, by: { $0.provenance })
+        let grouped = Dictionary(grouping: segments, by: { $0.provenance.id })
         let best = grouped.max { lhs, rhs in
-            scoreSleepSource(lhs.value, nightStart: nightStart, nightEnd: nightEnd, provenance: lhs.key) <
-                scoreSleepSource(rhs.value, nightStart: nightStart, nightEnd: nightEnd, provenance: rhs.key)
+            guard let lhsProvenance = lhs.value.first?.provenance,
+                  let rhsProvenance = rhs.value.first?.provenance else {
+                return false
+            }
+            return scoreSleepSource(lhs.value, nightStart: nightStart, nightEnd: nightEnd, provenance: lhsProvenance) <
+                scoreSleepSource(rhs.value, nightStart: nightStart, nightEnd: nightEnd, provenance: rhsProvenance)
         }
         return best?.value.sorted { $0.start < $1.start } ?? []
     }
@@ -1432,7 +1466,12 @@ enum SourceResolver {
     }
 
     nonisolated static func uniqueSourceBadges(_ provenances: [SourceProvenance]) -> [SourceProvenance] {
-        Array(Set(provenances)).sorted { $0.displayName < $1.displayName }
+        var seen = Set<String>()
+        var unique: [SourceProvenance] = []
+        for provenance in provenances where seen.insert(provenance.id).inserted {
+            unique.append(provenance)
+        }
+        return unique.sorted { $0.displayName < $1.displayName }
     }
 }
 

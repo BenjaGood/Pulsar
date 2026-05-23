@@ -371,8 +371,30 @@ private struct HealthMetricDetailSheet: View {
 
                 HealthMetricDetailCard(
                     title: "Data Source",
-                    value: metric.sourceBadges.isEmpty ? "HealthKit" : metric.sourceBadges.map(\.displayName).joined(separator: ", ")
+                    value: actualDataSourceText
                 )
+
+                if let resolution = metric.sourceResolution {
+                    HealthMetricDetailCard(
+                        title: HealthSourceDisplayCopy.preferredSourceTitle,
+                        value: resolution.currentSource.detailDisplayName
+                    )
+
+                    HealthMetricDetailCard(
+                        title: HealthSourceDisplayCopy.activeSourceTitle,
+                        value: resolution.displayedRecordSource?.detailDisplayName ?? "No valid source"
+                    )
+
+                    HealthMetricDetailCard(
+                        title: "Fallback",
+                        value: fallbackText(for: resolution)
+                    )
+
+                    HealthMetricDetailCard(
+                        title: "Source Samples",
+                        value: sampleCountText(for: resolution)
+                    )
+                }
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 24)
@@ -429,6 +451,49 @@ private struct HealthMetricDetailSheet: View {
 
     private var palette: HealthMetricPalette {
         HealthMetricPalette(metric: metric, colorScheme: colorScheme)
+    }
+
+    private var actualDataSourceText: String {
+        if let source = metric.sourceResolution?.displayedRecordSource {
+            return source.detailDisplayName
+        }
+        if !metric.sourceBadges.isEmpty {
+            return metric.sourceBadges.map(\.displayName).joined(separator: ", ")
+        }
+        return metric.hasData ? "Unknown source" : "No active source"
+    }
+
+    private func fallbackText(for resolution: MetricSourceResolution) -> String {
+        if resolution.fallbackUsed, let activeSource = resolution.displayedRecordSource {
+            let reason = resolution.fallbackReason.map { " · \($0)" } ?? ""
+            return "Fallback used: \(activeSource.detailDisplayName)\(reason)"
+        }
+        if resolution.displayedRecordSource == nil {
+            return resolution.fallbackReason ?? "No source has a valid sample for this metric."
+        }
+        return "Not used"
+    }
+
+    private func sampleCountText(for resolution: MetricSourceResolution) -> String {
+        resolution.sourceAvailabilityByProvider
+            .filter { $0.source != .manual || $0.sampleCount > 0 }
+            .map { "\($0.source.detailDisplayName): \($0.sampleCount)" }
+            .joined(separator: " · ")
+    }
+}
+
+private extension HealthSourceID {
+    var detailDisplayName: String {
+        switch self {
+        case .appleWatch:
+            return "Apple Watch / HealthKit"
+        case .ouraRing:
+            return "Oura Ring"
+        case .iPhone:
+            return "iPhone Sensors"
+        case .manual:
+            return "Manual Entry"
+        }
     }
 }
 

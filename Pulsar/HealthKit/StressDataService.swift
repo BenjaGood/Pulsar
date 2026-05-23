@@ -36,7 +36,9 @@ struct StressDataService: StressSummaryProviding {
     ) async throws -> StressSummary {
         let interval = queryInterval(for: date, calendar: calendar, refreshedAt: refreshedAt)
         let dateKey = PulsarDailyMetricsDateKey.dateKey(for: date, calendar: calendar)
-        let previousStressScore = cache.latestSummary(for: dateKey)?.score
+        let previousSummary = cache.latestSummary(for: dateKey)
+        let previousStressScore = previousSummary?.score
+        let previousStressTimestamp = previousSummary?.lastUpdated
 
         async let biometrics = healthKit.fetchDailyBiometrics(date: date, calendar: calendar)
         async let walkingHeartRate = healthKit.fetchWalkingHeartRateAverage(date: date, calendar: calendar)
@@ -72,6 +74,7 @@ struct StressDataService: StressSummaryProviding {
             referenceDate: referenceDate,
             refreshedAt: refreshedAt,
             previousStressScore: previousStressScore,
+            previousStressTimestamp: previousStressTimestamp,
             calendar: calendar
         )
         let inputHash = StressInputFingerprint.make(
@@ -104,6 +107,14 @@ struct StressDataService: StressSummaryProviding {
             sleep: sleep,
             strain: strain,
             interval: interval,
+            referenceDate: referenceDate
+        )
+        summary.dailyAverageScore = dailyAverageStress(from: summary).map(PulsarStressScale.roundedScore)
+        logStressPipeline(
+            summary: summary,
+            dateKey: dateKey,
+            today: today,
+            baselineDays: values.3,
             referenceDate: referenceDate
         )
         cache.save(summary, for: dateKey, inputHash: inputHash, calculatedAt: refreshedAt)
@@ -167,8 +178,7 @@ struct StressDataService: StressSummaryProviding {
                     signalQuality: nil,
                     sourceBadges: SourceResolver.uniqueSourceBadges(
                         Array(biometrics.provenance.values) +
-                            [walkingHeartRate?.provenance].compactMap { $0 } +
-                            sleep.sourceBadges
+                            [walkingHeartRate?.provenance].compactMap { $0 }
                     )
                 )
             )
@@ -189,6 +199,7 @@ struct StressDataService: StressSummaryProviding {
         referenceDate: Date,
         refreshedAt: Date,
         previousStressScore: Int?,
+        previousStressTimestamp: Date?,
         calendar: Calendar
     ) -> StressDailySignals {
         let referenceDate = min(max(referenceDate, interval.start), interval.end)
@@ -223,6 +234,7 @@ struct StressDataService: StressSummaryProviding {
             recentActiveEnergyKilocalories: recentActivity.activeEnergyKilocalories,
             recentExerciseMinutes: recentActivity.exerciseMinutes,
             previousStressScore: previousStressScore,
+            previousStressTimestamp: previousStressTimestamp,
             overnightWearMinutes: overnightWearMinutes,
             motionArtifactLevel: nil,
             signalQuality: signalQuality(heartSamples: heartSamples, sleep: sleep, biometrics: biometrics),
@@ -230,8 +242,6 @@ struct StressDataService: StressSummaryProviding {
                 Array(biometrics.provenance.values) +
                     [walkingHeartRate?.provenance].compactMap { $0 } +
                     [hrvSample?.provenance].compactMap { $0 } +
-                    sleep.sourceBadges +
-                    strain.sourceBadges +
                     heartSamples.map(\.provenance)
             )
         )
@@ -307,18 +317,42 @@ struct StressDataService: StressSummaryProviding {
     }
 
     private func recentHeartRateContext(from samples: [HeartRateSample], referenceDate: Date) -> (value: Double?, timestamp: Date?) {
-        let recent = samples.filter {
+        func windowedSamples(minutes: Double) -> [HeartRateSample] {
+            samples.filter {
+                $0.bpm > 0 &&
+                    $0.end <= referenceDate &&
+                    referenceDate.timeIntervalSince($0.end) <= minutes * 60
+            }
+        }
+
+        func robustAverage(_ samples: [HeartRateSample]) -> Double? {
+            let values = samples.map(\.bpm).filter { $0.isFinite && $0 > 30 && $0 < 220 }.sorted()
+            guard !values.isEmpty else { return nil }
+            if values.count >= 5 {
+                let trimmed = values.dropFirst().dropLast()
+                return trimmed.reduce(0, +) / Double(trimmed.count)
+            }
+            if values.count >= 3 {
+                return values[values.count / 2]
+            }
+            return values.reduce(0, +) / Double(values.count)
+        }
+
+        let fiveMinute = windowedSamples(minutes: 5)
+        if fiveMinute.count >= 2, let average = robustAverage(fiveMinute) {
+            return (average, fiveMinute.map(\.end).max())
+        }
+
+        let recent = windowedSamples(minutes: 15)
+        if !recent.isEmpty, let average = robustAverage(recent) {
+            return (average, recent.map(\.end).max())
+        }
+
+        let latest = samples.filter {
             $0.bpm > 0 &&
-                $0.end <= referenceDate &&
-                referenceDate.timeIntervalSince($0.end) <= 15 * 60
-        }
-        if !recent.isEmpty {
-            return (
-                recent.map(\.bpm).reduce(0, +) / Double(recent.count),
-                recent.map(\.end).max()
-            )
-        }
-        guard let latest = samples.sorted(by: { $0.end > $1.end }).first else { return (nil, nil) }
+                $0.end <= referenceDate
+        }.sorted(by: { $0.end > $1.end }).first
+        guard let latest else { return (nil, nil) }
         return (latest.bpm, latest.end)
     }
 
@@ -366,6 +400,35 @@ struct StressDataService: StressSummaryProviding {
     private func minutesFromMidnight(_ date: Date, calendar: Calendar) -> Double {
         let components = calendar.dateComponents([.hour, .minute], from: date)
         return Double((components.hour ?? 0) * 60 + (components.minute ?? 0))
+    }
+
+    private func logStressPipeline(
+        summary: StressSummary,
+        dateKey: String,
+        today: StressDailySignals,
+        baselineDays: [StressDailySignals],
+        referenceDate: Date
+    ) {
+        let source = summary.sourceBadges.map(\.displayName).sorted().joined(separator: "+")
+        let baseline = StressBaselineBuilder().build(from: baselineDays)
+        let dailyAverage = dailyAverageStress(from: summary)
+        let zoneDurations = PulsarStressTimelineDistribution.buckets(
+            samples: summary.dailySamples.map { PulsarStressTimelineSample(timestamp: $0.timestamp, score: $0.score) }
+        )
+            .map { "\($0.category.rawValue)=\(Int(($0.duration / 60).rounded()))m" }
+            .joined(separator: ",")
+        let missingSignals = [
+            today.currentHeartRate == nil && today.recentHeartRate == nil ? "heartRate" : nil,
+            today.heartRateVariabilitySDNN == nil ? "hrv" : nil,
+            today.restingHeartRate == nil ? "restingHeartRate" : nil
+        ].compactMap { $0 }.joined(separator: ",")
+        PulsarSyncDebugLogger.log("stress pipeline dateKey=\(dateKey) selectedDay=\(today.date) reference=\(referenceDate) sourceUsed=\(source.isEmpty ? "HealthKit" : source) currentHR=\(today.currentHeartRate ?? today.recentHeartRate ?? -1) HRBaseline=\(baseline.restingHeartRate?.mean ?? -1) currentHRV=\(today.heartRateVariabilitySDNN ?? -1) HRVBaseline=\(baseline.hrvSDNN?.mean ?? -1) movementLevel=\(today.currentMotionContext.rawValue) workoutState=\(today.currentMotionContext == .workout ? "active" : "inactive") cooldownState=\(today.currentMotionContext == .postWorkout ? "active" : "inactive") steps=\(today.recentSteps ?? 0) activeEnergy=\(today.recentActiveEnergyKilocalories ?? 0) confidence=\(summary.confidence.rawValue) rawStress=\(summary.nonActivityStress.map(String.init) ?? "nil") movementAdjustedStress=\(summary.activityAdjustedStress.map(String.init) ?? "nil") finalCurrentStress=\(summary.score.map(String.init) ?? "nil") dailyAverageStress=\(dailyAverage.map { String(format: "%.1f", $0) } ?? "nil") zoneDurations=\(zoneDurations.isEmpty ? "none" : zoneDurations) missingSignals=\(missingSignals.isEmpty ? "none" : missingSignals)")
+    }
+
+    private func dailyAverageStress(from summary: StressSummary) -> Double? {
+        PulsarStressTimelineDistribution.weightedAverage(
+            samples: summary.dailySamples.map { PulsarStressTimelineSample(timestamp: $0.timestamp, score: $0.score) }
+        ) ?? summary.currentScore
     }
 }
 

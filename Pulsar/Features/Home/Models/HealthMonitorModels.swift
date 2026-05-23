@@ -48,7 +48,7 @@ enum HealthMetricKind: String, Codable, Equatable, Hashable, CaseIterable, Ident
         case .oxygenSaturation:
             "SpO2"
         case .wristTemperature:
-            "Wrist Temperature"
+            "Temperature Trend"
         case .sleep:
             "Sleep"
         }
@@ -116,9 +116,26 @@ enum HealthMetricKind: String, Codable, Equatable, Hashable, CaseIterable, Ident
         case .oxygenSaturation:
             "Blood oxygen saturation from supported HealthKit samples."
         case .wristTemperature:
-            "Sleeping wrist temperature deviation when available from Apple Watch."
+            "Nighttime temperature variation compared with your personal baseline."
         case .sleep:
             "Total sleep duration for the selected day."
+        }
+    }
+
+    var measurementMetricType: MeasurementHealthMetricType {
+        switch self {
+        case .respiratoryRate:
+            return .respiratoryRate
+        case .restingHeartRate:
+            return .restingHeartRate
+        case .hrv:
+            return .hrv
+        case .oxygenSaturation:
+            return .oxygenSaturation
+        case .wristTemperature:
+            return .temperature
+        case .sleep:
+            return .sleep
         }
     }
 }
@@ -132,6 +149,7 @@ struct HealthMetricModel: Identifiable, Codable, Equatable {
     var comparisonText: String
     var sourceBadges: [SourceProvenance]
     var lastUpdated: Date?
+    var sourceResolution: MetricSourceResolution?
 
     init(
         kind: HealthMetricKind,
@@ -140,7 +158,8 @@ struct HealthMetricModel: Identifiable, Codable, Equatable {
         baselineValue: Double? = nil,
         comparisonText: String,
         sourceBadges: [SourceProvenance] = [],
-        lastUpdated: Date? = nil
+        lastUpdated: Date? = nil,
+        sourceResolution: MetricSourceResolution? = nil
     ) {
         self.kind = kind
         self.value = value
@@ -149,12 +168,14 @@ struct HealthMetricModel: Identifiable, Codable, Equatable {
         self.comparisonText = comparisonText
         self.sourceBadges = SourceResolver.uniqueSourceBadges(sourceBadges)
         self.lastUpdated = lastUpdated
+        self.sourceResolution = sourceResolution
     }
 
     static func noData(
         kind: HealthMetricKind,
-        comparisonText: String = "No HealthKit data was available for this metric on the selected day.",
-        lastUpdated: Date? = nil
+        comparisonText: String = "No data was available for this metric on the selected day.",
+        lastUpdated: Date? = nil,
+        sourceResolution: MetricSourceResolution? = nil
     ) -> HealthMetricModel {
         HealthMetricModel(
             kind: kind,
@@ -163,7 +184,8 @@ struct HealthMetricModel: Identifiable, Codable, Equatable {
             baselineValue: nil,
             comparisonText: comparisonText,
             sourceBadges: [],
-            lastUpdated: lastUpdated
+            lastUpdated: lastUpdated,
+            sourceResolution: sourceResolution
         )
     }
 
@@ -195,6 +217,9 @@ struct HealthMetricModel: Identifiable, Codable, Equatable {
 
     var detailValueText: String {
         guard hasData else { return "No data" }
+        if kind == .wristTemperature {
+            return "\(displayValueText) °C vs baseline"
+        }
         if let unitText {
             return "\(displayValueText) \(unitText)"
         }
@@ -214,7 +239,7 @@ struct HealthMetricModel: Identifiable, Codable, Equatable {
             return "Reference \(Int((baselineValue * 100).rounded()))%"
         case .wristTemperature:
             let formatted = baselineValue == 0 ? "0.0" : String(format: "%+.1f", baselineValue)
-            return "Reference \(formatted) °C"
+            return "Nighttime temperature vs baseline \(formatted) °C"
         case .sleep:
             return "Reference \(Self.durationText(minutes: baselineValue))"
         }

@@ -41,6 +41,7 @@ struct StressDailySignals: Identifiable, Codable, Equatable {
     var recentActiveEnergyKilocalories: Double?
     var recentExerciseMinutes: Double?
     var previousStressScore: Int?
+    var previousStressTimestamp: Date? = nil
     var overnightWearMinutes: Double?
     var motionArtifactLevel: Double?
     var signalQuality: Double?
@@ -112,8 +113,16 @@ struct StressBaseline: Codable, Equatable {
         ].compactMap { $0 }.count
     }
 
+    var scoringMetricCount: Int {
+        [
+            hrvSDNN,
+            restingHeartRate,
+            walkingHeartRateAverage
+        ].compactMap { $0 }.count
+    }
+
     var isSufficient: Bool {
-        validDayCount >= StressBaselineBuilder.minimumBaselineDays && availableMetricCount > 0
+        validDayCount >= StressBaselineBuilder.minimumBaselineDays && scoringMetricCount > 0
     }
 }
 
@@ -191,7 +200,7 @@ struct StressTimelinePointBuilder {
 
         guard validHeartSamples.count >= 2 else { return [] }
 
-        let sampled = downsample(validHeartSamples, maximumCount: maximumSampleCount)
+        let sampled = rollingHeartRateSamples(from: validHeartSamples, maximumCount: maximumSampleCount)
         let bpmValues = validHeartSamples.map(\.bpm)
         let daySpread = max(8, standardDeviation(bpmValues))
         let restingHeartRate = baseline.restingHeartRate?.mean ??
@@ -202,7 +211,8 @@ struct StressTimelinePointBuilder {
             today.walkingHeartRateAverage ??
             restingHeartRate + 24
         let restingSpread = max(7, baseline.restingHeartRate?.standardDeviation ?? daySpread * 0.45)
-        let dailyOffset = (PulsarStressScale.clampedScore(baseScore) - 50) * 0.25
+        let hrvDeviation = hrvStressDeviation(today: today, baseline: baseline)
+        let dailyOffset = (PulsarStressScale.clampedScore(baseScore) - 50) * 0.12
 
         let rawSamples = sampled.map { sample in
             let context = context(at: sample.end, sleep: sleep, strain: strain)
@@ -210,6 +220,7 @@ struct StressTimelinePointBuilder {
                 heartRate: sample.bpm,
                 context: context,
                 dailyOffset: dailyOffset,
+                hrvDeviation: hrvDeviation,
                 restingHeartRate: restingHeartRate,
                 walkingHeartRate: walkingHeartRate,
                 restingSpread: restingSpread,
@@ -230,6 +241,7 @@ struct StressTimelinePointBuilder {
         heartRate: Double,
         context: StressContext,
         dailyOffset: Double,
+        hrvDeviation: Double?,
         restingHeartRate: Double,
         walkingHeartRate: Double,
         restingSpread: Double,
@@ -239,6 +251,7 @@ struct StressTimelinePointBuilder {
         let base: Double
         let spread: Double
         let multiplier: Double
+        let hrvMultiplier: Double
 
         switch context {
         case .sleep:
@@ -246,35 +259,56 @@ struct StressTimelinePointBuilder {
             base = 18 + dailyOffset * 0.35
             spread = max(7, restingSpread)
             multiplier = 8
+            hrvMultiplier = 3.2
         case .rest:
             expectation = restingHeartRate + 4
             base = 28 + dailyOffset * 0.55
             spread = max(8, restingSpread * 1.15)
             multiplier = 9
-        case .recovery:
+            hrvMultiplier = 5.8
+        case .cooldown:
             expectation = restingHeartRate + 16
             base = 24 + dailyOffset * 0.25
             spread = max(10, daySpread * 0.55)
             multiplier = 5
+            hrvMultiplier = 2.2
+        case .movementFiltered:
+            expectation = walkingHeartRate
+            base = 33 + dailyOffset * 0.30
+            spread = max(13, daySpread * 0.78)
+            multiplier = 5.5
+            hrvMultiplier = 2.0
         case .active:
             expectation = walkingHeartRate
-            base = 42 + dailyOffset * 0.75
-            spread = max(12, daySpread * 0.70)
-            multiplier = 10
+            base = 38 + dailyOffset * 0.35
+            spread = max(15, daySpread * 0.85)
+            multiplier = 5.0
+            hrvMultiplier = 1.5
         case .workout:
             expectation = walkingHeartRate + 32
             base = 8
             spread = max(16, daySpread * 0.85)
             multiplier = 0
+            hrvMultiplier = 0
+        case .recovery:
+            expectation = restingHeartRate + 12
+            base = 26 + dailyOffset * 0.25
+            spread = max(10, daySpread * 0.55)
+            multiplier = 5
+            hrvMultiplier = 2.4
         case .unknown:
             expectation = restingHeartRate + 14
             base = 36 + dailyOffset * 0.65
             spread = max(10, daySpread * 0.60)
             multiplier = 9
+            hrvMultiplier = 4.0
         }
 
         let residual = ScoreMath.clamp((heartRate - expectation) / spread, -2.5, 2.5)
         var score = base + residual * multiplier
+        if let hrvDeviation {
+            score += ScoreMath.clamp(hrvDeviation, -1.5, 2.5) * hrvMultiplier
+        }
 
         switch context {
         case .sleep:
@@ -282,11 +316,15 @@ struct StressTimelinePointBuilder {
             if residual < 1.8 { score = min(score, 58) }
         case .rest:
             if residual < 1.4 { score = min(score, 58) }
-        case .recovery:
+        case .cooldown, .recovery:
             score = min(score, 42)
+        case .movementFiltered:
+            score = min(score, 52)
+        case .active:
+            score = min(score, 58)
         case .workout:
             score = min(score, 12)
-        case .active, .unknown:
+        case .unknown:
             break
         }
 
@@ -297,7 +335,7 @@ struct StressTimelinePointBuilder {
         guard let average = PulsarStressTimelineDistribution.weightedAverage(samples: timelineSamples(from: samples), range: range) else {
             return samples
         }
-        let delta = ScoreMath.clamp(PulsarStressScale.clampedScore(targetScore) - average, -18, 18)
+        let delta = ScoreMath.clamp(PulsarStressScale.clampedScore(targetScore) - average, -10, 10)
         guard abs(delta) >= 0.5 else { return samples }
 
         return samples.map { sample in
@@ -308,12 +346,14 @@ struct StressTimelinePointBuilder {
                 multiplier = delta > 0 ? 0.35 : 0.55
             case .rest:
                 multiplier = 0.65
-            case .recovery:
+            case .cooldown, .recovery:
                 multiplier = delta > 0 ? 0.20 : 0.75
             case .workout:
                 multiplier = delta > 0 ? 0.0 : 0.55
+            case .movementFiltered:
+                multiplier = delta > 0 ? 0.35 : 0.70
             case .active:
-                multiplier = 1.0
+                multiplier = delta > 0 ? 0.25 : 0.70
             case .unknown, nil:
                 multiplier = 0.85
             }
@@ -333,19 +373,49 @@ struct StressTimelinePointBuilder {
             .filter({ $0.endDate <= date })
             .max(by: { $0.endDate < $1.endDate }),
            date.timeIntervalSince(latestWorkout.endDate) <= 12 * 60 {
-            return .recovery
+            return .cooldown
         }
         if let interval = strain.timeline.last(where: { $0.startDate <= date && $0.endDate >= date }) {
             switch interval.intensity {
             case .rest:
                 return .rest
             case .light:
-                return .recovery
+                return .movementFiltered
             case .moderate, .hard, .peak:
                 return .active
             }
         }
         return .unknown
+    }
+
+    private func hrvStressDeviation(today: StressDailySignals, baseline: StressBaseline) -> Double? {
+        guard let current = today.heartRateVariabilitySDNN,
+              current.isFinite,
+              let hrvBaseline = baseline.hrvSDNN else { return nil }
+        return ScoreMath.clamp((hrvBaseline.mean - current) / max(4, hrvBaseline.standardDeviation), -2, 3)
+    }
+
+    private func rollingHeartRateSamples(from samples: [HeartRateSample], maximumCount: Int) -> [HeartRateSample] {
+        let anchors = downsample(samples, maximumCount: maximumCount)
+        return anchors.map { anchor in
+            let windowStart = anchor.end.addingTimeInterval(-10 * 60)
+            let window = samples.filter { $0.end >= windowStart && $0.end <= anchor.end }
+            let bpm = robustAverage(window.map(\.bpm)) ?? anchor.bpm
+            return HeartRateSample(start: anchor.start, end: anchor.end, bpm: bpm, provenance: anchor.provenance)
+        }
+    }
+
+    private func robustAverage(_ values: [Double]) -> Double? {
+        let sorted = values.filter { $0.isFinite && $0 > 30 && $0 < 220 }.sorted()
+        guard !sorted.isEmpty else { return nil }
+        if sorted.count >= 5 {
+            let trimmed = sorted.dropFirst().dropLast()
+            return trimmed.reduce(0, +) / Double(trimmed.count)
+        }
+        if sorted.count >= 3 {
+            return sorted[sorted.count / 2]
+        }
+        return sorted.reduce(0, +) / Double(sorted.count)
     }
 
     private func downsample(_ samples: [HeartRateSample], maximumCount: Int) -> [HeartRateSample] {
@@ -483,6 +553,7 @@ struct StressEngine {
             recentExerciseMinutes: today.recentExerciseMinutes,
             movementState: sharedMovementState(from: today.currentMotionContext),
             previousScore: today.previousStressScore,
+            previousScoreTimestamp: today.previousStressTimestamp,
             sourceNames: today.sourceBadges.map(\.displayName)
         )
     }

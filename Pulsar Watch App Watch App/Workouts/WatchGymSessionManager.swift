@@ -50,6 +50,15 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
             PulsarSyncDebugLogger.log("Watch Gym companion launch joined iPhone session without creating duplicate HealthKit workout session=\(state.sessionId.uuidString)")
             return
         }
+        if let state = await companionRequestedWatchGymState(),
+           syncStore.isRoutableActiveGymState(state) {
+            activeSessionId = state.sessionId
+            startedAt = state.startedAt
+            startStateTicking()
+            PulsarSyncDebugLogger.log("Watch Gym companion launch accepted iPhone-requested Watch start session=\(state.sessionId.uuidString) type=\(state.workoutKind?.rawValue ?? "unknown")")
+            await startWorkoutIfNeeded(configuration: configuration)
+            return
+        }
         await startWorkoutIfNeeded(configuration: configuration)
         syncStore.sendGymAction(.requestState())
     }
@@ -61,7 +70,7 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
             return
         }
         startStateTicking()
-        guard state.startedFrom == .appleWatch else {
+        guard state.startedFrom?.isAppleWatchRecorder == true else {
             PulsarSyncDebugLogger.log("Watch Gym displaying iPhone-owned workout without starting duplicate HealthKit workout session=\(state.sessionId.uuidString)")
             return
         }
@@ -271,6 +280,20 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
             applyHealthStatusToActiveState(isEnabled: false)
             cleanup()
         }
+    }
+
+    private func companionRequestedWatchGymState(timeoutSeconds: TimeInterval = 2.0) async -> ActiveGymWorkoutState? {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if let state = syncStore.activeGymState,
+               !state.isFinished,
+               state.startedFrom?.isAppleWatchRecorder == true {
+                return state
+            }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+        PulsarSyncDebugLogger.log("Watch Gym companion launch did not receive an iPhone-requested Watch state before timeout")
+        return syncStore.activeGymState?.startedFrom?.isAppleWatchRecorder == true ? syncStore.activeGymState : nil
     }
 
     private func requestAuthorization() async -> Bool {

@@ -138,19 +138,35 @@ struct HealthMonitorDataService: HealthMonitorSummaryProviding {
     }
 
     private func makeTemperatureMetric(biometrics: DailyBiometrics, baselineDays: [DailyBiometrics], refreshedAt: Date) -> HealthMetricModel {
+        let rawCurrent = biometrics.wristTemperatureDeviationCelsius
+        let baselineSamples = baselineDays.compactMap(\.wristTemperatureDeviationCelsius)
+        let deviation = baselineRelativeTemperatureDeviation(current: rawCurrent, baselineSamples: baselineSamples)
         let assessment = classifier.wristTemperature(
-            current: biometrics.wristTemperatureDeviationCelsius,
-            baseline: baselineDays.compactMap(\.wristTemperatureDeviationCelsius)
+            current: deviation,
+            baseline: []
         )
+        let comparisonText = rawCurrent != nil && deviation == nil
+            ? "Nighttime temperature trend needs a few overnight samples to build your baseline."
+            : assessment.comparisonText
         return HealthMetricModel(
             kind: .wristTemperature,
-            value: biometrics.wristTemperatureDeviationCelsius,
+            value: deviation,
             status: assessment.status,
-            baselineValue: assessment.referenceValue,
-            comparisonText: assessment.comparisonText,
+            baselineValue: nil,
+            comparisonText: comparisonText,
             sourceBadges: [biometrics.provenance["wristTemperature"]].compactMap { $0 },
             lastUpdated: refreshedAt
         )
+    }
+
+    private func baselineRelativeTemperatureDeviation(current: Double?, baselineSamples: [Double]) -> Double? {
+        guard let current, current.isFinite else { return nil }
+        let cleaned = baselineSamples.filter(\.isFinite)
+        guard cleaned.count >= classifier.minimumBaselineSamples,
+              let baseline = cleaned.median else {
+            return nil
+        }
+        return current - baseline
     }
 
     private func makeSleepMetric(profile: UserProfile, sleep: SleepSummary, sleepHistory: [Double], refreshedAt: Date) -> HealthMetricModel {
@@ -354,7 +370,7 @@ struct HealthMetricStatusClassifier {
     }
 
     private var noDataText: String {
-        "No HealthKit data was available for this metric on the selected day."
+        "No data was available for this metric on the selected day."
     }
 }
 

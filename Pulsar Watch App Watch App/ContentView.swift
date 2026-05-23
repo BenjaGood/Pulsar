@@ -36,27 +36,45 @@ struct WatchHomeView: View {
     @State private var isShowingWorkoutPicker = false
 
     var body: some View {
-        if runManager.snapshot.phase.isWatchActiveWorkoutPhase {
-            WatchLiveRunView()
-                .environmentObject(runManager)
-                .onAppear {
-                    PulsarSyncDebugLogger.log("Watch active workout UI route opened session=\(runManager.snapshot.pulsarWorkoutSessionId?.uuidString ?? "none") type=\(runManager.snapshot.workoutKind.rawValue)")
-                }
-        } else if let activeWorkoutState = syncStore.activeWorkoutState,
-                  activeWorkoutState.phase.isLive,
-                  syncStore.isRoutableActiveWorkoutState(activeWorkoutState),
-                  activeWorkoutState.kind.outdoorWorkoutKind != nil {
-            WatchLiveRunView()
-                .environmentObject(runManager)
-                .onAppear {
-                    runManager.reconcileActiveWorkoutSyncState(activeWorkoutState)
-                    PulsarSyncDebugLogger.log("Watch active workout UI route opened from sync state session=\(activeWorkoutState.sessionId.uuidString) type=\(activeWorkoutState.kind.workoutTypeRawValue)")
-                }
-        } else if let activeGymState = syncStore.activeGymState,
-                  syncStore.isRoutableActiveGymState(activeGymState) {
-            WatchActiveGymWorkoutView(syncStore: syncStore, state: activeGymState)
-        } else {
-            homeContent
+        Group {
+            if runManager.snapshot.phase.isWatchActiveWorkoutPhase {
+                WatchLiveRunView()
+                    .environmentObject(runManager)
+                    .onAppear {
+                        PulsarSyncDebugLogger.log("Watch active workout UI route opened session=\(runManager.snapshot.pulsarWorkoutSessionId?.uuidString ?? "none") type=\(runManager.snapshot.workoutKind.rawValue)")
+                    }
+            } else if let activeWorkoutState = syncStore.activeWorkoutState,
+                      activeWorkoutState.phase.isLive,
+                      syncStore.isRoutableActiveWorkoutState(activeWorkoutState),
+                      activeWorkoutState.kind.outdoorWorkoutKind != nil {
+                WatchLiveRunView()
+                    .environmentObject(runManager)
+                    .onAppear {
+                        runManager.reconcileActiveWorkoutSyncState(activeWorkoutState)
+                        PulsarSyncDebugLogger.log("Watch active workout UI route opened from sync state session=\(activeWorkoutState.sessionId.uuidString) type=\(activeWorkoutState.kind.workoutTypeRawValue)")
+                    }
+            } else if let activeGymState = syncStore.activeGymState,
+                      syncStore.isRoutableActiveGymState(activeGymState) {
+                WatchActiveGymWorkoutView(syncStore: syncStore, state: activeGymState)
+            } else {
+                homeContent
+            }
+        }
+        .task {
+            syncStore.pruneStaleActiveWorkoutState(reason: "watchHomeAppeared")
+            syncStore.sendWatchHeartbeat(reason: "watchHomeAppeared")
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            syncStore.pruneStaleActiveWorkoutState(reason: "watchAppBecameActive")
+            syncStore.sendWatchHeartbeat(reason: "watchAppBecameActive")
+        }
+        .onChange(of: syncStore.activeWorkoutState) { _, state in
+            guard let state,
+                  state.kind.outdoorWorkoutKind != nil,
+                  state.phase.isLive,
+                  syncStore.isRoutableActiveWorkoutState(state) else { return }
+            runManager.reconcileActiveWorkoutSyncState(state)
         }
     }
 
@@ -110,16 +128,12 @@ struct WatchHomeView: View {
                     .environmentObject(runManager)
             }
             .task {
-                syncStore.pruneStaleActiveWorkoutState(reason: "watchHomeAppeared")
-                syncStore.refreshAndSendAppleWatchBattery(reason: "watchHomeAppeared")
                 store.viewAppeared()
                 await store.refreshForAppActivation()
             }
             .refreshable { await store.load(reason: "manualRefresh", showsBanner: true) }
             .onChange(of: scenePhase) { _, newPhase in
                 guard newPhase == .active else { return }
-                syncStore.pruneStaleActiveWorkoutState(reason: "watchAppBecameActive")
-                syncStore.refreshAndSendAppleWatchBattery(reason: "watchAppBecameActive")
                 Task { await store.refreshForAppActivation() }
             }
         }

@@ -62,7 +62,7 @@ struct PulsarEquipment: Identifiable, Codable, Hashable {
     var wgerID: Int?
     var name: String
 
-    init(wgerID: Int? = nil, name: String) {
+    nonisolated init(wgerID: Int? = nil, name: String) {
         self.wgerID = wgerID
         self.name = name
         self.id = wgerID.map { "wger-equipment-\($0)" } ?? name.normalizedPulsarIdentifier(prefix: "equipment")
@@ -76,7 +76,7 @@ struct PulsarMuscle: Identifiable, Codable, Hashable {
     var englishName: String?
     var group: PulsarMuscleGroup
 
-    init(wgerID: Int? = nil, name: String, englishName: String? = nil, group: PulsarMuscleGroup) {
+    nonisolated init(wgerID: Int? = nil, name: String, englishName: String? = nil, group: PulsarMuscleGroup) {
         self.wgerID = wgerID
         self.name = name
         self.englishName = englishName
@@ -98,7 +98,7 @@ struct PulsarExerciseAttribution: Codable, Hashable {
     var dataSourceURL: String { sourceURL }
     var license: String? { licenseTitle }
 
-    static func freeExerciseDB(sourceExerciseID: String?) -> PulsarExerciseAttribution {
+    nonisolated static func freeExerciseDB(sourceExerciseID: String?) -> PulsarExerciseAttribution {
         PulsarExerciseAttribution(
             sourceName: "free-exercise-db",
             sourceURL: "https://github.com/yuhonas/free-exercise-db",
@@ -110,7 +110,7 @@ struct PulsarExerciseAttribution: Codable, Hashable {
         )
     }
 
-    static func wger(
+    nonisolated static func wger(
         sourceExerciseID: String?,
         licenseTitle: String?,
         licenseObjectURL: String?,
@@ -888,7 +888,7 @@ struct PulsarGymWorkoutSummary: Identifiable, Codable, Hashable {
 }
 
 extension String {
-    func normalizedPulsarIdentifier(prefix: String) -> String {
+    nonisolated func normalizedPulsarIdentifier(prefix: String) -> String {
         let allowed = CharacterSet.alphanumerics
         let scalars = unicodeScalars.map { scalar -> Character in
             allowed.contains(scalar) ? Character(scalar) : "-"

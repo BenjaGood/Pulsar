@@ -10,6 +10,10 @@ struct RecoveryScoringEngine {
         let hrvBaseline = baselineDays.compactMap(\.hrvSDNNMilliseconds).filter(validHRV)
         let rhrBaseline = baselineDays.compactMap(\.restingHeartRateBPM).filter(validHeartRate)
         let respiratoryBaseline = baselineDays.compactMap(\.respiratoryRate).filter(validRespiratoryRate)
+        let temperatureDeviation = baselineRelativeTemperatureDeviation(
+            current: today.wristTemperatureDeviationCelsius,
+            baselineSamples: baselineDays.compactMap(\.wristTemperatureDeviationCelsius)
+        )
 
         let hrv = today.hrvSDNNMilliseconds.flatMap { readinessHigherIsBetter(value: $0, baseline: hrvBaseline, valid: validHRV) }
         let rhr = today.restingHeartRateBPM.flatMap { readinessLowerIsBetter(value: $0, baseline: rhrBaseline, valid: validHeartRate) }
@@ -56,7 +60,7 @@ struct RecoveryScoringEngine {
             strainScore: today.priorDayStrain.map { $0 * 100 },
             respiratoryRate: today.respiratoryRate,
             oxygenSaturation: today.oxygenSaturation,
-            wristTemperatureDeviation: today.wristTemperatureDeviationCelsius,
+            wristTemperatureDeviation: temperatureDeviation,
             hrvReadiness: hrv ?? 0,
             restingHeartRateReadiness: rhr ?? 0,
             respiratoryStability: respiratory ?? 0,
@@ -64,7 +68,7 @@ struct RecoveryScoringEngine {
             strainPenalty: 1 - (carryOver ?? 1),
             components: [],
             trend: [],
-            analyzedSampleCount: analyzedSampleCount(today: today),
+            analyzedSampleCount: analyzedSampleCount(today: today, temperatureDeviation: temperatureDeviation),
             queryStart: nil,
             queryEnd: nil,
             lastUpdated: nil,
@@ -116,8 +120,16 @@ struct RecoveryScoringEngine {
         values.isEmpty ? nil : values.reduce(0, +) / Double(values.count)
     }
 
-    private func analyzedSampleCount(today: DailyBiometrics) -> Int {
-        [today.hrvSDNNMilliseconds, today.restingHeartRateBPM, today.respiratoryRate, today.oxygenSaturation, today.wristTemperatureDeviationCelsius].compactMap { $0 }.count
+    private func baselineRelativeTemperatureDeviation(current: Double?, baselineSamples: [Double]) -> Double? {
+        guard let current, current.isFinite else { return nil }
+        let cleaned = baselineSamples.filter(\.isFinite)
+        guard cleaned.count >= 5 else { return nil }
+        let baseline = cleaned.reduce(0, +) / Double(cleaned.count)
+        return current - baseline
+    }
+
+    private func analyzedSampleCount(today: DailyBiometrics, temperatureDeviation: Double?) -> Int {
+        [today.hrvSDNNMilliseconds, today.restingHeartRateBPM, today.respiratoryRate, today.oxygenSaturation, temperatureDeviation].compactMap { $0 }.count
             + (today.sleepPerformance == nil ? 0 : 1)
             + (today.priorDayStrain == nil ? 0 : 1)
     }

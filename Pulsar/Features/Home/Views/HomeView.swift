@@ -12,15 +12,21 @@ struct HomeView: View {
     @State private var isShowingProfile = false
     @State private var isShowingCalendar = false
     @State private var isShowingMeasurementSource = false
+    #if DEBUG
+    @State private var lastHomeRenderDiagnosticSignature = ""
+    #endif
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    if viewModel.healthKitStatus != "HealthKit connected" {
+                    PulsarSyncStatusPill()
+
+                    if !viewModel.healthKitStatus.hasPrefix("HealthKit connected") {
                         HealthKitStatusBanner(message: viewModel.healthKitStatus)
                     }
                     metricOrbStack
+                    sourceContextStrip
                     stressSection
                     healthMonitorSection
                 }
@@ -28,15 +34,50 @@ struct HomeView: View {
                 .padding(.top, 12)
                 .padding(.bottom, 28)
             }
-            .pulsarBottomChromeScrollTracking()
-            .background(PulsarBackground())
-            .toolbar(.hidden, for: .navigationBar)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                pinnedHeader
+            .safeAreaPadding(.bottom, 16)
+            .scrollContentBackground(.hidden)
+            .navigationTitle(homeNavigationTitle)
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        isShowingMeasurementSource = true
+                    } label: {
+                        MeasurementDeviceIconView(type: measurementSourceManager.activeDevice.type, size: 22)
+                    }
+                    .accessibilityLabel("Measurement Source")
+                    .accessibilityHint("Choose which device powers your health metrics")
+                }
+
+                ToolbarItem(placement: .principal) {
+                    Button {
+                        isShowingCalendar = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(homeNavigationTitle)
+                                .font(.headline.weight(.semibold))
+                            Image(systemName: "chevron.down")
+                                .font(.caption.weight(.bold))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open calendar")
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isShowingProfile = true
+                    } label: {
+                        AvatarView(profile: viewModel.dashboard.profile, size: 28)
+                    }
+                    .accessibilityLabel("Open Profile")
+                }
             }
             .sheet(isPresented: $isShowingProfile) {
                 PulsarSettingsView(store: viewModel.profileStore) {
                     viewModel.refreshProfileFromStore()
+                } onHealthAuthorizationUpdated: {
+                    Task { await viewModel.load() }
                 }
             }
             .sheet(isPresented: $isShowingCalendar) {
@@ -48,39 +89,37 @@ struct HomeView: View {
             }
             .sheet(isPresented: $isShowingMeasurementSource) {
                 MeasurementSourceSheet(manager: measurementSourceManager) {
+                    await viewModel.load()
+                } onDismiss: {
                     isShowingMeasurementSource = false
                 }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
             }
+            .ouraDebugReportSheet(viewModel: viewModel)
             .refreshable { await viewModel.load() }
-        }
-    }
-
-    private var pinnedHeader: some View {
-        VStack(spacing: 6) {
-            HomeHeaderView(
-                profile: viewModel.dashboard.profile,
-                activeDevice: measurementSourceManager.activeDevice,
-                date: viewModel.selectedDate
-            ) {
-                isShowingCalendar = true
-            } onProfileTapped: {
-                isShowingProfile = true
-            } onDeviceTapped: {
-                isShowingMeasurementSource = true
+            .onAppear {
+                logHomeRenderedStateIfNeeded()
             }
-
-            PulsarSyncStatusPill()
+            .onChange(of: viewModel.selectedDate) { _, _ in
+                logHomeRenderedStateIfNeeded()
+            }
+            .onChange(of: viewModel.dashboard) { _, _ in
+                logHomeRenderedStateIfNeeded()
+            }
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 22)
-        .padding(.bottom, 10)
-        .frame(maxWidth: .infinity, alignment: .top)
+        .background(PulsarBackground())
+        .toolbarBackground(.hidden, for: .navigationBar)
     }
 
     private var metricOrbStack: some View {
         metricOrbLayout
+    }
+
+    private var homeNavigationTitle: String {
+        if Calendar.current.isDateInToday(viewModel.selectedDate) { return "Today" }
+        if Calendar.current.isDateInYesterday(viewModel.selectedDate) { return "Yesterday" }
+        return viewModel.selectedDate.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
     }
 
     private var stressSection: some View {
@@ -98,6 +137,27 @@ struct HomeView: View {
 
     private var healthMonitorSection: some View {
         HealthMonitorSection(summary: viewModel.dashboard.healthMonitor)
+    }
+
+    @ViewBuilder
+    private var sourceContextStrip: some View {
+        let labels = sourceContextLabels
+        if !labels.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(labels, id: \.self) { label in
+                        Text(label)
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(.ultraThinMaterial, in: Capsule(style: .continuous))
+                    }
+                }
+                .padding(.horizontal, 1)
+            }
+        }
     }
 
     private var metricOrbLayout: some View {
@@ -241,6 +301,52 @@ struct HomeView: View {
     private func hasCurrentStrainValue(_ summary: StrainSummary) -> Bool {
         summary.lastUpdated != nil || summary.confidence != .missing || summary.score > 0 || summary.steps > 0 || summary.workoutMinutes > 0 || summary.exerciseMinutes > 0 || (summary.activeEnergyKilocalories ?? 0) > 0
     }
+
+    private var sourceContextLabels: [String] {
+        var labels: [String] = []
+        if let source = compactSourceName(viewModel.dashboard.sleep.sourceBadges) {
+            labels.append(sourceLabel(prefix: "Sleep data", source: source, category: .sleepRecovery))
+        }
+        if let source = compactSourceName(viewModel.dashboard.recovery.sourceBadges) {
+            labels.append(sourceLabel(prefix: "Recovery", source: source, category: .sleepRecovery))
+        }
+        if let source = compactSourceName(viewModel.dashboard.strain.sourceBadges) {
+            labels.append(sourceLabel(prefix: "Steps", source: source, category: .activitySteps))
+            labels.append(sourceLabel(prefix: "Workout data", source: source, category: .workoutsActivity))
+        }
+        if let hrv = viewModel.dashboard.healthMonitor.metrics.first(where: { $0.kind == .hrv }),
+           let source = compactSourceName(hrv.sourceBadges) {
+            labels.append(sourceLabel(prefix: "HRV", source: source, category: .heartMetrics))
+        }
+        return Array(labels.prefix(4))
+    }
+
+    private func sourceLabel(prefix: String, source: String, category: HealthSourcePriorityCategory) -> String {
+        let resolved = measurementSourceManager.resolvedSource(for: category)
+        let fallback = resolved.isFallback ? " · Using fallback source" : ""
+        return "\(prefix) from \(source)\(fallback)"
+    }
+
+    private func compactSourceName(_ sources: [SourceProvenance]) -> String? {
+        guard let first = sources.first else { return nil }
+        if first.displayName.localizedCaseInsensitiveContains("oura") {
+            return "Oura"
+        }
+        if first.displayName.localizedCaseInsensitiveContains("watch") {
+            return "Apple Watch"
+        }
+        return first.displayName
+    }
+
+    private func logHomeRenderedStateIfNeeded() {
+        #if DEBUG
+        let sleep = viewModel.dashboard.sleep
+        let signature = viewModel.homeRenderDiagnosticSignature(uiRenderedSleepMinutes: sleep.totalSleepMinutes)
+        guard signature != lastHomeRenderDiagnosticSignature else { return }
+        lastHomeRenderDiagnosticSignature = signature
+        viewModel.logHomeRenderedState(uiRenderedSleepMinutes: sleep.totalSleepMinutes)
+        #endif
+    }
 }
 
 private struct HealthKitStatusBanner: View {
@@ -278,6 +384,167 @@ private struct HealthKitStatusBanner: View {
         }
     }
 }
+
+private extension View {
+    @ViewBuilder
+    func ouraDebugReportSheet(viewModel: HomeViewModel) -> some View {
+        #if DEBUG
+        self.sheet(
+            item: Binding(
+                get: { viewModel.latestOuraDebugReport },
+                set: { value in
+                    if value == nil {
+                        viewModel.dismissOuraDebugReport()
+                    }
+                }
+            )
+        ) { report in
+            OuraDebugReportSheet(report: report)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        #else
+        self
+        #endif
+    }
+}
+
+#if DEBUG
+private struct OuraDebugReportSheet: View {
+    var report: OuraSyncDebugReport
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    header
+                    let availableRows = report.providedRows.filter { $0.isAvailable && $0.title != "Profile" }
+                    if !availableRows.isEmpty {
+                        debugSection(title: "Available Oura Data", rows: availableRows)
+                    }
+                    debugSection(title: "Mapped Pulsar Metrics", rows: report.mappedRows)
+                    endpointSection
+                    debugSection(title: "Oura Day Values", rows: report.providedRows)
+                    debugSection(title: "Canonical Samples", rows: report.canonicalSampleRows)
+                }
+                .padding(18)
+            }
+            .background(PulsarBackground())
+            .navigationTitle("Oura Debug")
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Refresh \(report.reason)", systemImage: "arrow.triangle.2.circlepath.circle.fill")
+                .font(.headline.weight(.semibold))
+            Text(report.summary)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Date \(report.dateKey)")
+                Text("Window \(report.windowStartKey) to \(report.windowEndKey)")
+                Text("Scopes \(report.scopes.isEmpty ? "none" : report.scopes.joined(separator: ", "))")
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var endpointSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("Oura Endpoints")
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(report.endpointRows, id: \.path) { row in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Circle()
+                            .fill(statusTint(row.status))
+                            .frame(width: 8, height: 8)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(row.title): \(row.sampleCount)")
+                                .font(.caption.weight(.semibold))
+                            Text(endpointDetail(row))
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 2)
+                }
+            }
+            .padding(13)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
+
+    private func debugSection(title: String, rows: [OuraDebugValueRow]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle(title)
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(rows, id: \.title) { row in
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: row.isAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(row.isAvailable ? .green : .orange)
+                            .frame(width: 18)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(row.title)
+                                .font(.caption.weight(.semibold))
+                            Text(row.detail)
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(13)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
+
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.bold))
+            .textCase(.uppercase)
+            .foregroundStyle(.secondary)
+    }
+
+    private func endpointDetail(_ row: OuraEndpointDebugRow) -> String {
+        if let detail = row.detail, !detail.isEmpty {
+            return "\(row.status.displayText) · \(detail)"
+        }
+        return row.status.displayText
+    }
+
+    private func statusTint(_ status: OuraEndpointDebugStatus) -> Color {
+        switch status {
+        case .succeeded:
+            return .green
+        case .skipped:
+            return .gray
+        case .unavailable:
+            return .orange
+        case .failed:
+            return .red
+        }
+    }
+}
+#endif
 
 struct AvatarView: View {
     var profile: UserProfile
@@ -365,11 +632,11 @@ private func percent(_ value: Double) -> String {
     HomeView(viewModel: HomeViewModel())
 }
 
+#if DEBUG
 #Preview("Home - Polish Values") {
     HomePolishPreview()
 }
 
-#if DEBUG
 @MainActor
 private struct HomePolishPreview: View {
     @StateObject private var viewModel: HomeViewModel

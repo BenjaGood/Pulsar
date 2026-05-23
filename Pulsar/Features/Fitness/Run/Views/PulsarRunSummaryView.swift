@@ -9,7 +9,8 @@ import SwiftUI
 
 struct PulsarRunSummaryView: View {
     var summary: PulsarRunSummary
-    var onDone: () -> Void
+    var onDone: (() -> Void)? = nil
+    @State private var isShowingShareComposer = false
 
     var body: some View {
         ScrollView {
@@ -19,19 +20,22 @@ struct PulsarRunSummaryView: View {
                 heroStats
                 charts
                 splits
-                doneButton
+                actionButtons
             }
             .padding(.horizontal, 18)
             .padding(.top, 20)
             .padding(.bottom, 34)
         }
         .background(summaryBackground)
+        .sheet(isPresented: $isShowingShareComposer) {
+            PulsarWorkoutShareComposerView(summary: summary)
+        }
     }
 
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(summary.workoutKind.savedTitle)
+                Text(summary.workoutKind.outdoorTitle)
                     .font(.system(size: 36, weight: .black, design: .rounded))
                 Text(summary.startedAt.formatted(.dateTime.weekday(.wide).month(.abbreviated).day().hour().minute()))
                     .font(.subheadline.weight(.semibold))
@@ -49,22 +53,41 @@ struct PulsarRunSummaryView: View {
     @ViewBuilder
     private var routeMap: some View {
         if routeCoordinates.count > 1 {
-            Map {
-                MapPolyline(coordinates: routeCoordinates)
-                    .stroke(summary.workoutKind.accentColor, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Route", systemImage: "map.fill")
+                    .font(.headline.weight(.bold))
+                    .padding(.horizontal, 4)
+                Map {
+                    MapPolyline(coordinates: routeCoordinates)
+                        .stroke(summary.workoutKind.accentColor, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                    if let startCoordinate = routeCoordinates.first {
+                        Marker("Start", systemImage: "record.circle", coordinate: startCoordinate)
+                            .tint(.green)
+                    }
+                    if let endCoordinate = routeCoordinates.last {
+                        Marker("Finish", systemImage: "flag.checkered", coordinate: endCoordinate)
+                            .tint(summary.workoutKind.accentColor)
+                    }
+                }
+                .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
+                .frame(height: 270)
+                .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
             }
-            .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
-            .frame(height: 230)
-            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .padding(12)
+            .pulsarLiquidGlass(cornerRadius: 30)
             .overlay {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                RoundedRectangle(cornerRadius: 30, style: .continuous)
                     .stroke(.white.opacity(0.22), lineWidth: 1)
             }
         } else {
             PulsarRunGlassCard {
-                Label("Route map will appear here when GPS points are available.", systemImage: "map")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Route", systemImage: "map")
+                        .font(.headline.weight(.bold))
+                    Text("Route map will appear here when GPS points are available.")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -73,12 +96,15 @@ struct PulsarRunSummaryView: View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
             SummaryTile(title: "Distance", value: PulsarRunFormatters.distance(summary.distanceMeters), symbol: "point.topleft.down.curvedto.point.bottomright.up")
             SummaryTile(title: "Moving Time", value: PulsarRunFormatters.duration(summary.movingTime), symbol: summary.workoutKind.systemImageName, tint: summary.workoutKind.accentColor)
+            SummaryTile(title: "Stopped", value: PulsarRunFormatters.duration(summary.stoppedTime), symbol: "pause.circle.fill", tint: .orange)
             SummaryTile(title: "Elapsed", value: PulsarRunFormatters.duration(summary.elapsedTime), symbol: "timer")
-            SummaryTile(title: "Avg Pace", value: PulsarRunFormatters.pace(summary.averagePaceSecondsPerKilometer), symbol: "speedometer")
+            SummaryTile(title: PulsarRunFormatters.paceOrSpeedTitle(for: summary.workoutKind, average: true), value: PulsarRunFormatters.paceOrSpeed(workoutKind: summary.workoutKind, paceSecondsPerKilometer: summary.averagePaceSecondsPerKilometer, speedMetersPerSecond: summary.averageSpeedMetersPerSecond), symbol: "speedometer")
             SummaryTile(title: "Calories", value: PulsarRunFormatters.calories(summary.activeEnergyKilocalories), symbol: "flame.fill", tint: .orange)
-            SummaryTile(title: "Elevation", value: PulsarRunFormatters.elevation(summary.elevationGainMeters), symbol: "mountain.2.fill", tint: summary.workoutKind.accentColor)
+            SummaryTile(title: "Gain", value: PulsarRunFormatters.elevation(summary.effectiveElevationGainMeters), symbol: "mountain.2.fill", tint: summary.workoutKind.accentColor)
+            SummaryTile(title: "Loss", value: PulsarRunFormatters.elevation(summary.effectiveElevationLossMeters), symbol: "arrow.down.to.line.compact", tint: .blue)
             SummaryTile(title: "Avg HR", value: PulsarRunFormatters.heartRate(summary.averageHeartRate), unit: "bpm", symbol: "heart.fill", tint: .red)
             SummaryTile(title: "Max HR", value: PulsarRunFormatters.heartRate(summary.maxHeartRate), unit: "bpm", symbol: "bolt.heart.fill", tint: .red)
+            SummaryTile(title: "Source", value: summary.sourceDeviceName, symbol: summary.source == .appleWatch ? "applewatch" : "iphone", tint: summary.workoutKind.accentColor)
         }
     }
 
@@ -110,14 +136,14 @@ struct PulsarRunSummaryView: View {
                 chartCard(title: "Elevation", symbol: "mountain.2.fill") {
                     Chart(routeAltitudeSamples) { sample in
                         LineMark(
-                            x: .value("Point", sample.index),
-                            y: .value("Elevation", sample.altitude)
+                            x: .value("Distance", sample.distanceMeters / 1_000),
+                            y: .value("Elevation", sample.elevationMeters)
                         )
                         .interpolationMethod(.catmullRom)
                         .foregroundStyle(summary.workoutKind.accentColor)
                         AreaMark(
-                            x: .value("Point", sample.index),
-                            y: .value("Elevation", sample.altitude)
+                            x: .value("Distance", sample.distanceMeters / 1_000),
+                            y: .value("Elevation", sample.elevationMeters)
                         )
                         .foregroundStyle(summary.workoutKind.accentColor.opacity(0.16))
                     }
@@ -162,16 +188,32 @@ struct PulsarRunSummaryView: View {
         }
     }
 
-    private var doneButton: some View {
-        Button(action: onDone) {
-            Text("Done")
-                .font(.headline.weight(.bold))
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(summary.workoutKind.accentColor.gradient, in: Capsule(style: .continuous))
+    private var actionButtons: some View {
+        VStack(spacing: 10) {
+            Button {
+                isShowingShareComposer = true
+            } label: {
+                Label("Share", systemImage: "square.and.arrow.up")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(summary.workoutKind.accentColor.gradient, in: Capsule(style: .continuous))
+            }
+            .buttonStyle(PulsarRunPressStyle())
+
+            if let onDone {
+                Button(action: onDone) {
+                    Text("Done")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(summary.workoutKind.accentColor)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(summary.workoutKind.accentColor.opacity(0.12), in: Capsule(style: .continuous))
+                }
+                .buttonStyle(PulsarRunPressStyle())
+            }
         }
-        .buttonStyle(PulsarRunPressStyle())
     }
 
     private var summaryBackground: some View {
@@ -187,18 +229,9 @@ struct PulsarRunSummaryView: View {
         summary.route.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
     }
 
-    private var routeAltitudeSamples: [AltitudeSample] {
-        summary.route.enumerated().compactMap { index, point in
-            guard let altitude = point.altitude else { return nil }
-            return AltitudeSample(index: index, altitude: altitude)
-        }
+    private var routeAltitudeSamples: [ElevationSample] {
+        summary.gpsRoute.elevationSamples
     }
-}
-
-private struct AltitudeSample: Identifiable {
-    var id: Int { index }
-    var index: Int
-    var altitude: Double
 }
 
 private struct SummaryTile: View {

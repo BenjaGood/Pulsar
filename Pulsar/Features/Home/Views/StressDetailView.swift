@@ -41,7 +41,7 @@ struct StressDetailView: View {
                     Text(dateSubtitle)
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(secondaryText)
-                    Text("Estimated from available HealthKit signals. Not a medical diagnosis.")
+                    Text("Estimated from recent HR, HRV, movement, and baseline signals. Not a medical diagnosis.")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
@@ -108,11 +108,13 @@ struct StressDetailView: View {
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                 StressSnapshotTile(title: "Current Stress", value: summary.displayScoreText, subtitle: summary.displayLevelText, tint: tint)
+                StressSnapshotTile(title: "Daily Average", value: stressText(summary.dailyAverageScore), subtitle: usableDurationText, tint: tint)
                 StressSnapshotTile(title: "Last HR", value: heartRateText, subtitle: timestampText(summary.lastHeartRateTimestamp), tint: tint)
                 StressSnapshotTile(title: "Last HRV", value: hrvText, subtitle: timestampText(summary.lastHRVTimestamp), tint: tint)
                 StressSnapshotTile(title: "Non-Activity", value: stressText(summary.nonActivityStress), subtitle: "Stillness estimate", tint: tint)
                 StressSnapshotTile(title: "Adjusted", value: stressText(summary.activityAdjustedStress), subtitle: summary.movementStateText ?? "Movement filter", tint: tint)
                 StressSnapshotTile(title: "Confidence", value: summary.confidence.shortLabel, subtitle: summary.stressStatusText ?? "Measuring", tint: confidenceColor)
+                StressSnapshotTile(title: "Source", value: sourceText, subtitle: missingSignalsText, tint: tint)
             }
         }
     }
@@ -164,6 +166,33 @@ struct StressDetailView: View {
             .background(confidenceColor.opacity(colorScheme == .dark ? 0.15 : 0.10), in: Capsule())
             .lineLimit(1)
             .minimumScaleFactor(0.72)
+    }
+
+    private var sourceText: String {
+        let sources = summary.sourceBadges.map(\.displayName)
+        guard !sources.isEmpty else { return "No source" }
+        return sources.prefix(2).joined(separator: " + ")
+    }
+
+    private var missingSignalsText: String {
+        let missing = summary.signals
+            .filter { $0.availability == .unavailable }
+            .map(\.title)
+        return missing.isEmpty ? "All key signals available" : "Missing \(missing.prefix(2).joined(separator: ", "))"
+    }
+
+    private var usableDurationText: String {
+        let samples = summary.dailySamples.map { PulsarStressTimelineSample(timestamp: $0.timestamp, score: $0.score) }
+        let buckets = PulsarStressTimelineDistribution.buckets(samples: samples)
+        let duration = buckets.reduce(0) { $0 + $1.duration }
+        guard duration > 0 else { return "Timeline building" }
+        let minutes = Int((duration / 60).rounded())
+        if minutes >= 60 {
+            let hours = minutes / 60
+            let remainder = minutes % 60
+            return remainder == 0 ? "Usable \(hours)h" : "Usable \(hours)h \(remainder)m"
+        }
+        return "Usable \(minutes)m"
     }
 
     private var driverRows: [StressDriver] {

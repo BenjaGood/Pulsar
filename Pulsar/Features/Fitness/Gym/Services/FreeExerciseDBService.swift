@@ -165,7 +165,7 @@ private struct FreeExerciseDBExerciseDTO: Decodable {
 }
 
 private enum FreeExerciseDBExerciseNormalizer {
-    static func normalize(_ dto: FreeExerciseDBExerciseDTO, imageBaseURL: URL) -> PulsarExercise? {
+    nonisolated static func normalize(_ dto: FreeExerciseDBExerciseDTO, imageBaseURL: URL) -> PulsarExercise? {
         let name = dto.name.cleanedCatalogValue
         guard let name else { return nil }
 
@@ -197,7 +197,7 @@ private enum FreeExerciseDBExerciseNormalizer {
         )
     }
 
-    private static func makeMuscle(_ rawName: String) -> PulsarMuscle {
+    private nonisolated static func makeMuscle(_ rawName: String) -> PulsarMuscle {
         PulsarMuscle(
             name: displayValue(rawName) ?? rawName,
             englishName: rawName,
@@ -205,7 +205,7 @@ private enum FreeExerciseDBExerciseNormalizer {
         )
     }
 
-    private static func equipment(
+    private nonisolated static func equipment(
         from rawEquipment: String?,
         category: String?,
         exerciseName: String
@@ -237,7 +237,7 @@ private enum FreeExerciseDBExerciseNormalizer {
         return [PulsarEquipment(name: displayName)]
     }
 
-    private static func fallbackEquipmentName(category: String?, exerciseName: String) -> String {
+    private nonisolated static func fallbackEquipmentName(category: String?, exerciseName: String) -> String {
         let categoryValue = category?.lowercased() ?? ""
         let name = exerciseName.lowercased()
         if categoryValue.contains("strength")
@@ -253,13 +253,13 @@ private enum FreeExerciseDBExerciseNormalizer {
         return "Unknown"
     }
 
-    private static func instructions(from rawInstructions: [String]) -> String? {
+    private nonisolated static func instructions(from rawInstructions: [String]) -> String? {
         let instructions = rawInstructions.normalizedCatalogValues
         guard !instructions.isEmpty else { return nil }
         return instructions.joined(separator: "\n\n")
     }
 
-    private static func absoluteImageURL(_ rawPath: String, imageBaseURL: URL) -> String? {
+    private nonisolated static func absoluteImageURL(_ rawPath: String, imageBaseURL: URL) -> String? {
         if rawPath.hasPrefix("http://") || rawPath.hasPrefix("https://") {
             return rawPath
         }
@@ -277,7 +277,7 @@ private enum FreeExerciseDBExerciseNormalizer {
         return "\(normalizedBase)/\(encodedPath)"
     }
 
-    private static func group(forMuscleName rawName: String) -> PulsarMuscleGroup {
+    private nonisolated static func group(forMuscleName rawName: String) -> PulsarMuscleGroup {
         let name = rawName
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             .lowercased()
@@ -322,14 +322,14 @@ private enum FreeExerciseDBExerciseNormalizer {
         }
     }
 
-    private static func group(forCategory category: String?) -> PulsarMuscleGroup {
+    private nonisolated static func group(forCategory category: String?) -> PulsarMuscleGroup {
         let category = category?.lowercased() ?? ""
         if category.contains("cardio") { return .cardioConditioning }
         if category.contains("plyometric") { return .fullBody }
         return .other
     }
 
-    private static func displayValue(_ value: String?) -> String? {
+    private nonisolated static func displayValue(_ value: String?) -> String? {
         value.cleanedCatalogValue?.catalogTitleCased()
     }
 }
@@ -341,7 +341,7 @@ private extension KeyedDecodingContainer {
 }
 
 private extension Optional where Wrapped == String {
-    var cleanedCatalogValue: String? {
+    nonisolated var cleanedCatalogValue: String? {
         guard let self else { return nil }
         let cleaned = self
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
@@ -351,7 +351,7 @@ private extension Optional where Wrapped == String {
 }
 
 private extension Array where Element == String {
-    var normalizedCatalogValues: [String] {
+    nonisolated var normalizedCatalogValues: [String] {
         var seen = Set<String>()
         return compactMap { Optional($0).cleanedCatalogValue }
             .filter { value in
@@ -361,7 +361,7 @@ private extension Array where Element == String {
 }
 
 private extension String {
-    func catalogTitleCased() -> String {
+    nonisolated func catalogTitleCased() -> String {
         split(separator: " ")
             .map { word in
                 let rawWord = String(word)
@@ -375,7 +375,7 @@ private extension String {
 }
 
 private extension Array {
-    func uniqued<ID: Hashable>(by keyPath: KeyPath<Element, ID>) -> [Element] {
+    nonisolated func uniqued<ID: Hashable>(by keyPath: KeyPath<Element, ID>) -> [Element] {
         var seen = Set<ID>()
         var result: [Element] = []
         for item in self where seen.insert(item[keyPath: keyPath]).inserted {

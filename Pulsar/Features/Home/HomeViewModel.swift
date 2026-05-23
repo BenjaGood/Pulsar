@@ -9,7 +9,6 @@ import HealthKit
 
 @MainActor
 final class HomeViewModel: ObservableObject {
-    private static let minimumAutomaticSyncInterval: TimeInterval = 12 * 60
     private static let lastSuccessfulAutomaticSyncKey = "pulsar.iphone.lastSuccessfulAutomaticSyncAt.v1"
 
     private enum SyncTrigger {
@@ -40,6 +39,15 @@ final class HomeViewModel: ObservableObject {
             if case .manual = self { return true }
             return false
         }
+
+        var recordsSuccessfulSyncForThrottling: Bool {
+            switch self {
+            case .automaticAppEntry, .manual:
+                return true
+            case .silent(let reason):
+                return reason.hasPrefix("healthKitAnchoredUpdate") || reason == "backgroundRefresh"
+            }
+        }
     }
 
     @Published private(set) var dashboard: HomeDashboard = .empty {
@@ -50,7 +58,10 @@ final class HomeViewModel: ObservableObject {
     @Published private(set) var selectedDate: Date
     @Published private(set) var strainRecords: [DailyStrainRecord] = []
     @Published private(set) var isLoading = false
-    @Published private(set) var healthKitStatus = "No HealthKit data loaded"
+    @Published private(set) var healthKitStatus = "No health data loaded"
+    #if DEBUG
+    @Published private(set) var latestOuraDebugReport: OuraSyncDebugReport?
+    #endif
 
     let profileStore: ProfileStore
     private let healthKit: HealthKitGateway
@@ -65,15 +76,29 @@ final class HomeViewModel: ObservableObject {
     private let dailyHistoryStore: DailyHealthHistoryStore
     private let bannerCenter: PulsarSyncBannerCenter
     private let healthEventMonitor: HealthEventMonitor
+    private let ouraSyncService: OuraSyncServicing
+    private let ouraConnectionStore: OuraConnectionStore
+    private let sourcePriorityStore: HealthSourcePriorityStore
+    private let syncPolicy: PulsarSyncPolicy
     private let calendar: Calendar
     private let defaults: UserDefaults
     private var cancellables: Set<AnyCancellable> = []
+    private var healthKitAnchors: [String: HKQueryAnchor] = [:]
+    private var deferredSilentSyncTask: Task<Void, Never>?
+    private var liveStressRefreshTask: Task<Void, Never>?
+    private var lastLiveStressRefreshAt: Date?
 
-    init(profileStore: ProfileStore? = nil, healthKit: HealthKitGateway = HealthKitGateway(), sleepDataService: SleepSummaryProviding? = nil, strainDataService: StrainSummaryProviding? = nil, recoveryDataService: RecoverySummaryProviding? = nil, stressDataService: StressSummaryProviding? = nil, healthMonitorDataService: HealthMonitorSummaryProviding? = nil, healthEventMonitor: HealthEventMonitor? = nil, lifecycleStore: AppLifecycleStore? = nil, syncStore: PulsarWatchConnectivitySyncStore? = nil, dashboardCache: PulsarDashboardCache? = nil, dailyHistoryStore: DailyHealthHistoryStore? = nil, bannerCenter: PulsarSyncBannerCenter? = nil, calendar: Calendar = .current, defaults: UserDefaults = .standard) {
+    init(profileStore: ProfileStore? = nil, healthKit: HealthKitGateway = HealthKitGateway(), sleepDataService: SleepSummaryProviding? = nil, strainDataService: StrainSummaryProviding? = nil, recoveryDataService: RecoverySummaryProviding? = nil, stressDataService: StressSummaryProviding? = nil, healthMonitorDataService: HealthMonitorSummaryProviding? = nil, healthEventMonitor: HealthEventMonitor? = nil, lifecycleStore: AppLifecycleStore? = nil, syncStore: PulsarWatchConnectivitySyncStore? = nil, dashboardCache: PulsarDashboardCache? = nil, dailyHistoryStore: DailyHealthHistoryStore? = nil, bannerCenter: PulsarSyncBannerCenter? = nil, ouraSyncService: OuraSyncServicing? = nil, sourcePriorityStore: HealthSourcePriorityStore? = nil, syncPolicy: PulsarSyncPolicy = PulsarSyncPolicy(), calendar: Calendar = .current, defaults: UserDefaults = .standard) {
         self.profileStore = profileStore ?? ProfileStore()
         self.healthKit = healthKit
         let resolvedSleepDataService = sleepDataService ?? SleepDataService(healthKit: healthKit)
         let resolvedStrainDataService = strainDataService ?? StrainDataService(healthKit: healthKit)
+        let ouraConfiguration = OuraIntegrationConfiguration.load(defaults: defaults)
+        let ouraTokenStore = OuraKeychainTokenStore()
+        let ouraAuthService = OuraAuthService(configuration: ouraConfiguration, tokenStorage: ouraTokenStore)
+        let ouraAPIClient: OuraAPIClientProtocol = ouraConfiguration.mockMode
+            ? MockOuraAPIClient()
+            : URLSessionOuraAPIClient(authService: ouraAuthService)
         self.sleepDataService = resolvedSleepDataService
         self.strainDataService = resolvedStrainDataService
         self.recoveryDataService = recoveryDataService ?? RecoveryDataService(healthKit: healthKit, sleepDataService: resolvedSleepDataService, strainDataService: resolvedStrainDataService)
@@ -85,6 +110,14 @@ final class HomeViewModel: ObservableObject {
         self.dailyHistoryStore = dailyHistoryStore ?? DailyHealthHistoryStore(defaults: defaults)
         self.bannerCenter = bannerCenter ?? .shared
         self.healthEventMonitor = healthEventMonitor ?? HealthEventMonitor(healthKit: healthKit, sleepDataService: resolvedSleepDataService, calendar: calendar)
+        self.ouraConnectionStore = ouraAuthService.connectionStore
+        self.ouraSyncService = ouraSyncService ?? OuraSyncService(
+            apiClient: ouraAPIClient,
+            authService: ouraAuthService,
+            connectionStore: ouraAuthService.connectionStore
+        )
+        self.sourcePriorityStore = sourcePriorityStore ?? HealthSourcePriorityStore(defaults: defaults)
+        self.syncPolicy = syncPolicy
         self.calendar = calendar
         self.defaults = defaults
         self.lifecycleStore.registerFirstLaunchIfNeeded()
@@ -93,7 +126,13 @@ final class HomeViewModel: ObservableObject {
         loadCalendarHistoryFromStores()
         loadCachedDashboardIfAvailable()
         observeSyncPayloads()
+        observeSourcePriorityChanges()
         persistWidgetSnapshot(for: dashboard)
+    }
+
+    deinit {
+        deferredSilentSyncTask?.cancel()
+        liveStressRefreshTask?.cancel()
     }
 
     func refreshProfileFromStore() {
@@ -169,32 +208,118 @@ final class HomeViewModel: ObservableObject {
     func appDidBecomeActive() async {
         PulsarSyncDebugLogger.log("app became active")
         profileStore.refreshSleepPreferenceSideEffects(reason: "homeViewModelAppDidBecomeActive")
+        startLiveStressUpdates()
         await requestAutomaticSync(reason: "appBecameActive")
+    }
+
+    func appDidResignActive() {
+        stopLiveStressUpdates()
     }
 
     func requestInitialAppEntrySync() async {
         profileStore.refreshSleepPreferenceSideEffects(reason: "homeViewModelInitialEntry")
+        startLiveStressUpdates()
         await requestAutomaticSync(reason: "initialAppEntry")
     }
 
     func load() async {
+        PulsarSyncDebugLogger.log("Sync requested reason=manualRefresh")
         PulsarSyncDebugLogger.log("manual refresh started")
         await performSync(trigger: .manual(reason: "manualRefresh"))
     }
 
+    #if DEBUG
+    func dismissOuraDebugReport() {
+        latestOuraDebugReport = nil
+    }
+
+    func homeRenderDiagnosticSignature(uiRenderedSleepMinutes: Double) -> String {
+        [
+            String(selectedDate.timeIntervalSinceReferenceDate),
+            healthKitStatus,
+            diagnosticDashboardState(dashboard, uiRenderedSleepMinutes: uiRenderedSleepMinutes),
+            diagnosticRenderedRoutes(dashboard),
+            diagnosticCurrentSourceSummary()
+        ].joined(separator: "|")
+    }
+
+    func logHomeRenderedState(uiRenderedSleepMinutes: Double) {
+        let dateKey = PulsarDailyMetricsDateKey.dateKey(for: selectedDate, calendar: calendar)
+        let sleepDateKey = SleepWindowResolver.sleepDateKey(forWakeUpDate: selectedDate, calendar: calendar)
+        PulsarSyncDebugLogger.log("home rendered state selectedDay=\(selectedDate) dateKey=\(dateKey) sleepDateKey=\(sleepDateKey) currentSources=\(diagnosticCurrentSourceSummary()) routes=\(diagnosticRenderedRoutes(dashboard)) \(diagnosticDashboardState(dashboard, uiRenderedSleepMinutes: uiRenderedSleepMinutes)) healthKitStatus=\(healthKitStatus)")
+    }
+    #endif
+
     private func requestAutomaticSync(reason: String) async {
+        PulsarSyncDebugLogger.log("Sync requested reason=\(reason)")
         PulsarSyncDebugLogger.log("automatic sync requested reason=\(reason)")
         let now = Date()
         guard !isLoading else {
             PulsarSyncDebugLogger.log("automatic sync skipped because sync is already in progress reason=\(reason)")
             return
         }
-        if let lastSuccessfulAutomaticSyncAt,
-           now.timeIntervalSince(lastSuccessfulAutomaticSyncAt) < Self.minimumAutomaticSyncInterval {
-            PulsarSyncDebugLogger.log("automatic sync skipped because last sync was recent reason=\(reason) last=\(lastSuccessfulAutomaticSyncAt) minimumInterval=\(Self.minimumAutomaticSyncInterval)")
+        let hasStaleVisibleMetrics = visibleMetricsAreStale(now: now)
+        let decision = syncPolicy.decision(
+            lastSuccessfulSyncAt: lastSuccessfulAutomaticSyncAt,
+            now: now,
+            reason: reason,
+            lowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled,
+            hasStaleVisibleMetrics: hasStaleVisibleMetrics
+        )
+        guard decision.shouldSync else {
+            PulsarSyncDebugLogger.log("automatic sync skipped because last sync was recent reason=\(reason) last=\(lastSuccessfulAutomaticSyncAt?.description ?? "none") minimumInterval=\(decision.minimumInterval) staleVisibleMetrics=\(hasStaleVisibleMetrics) lowPowerMode=\(ProcessInfo.processInfo.isLowPowerModeEnabled)")
             return
         }
         await performSync(trigger: .automaticAppEntry(reason: reason))
+    }
+
+    private func requestSilentSync(reason: String) async {
+        PulsarSyncDebugLogger.log("Sync requested reason=\(reason)")
+        let now = Date()
+        guard !isLoading else {
+            PulsarSyncDebugLogger.log("silent sync skipped because sync is already in progress reason=\(reason)")
+            scheduleDeferredHealthKitSyncIfNeeded(reason: reason, delay: 5)
+            return
+        }
+        let hasStaleVisibleMetrics = visibleMetricsAreStale(now: now)
+        let decision = syncPolicy.decision(
+            lastSuccessfulSyncAt: lastSuccessfulAutomaticSyncAt,
+            now: now,
+            reason: reason,
+            lowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled,
+            hasStaleVisibleMetrics: hasStaleVisibleMetrics
+        )
+        guard decision.shouldSync else {
+            PulsarSyncDebugLogger.log("silent sync skipped because last sync was recent reason=\(reason) last=\(lastSuccessfulAutomaticSyncAt?.description ?? "none") minimumInterval=\(decision.minimumInterval) staleVisibleMetrics=\(hasStaleVisibleMetrics) lowPowerMode=\(ProcessInfo.processInfo.isLowPowerModeEnabled)")
+            if reason.hasPrefix("healthKitAnchoredUpdate") {
+                let elapsed = lastSuccessfulAutomaticSyncAt.map { now.timeIntervalSince($0) } ?? 0
+                let delay = max(1, decision.minimumInterval - elapsed)
+                scheduleDeferredHealthKitSyncIfNeeded(reason: reason, delay: delay)
+            }
+            return
+        }
+        await performSync(trigger: .silent(reason: reason))
+    }
+
+    private func scheduleDeferredHealthKitSyncIfNeeded(reason: String, delay: TimeInterval) {
+        guard reason.hasPrefix("healthKitAnchoredUpdate") else { return }
+        guard deferredSilentSyncTask == nil else {
+            PulsarSyncDebugLogger.log("deferred HealthKit sync already scheduled reason=\(reason)")
+            return
+        }
+        let nanoseconds = UInt64(max(1, delay) * 1_000_000_000)
+        deferredSilentSyncTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            await self?.runDeferredHealthKitSync(reason: reason)
+        }
+        PulsarSyncDebugLogger.log("deferred HealthKit sync scheduled reason=\(reason) delay=\(String(format: "%.1f", max(1, delay)))s")
+    }
+
+    private func runDeferredHealthKitSync(reason: String) async {
+        deferredSilentSyncTask = nil
+        guard !Task.isCancelled else { return }
+        PulsarSyncDebugLogger.log("deferred HealthKit sync running reason=\(reason)")
+        await performSync(trigger: .silent(reason: "\(reason):deferred"))
     }
 
     private func performSync(trigger: SyncTrigger) async {
@@ -232,30 +357,46 @@ final class HomeViewModel: ObservableObject {
                 dateOfBirth: profilePayload.dateOfBirth,
                 biologicalSex: profilePayload.biologicalSex
             )
-            let freshDashboard = try await buildHealthKitDashboard(profile: profileStore.profile, date: referenceDate, wakeUpDate: wakeUpDate, generatedAt: refreshDate)
-            dashboard = canonicalDashboard(for: mergeWithLastKnownValues(freshDashboard, fallback: dashboard))
-            logStrainValidation(dashboard: dashboard, context: "iPhone")
+            let healthKitDashboard = try await buildHealthKitDashboard(profile: profileStore.profile, date: referenceDate, wakeUpDate: wakeUpDate, generatedAt: refreshDate)
+            let healthKitPayload = healthKitDashboard.syncPayload(sourceDevice: .iPhone, syncSessionID: syncSessionID, calendar: calendar)
+            let ouraPayload = await syncOuraPayloadIfNeeded(for: wakeUpDate, reason: trigger.reason)
+            dashboard = routedDashboard(
+                healthKitDashboard: healthKitDashboard,
+                ouraPayload: ouraPayload,
+                date: referenceDate,
+                generatedAt: refreshDate,
+                now: refreshDate
+            )
+            logStrainValidation(dashboard: dashboard, context: ouraPayload == nil ? "iPhone" : "RoutedSources")
             healthKitStatus = "HealthKit connected"
-            if let payload = dashboard.syncPayload(sourceDevice: .iPhone, syncSessionID: syncSessionID, calendar: calendar) {
+            if let payload = healthKitPayload {
                 didBuildValidPayload = payload.hasValidData
                 let didCommitPayload = syncStore.storeLocalPayload(payload, broadcast: true, reason: "iPhoneHealthKitSync")
                 didCommitDailyMetrics = payload.hasCompleteDailyScores && didCommitPayload
                 upsertDailyRecordIfUsable(payload)
-                dashboard = canonicalDashboard(for: dashboard)
-                dashboardCache.save(dashboard)
                 PulsarSyncDebugLogger.log("calculated Strain value=\(payload.strain?.score ?? 0) session=\(syncSessionID.uuidString)")
                 PulsarSyncDebugLogger.log("calculated Recovery value=\(payload.recovery?.score ?? 0) session=\(syncSessionID.uuidString)")
                 PulsarSyncDebugLogger.log("calculated Stress value=\(payload.stress?.score ?? 0) session=\(syncSessionID.uuidString)")
                 PulsarSyncDebugLogger.log("Sleep Score calculated value=\(payload.sleep?.score ?? 0) sleepDateKey=\(payload.sleep?.sleepDateKey ?? "none") session=\(syncSessionID.uuidString)")
-            } else {
-                dashboardCache.save(dashboard)
             }
+            if let ouraPayload {
+                didBuildValidPayload = didBuildValidPayload || ouraPayload.hasValidData
+                let didCommitOuraPayload = syncStore.storeLocalPayload(ouraPayload, broadcast: true, reason: "OuraCloudSync")
+                didCommitDailyMetrics = didCommitDailyMetrics || (ouraPayload.hasCompleteDailyScores && didCommitOuraPayload)
+                upsertDailyRecordIfUsable(ouraPayload)
+                healthKitStatus = "HealthKit connected · Oura synced"
+                PulsarOuraLogger.log("Oura payload committed dateKey=\(ouraPayload.resolvedDateKey) session=\(ouraPayload.syncSessionID?.uuidString ?? "none")")
+            }
+            if let cachedDashboard = sourceRoutedCachedDashboard(for: selectedDate) {
+                dashboard = mergeWithLastKnownValues(cachedDashboard, fallback: dashboard)
+            }
+            dashboardCache.save(dashboard)
             await healthKit.startObservers { [weak self] sampleType in
                 await self?.healthKitSamplesDidChange(sampleType)
             }
             await healthEventMonitor.processForegroundSnapshot(profile: profileStore.profile, dashboard: dashboard, now: refreshDate)
             let completedWithUsableData = didBuildValidPayload || hasVisibleMetrics(dashboard)
-            if (trigger.isAutomatic || trigger.isManual), completedWithUsableData {
+            if trigger.recordsSuccessfulSyncForThrottling, completedWithUsableData {
                 lastSuccessfulAutomaticSyncAt = refreshDate
             }
             if trigger.showsBanner {
@@ -282,12 +423,124 @@ final class HomeViewModel: ObservableObject {
     }
 
     private func healthKitSamplesDidChange(_ sampleType: HKSampleType) async {
-        PulsarSyncDebugLogger.log("HealthKit observer update received; deferring full sync until app entry or manual refresh")
+        let metric = PulsarHealthKitIncrementalMetric.label(for: sampleType)
+        let anchorKey = sampleType.identifier
+        let start = calendar.date(byAdding: .day, value: -3, to: Date())
+        let changes = await healthKit.anchoredChanges(for: sampleType, anchor: healthKitAnchors[anchorKey], start: start)
+        healthKitAnchors[anchorKey] = changes.newAnchor
+        PulsarHealthKitLogger.log("Anchored update received metric=\(metric) samples=\(changes.samples.count) deleted=\(changes.deletedObjects.count)")
         await healthEventMonitor.processObservedChange(
             sampleType: sampleType,
             profile: profileStore.profile,
             dashboard: dashboard
         )
+        guard !changes.samples.isEmpty || !changes.deletedObjects.isEmpty else {
+            return
+        }
+        if isStressRelevantSampleType(sampleType) {
+            await refreshLiveStress(reason: "healthKitAnchoredUpdate:\(metric)", force: true)
+        }
+        await requestSilentSync(reason: "healthKitAnchoredUpdate:\(metric)")
+    }
+
+    private func startLiveStressUpdates() {
+        guard liveStressRefreshTask == nil else { return }
+        liveStressRefreshTask = Task { [weak self] in
+            await self?.refreshLiveStress(reason: "foregroundStressStart", force: true)
+            while !Task.isCancelled {
+                let interval: TimeInterval = ProcessInfo.processInfo.isLowPowerModeEnabled ? 120 : 60
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                await self?.refreshLiveStress(reason: "foregroundStressTick", force: false)
+            }
+        }
+    }
+
+    private func stopLiveStressUpdates() {
+        liveStressRefreshTask?.cancel()
+        liveStressRefreshTask = nil
+    }
+
+    private func refreshLiveStress(reason: String, force: Bool) async {
+        let now = Date()
+        guard calendar.isDate(selectedDate, inSameDayAs: now) else { return }
+        guard !isLoading else {
+            PulsarSyncDebugLogger.log("live stress refresh skipped because sync is in progress reason=\(reason)")
+            return
+        }
+        if !force, let lastLiveStressRefreshAt, now.timeIntervalSince(lastLiveStressRefreshAt) < 45 {
+            return
+        }
+        lastLiveStressRefreshAt = now
+
+        do {
+            let referenceDate = dashboardReferenceDate(for: selectedDate, now: now)
+            let stress = try await stressDataService.stressSummary(
+                profile: profileStore.profile,
+                date: referenceDate,
+                calendar: calendar,
+                refreshedAt: now,
+                sleep: dashboard.sleep,
+                strain: dashboard.strain
+            )
+            guard stressShouldReplaceCurrentStress(stress, current: dashboard.stress) else {
+                PulsarSyncDebugLogger.log("live stress refresh skipped because visible state is unchanged reason=\(reason) score=\(stress.score.map(String.init) ?? "nil")")
+                return
+            }
+
+            var updated = dashboard
+            updated.stress = stress
+            updated.generatedAt = max(updated.generatedAt, now)
+            dashboard = updated
+            dashboardCache.save(updated)
+            upsertDailyRecordIfUsable(updated, date: referenceDate)
+
+            let stressOnlyDashboard = HomeDashboard(
+                profile: profileStore.profile,
+                sleep: .missing,
+                recovery: .missing,
+                strain: .missing,
+                stress: stress,
+                healthMonitor: .missing(date: referenceDate),
+                generatedAt: now,
+                usingSampleData: false
+            )
+            if let payload = stressOnlyDashboard.syncPayload(sourceDevice: .iPhone, syncSessionID: UUID(), calendar: calendar) {
+                _ = syncStore.storeLocalPayload(payload, broadcast: true, reason: "LiveStressRefresh")
+            }
+            PulsarSyncDebugLogger.log("live stress refresh accepted reason=\(reason) selectedDay=\(selectedDate) source=\(stress.sourceBadges.map(\.displayName).joined(separator: "+")) sleepMinutes=\(stress.signals.first(where: { $0.id == "sleep" })?.value ?? "nil") viewModelStress=\(stress.score.map(String.init) ?? "nil") missingSignals=\(stress.signals.filter { $0.availability == .unavailable }.map(\.id).joined(separator: ","))")
+        } catch {
+            PulsarSyncDebugLogger.log("live stress refresh failed reason=\(reason) error=\(error.localizedDescription)")
+        }
+    }
+
+    private func stressShouldReplaceCurrentStress(_ stress: StressSummary, current: StressSummary) -> Bool {
+        guard hasUsableStress(stress) else { return false }
+        if current.score == nil && stress.score != nil { return true }
+        if current.state != stress.state { return true }
+        if current.confidence != stress.confidence { return true }
+        if current.lastHeartRateTimestamp != stress.lastHeartRateTimestamp { return true }
+        if current.lastHRVTimestamp != stress.lastHRVTimestamp { return true }
+        if abs(Double((current.score ?? 0) - (stress.score ?? 0))) >= 2 { return true }
+        return false
+    }
+
+    private func isStressRelevantSampleType(_ sampleType: HKSampleType) -> Bool {
+        if sampleType.identifier == HKObjectType.workoutType().identifier { return true }
+        let identifiers: [HKQuantityTypeIdentifier] = [
+            .heartRate,
+            .heartRateVariabilitySDNN,
+            .restingHeartRate,
+            .respiratoryRate,
+            .appleSleepingWristTemperature,
+            .activeEnergyBurned,
+            .stepCount,
+            .appleExerciseTime,
+            .distanceWalkingRunning
+        ]
+        return identifiers
+            .compactMap { HKObjectType.quantityType(forIdentifier: $0)?.identifier }
+            .contains(sampleType.identifier)
     }
 
     private func buildHealthKitDashboard(profile: UserProfile, date: Date, wakeUpDate: Date, generatedAt: Date) async throws -> HomeDashboard {
@@ -307,6 +560,215 @@ final class HomeViewModel: ObservableObject {
         let dashboard = HomeDashboard(profile: profile, sleep: sleep, recovery: recovery, strain: strain, stress: stress, healthMonitor: healthMonitor, generatedAt: generatedAt, usingSampleData: false)
         upsertDailyRecordIfUsable(dashboard, date: date)
         return dashboard
+    }
+
+    private func syncOuraPayloadIfNeeded(for date: Date, reason: String) async -> PulsarDailyMetricsSyncPayload? {
+        guard shouldAttemptOuraSync else {
+            #if DEBUG
+            if shouldShowOuraDebugReport(for: reason) {
+                latestOuraDebugReport = OuraSyncDebugReport.skipped(
+                    reason: reason,
+                    date: date,
+                    calendar: calendar,
+                    message: ouraSyncSkippedDebugMessage
+                )
+            }
+            #endif
+            return nil
+        }
+        do {
+            let mapped: OuraMappedHealthData
+            if shouldRunManualOuraSyncOutsideRefreshTask(for: reason) {
+                let syncTask = Task { [ouraSyncService, calendar] in
+                    try await ouraSyncService.sync(date: date, calendar: calendar, reason: reason)
+                }
+                mapped = try await syncTask.value
+            } else {
+                mapped = try await ouraSyncService.sync(date: date, calendar: calendar, reason: reason)
+            }
+            #if DEBUG
+            if shouldShowOuraDebugReport(for: reason) {
+                latestOuraDebugReport = mapped.debugReport
+            }
+            #endif
+            return mapped.payload
+        } catch {
+            #if DEBUG
+            if shouldShowOuraDebugReport(for: reason) {
+                latestOuraDebugReport = OuraSyncDebugReport.failed(
+                    reason: reason,
+                    date: date,
+                    calendar: calendar,
+                    error: error,
+                    scopes: ouraDebugScopes
+                )
+            }
+            #endif
+            PulsarOuraLogger.log("Oura sync skipped reason=\(reason) error=\(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private func shouldRunManualOuraSyncOutsideRefreshTask(for reason: String) -> Bool {
+        reason == "manualRefresh"
+    }
+
+    #if DEBUG
+    private func shouldShowOuraDebugReport(for reason: String) -> Bool {
+        reason == "manualRefresh"
+    }
+
+    private var ouraDebugScopes: Set<OuraScope> {
+        ouraConnectionStore.storedToken?.scopes ?? []
+    }
+
+    private var ouraSyncSkippedDebugMessage: String {
+        if ouraConnectionStore.storedToken == nil {
+            return "Oura is not connected, so no Oura API request was made."
+        }
+        return "Oura is connected, but no source-priority category currently uses Oura, so no Oura API request was made."
+    }
+    #endif
+
+    private func routedDashboard(
+        healthKitDashboard: HomeDashboard,
+        ouraPayload: PulsarDailyMetricsSyncPayload?,
+        date: Date,
+        generatedAt: Date,
+        now: Date
+    ) -> HomeDashboard {
+        var sourceDashboards: [HealthSourceID: HomeDashboard] = [
+            .appleWatch: healthKitDashboard,
+            .iPhone: healthKitDashboard
+        ]
+        if let ouraPayload {
+            let ouraDashboard = emptyDashboard(date: date, generatedAt: generatedAt)
+                .applying(payload: ouraPayload, calendar: calendar)
+            sourceDashboards[.ouraRing] = ouraDashboard
+        }
+        let routed = HealthDataSourceRouter(priorityStore: sourcePriorityStore, calendar: calendar)
+            .routedDashboard(
+                profile: profileStore.profile,
+                date: date,
+                generatedAt: generatedAt,
+                sourceDashboards: sourceDashboards,
+                snapshots: sourcePrioritySnapshots(now: now),
+                now: now
+            )
+        #if DEBUG
+        logRoutedDashboardResult(context: "liveSync", date: date, routed: routed, sourceDashboards: sourceDashboards)
+        #endif
+        return routed.dashboard
+    }
+
+    private func sourceDashboards(
+        from payloadsBySource: [PulsarSyncSourceDevice: PulsarDailyMetricsSyncPayload],
+        date: Date
+    ) -> [HealthSourceID: HomeDashboard] {
+        payloadsBySource.reduce(into: [:]) { result, entry in
+            let payload = entry.value
+            guard payload.isValidPayload else { return }
+            let dashboard = emptyDashboard(date: date, generatedAt: payload.syncedAt)
+                .applying(payload: payload, calendar: calendar)
+            let sourceID = entry.key.healthSourceIDForRouting
+            if let existing = result[sourceID] {
+                result[sourceID] = existing.applying(payload: payload, calendar: calendar)
+            } else {
+                result[sourceID] = dashboard
+            }
+            if entry.key == .iPhone {
+                result[.iPhone] = dashboard
+            }
+        }
+    }
+
+    private func emptyDashboard(date: Date, generatedAt: Date) -> HomeDashboard {
+        HomeDashboard(
+            profile: profileStore.profile,
+            sleep: .missing,
+            recovery: .missing,
+            strain: .missing,
+            stress: .missing,
+            healthMonitor: .missing(date: date),
+            generatedAt: generatedAt,
+            usingSampleData: false
+        )
+    }
+
+    private var shouldAttemptOuraSync: Bool {
+        guard ouraConnectionStore.storedToken != nil else { return false }
+        return HealthSourcePriorityCategory.allCases.contains {
+            let preference = sourcePriorityStore.preference(for: $0)
+            return preference.currentSource == .ouraRing || $0.fallbackOrder.contains(.ouraRing)
+        }
+    }
+
+    private func sourcePrioritySnapshots(now: Date) -> [HealthSourceSnapshot] {
+        [
+            HealthSourceSnapshot(
+                sourceID: .appleWatch,
+                connectionState: .connected,
+                syncState: .idle,
+                supportedMetrics: [
+                    .heartRate,
+                    .hrv,
+                    .respiratoryRate,
+                    .sleep,
+                    .activity,
+                    .workouts,
+                    .recovery,
+                    .readiness,
+                    .restingHeartRate,
+                    .oxygenSaturation,
+                    .strain,
+                    .stress,
+                    .temperature,
+                    .cycle
+                ],
+                lastSyncAt: latestCachedDataAt(source: .appleWatch) ?? syncStore.latestAppleWatchBattery?.timestamp ?? lastSuccessfulAutomaticSyncAt,
+                batteryPercentage: syncStore.latestAppleWatchBattery?.batteryPercentage
+            ),
+            OuraDeviceSourceProvider(
+                configuration: OuraIntegrationConfiguration.load(defaults: defaults),
+                connectionStore: ouraConnectionStore,
+                syncService: ouraSyncService
+            ).snapshot(),
+            HealthSourceSnapshot(
+                sourceID: .iPhone,
+                connectionState: .available,
+                syncState: .idle,
+                supportedMetrics: [.heartRate, .activity, .workouts, .strain, .temperature, .cycle],
+                lastSyncAt: latestCachedDataAt(source: .iPhone),
+                batteryPercentage: nil
+            ),
+            HealthSourceSnapshot(
+                sourceID: .manual,
+                connectionState: .available,
+                syncState: .idle,
+                supportedMetrics: Set(MeasurementHealthMetricType.allCases),
+                lastSyncAt: latestCachedDataAt(source: .manual),
+                batteryPercentage: nil
+            )
+        ]
+    }
+
+    private func latestCachedDataAt(source: HealthSourceID) -> Date? {
+        let dateKey = PulsarDailyMetricsDateKey.dateKey(for: selectedDate, calendar: calendar)
+        let sleepDateKey = SleepWindowResolver.sleepDateKey(forWakeUpDate: selectedDate, calendar: calendar)
+        let payloads = Array(syncStore.cachedDailyPayloadsBySource(forDateKey: dateKey).values) +
+            Array(syncStore.cachedSleepPayloadsBySource(forSleepDateKey: sleepDateKey).values)
+        return payloads
+            .filter { $0.sourceDevice.healthSourceIDForRouting == source }
+            .compactMap { payload in
+                [
+                    payload.dailyMetricsComputedAt,
+                    payload.sleepComputedAt,
+                    payload.stressComputedAt,
+                    payload.healthMonitorComputedAt,
+                    payload.syncedAt
+                ].compactMap { $0 }.max()
+            }
+            .max()
     }
 
     private func buildPermissionRequiredDashboard(profile: UserProfile, date: Date) -> HomeDashboard {
@@ -366,7 +828,7 @@ final class HomeViewModel: ObservableObject {
             sleepScore: hasUsableSleep(dashboard.sleep) ? dashboard.sleep.score : nil,
             sleepMinutes: dashboard.sleep.totalSleepMinutes > 0 ? Int(dashboard.sleep.totalSleepMinutes.rounded()) : nil,
             recoveryScore: hasUsableRecovery(dashboard.recovery) ? dashboard.recovery.score : nil,
-            stressScore: dashboard.stress.score,
+            stressScore: dailyStressScore(from: dashboard.stress),
             stressTimelineSamples: dashboard.stress.dailySamples,
             strainScore: hasUsableStrain(dashboard.strain) ? dashboard.strain.score : 0,
             respiratoryRate: dashboard.healthMonitor.metric(.respiratoryRate).value,
@@ -429,18 +891,45 @@ final class HomeViewModel: ObservableObject {
                 self?.applyIncomingSyncPayload(payload)
             }
             .store(in: &cancellables)
+
+        syncStore.$sourceCacheRevision
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.applyCurrentSourceRouting(statusMessage: nil)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func observeSourcePriorityChanges() {
+        NotificationCenter.default.publisher(for: .pulsarHealthSourcePreferenceDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.sourcePriorityStore.reloadFromDefaults()
+                self?.applyCurrentSourceRouting(statusMessage: "Source setting updated")
+            }
+            .store(in: &cancellables)
+    }
+
+    private func applyCurrentSourceRouting(statusMessage: String?) {
+        guard let routed = sourceRoutedCachedDashboard(for: selectedDate) else { return }
+        dashboard = routed
+        dashboardCache.save(routed)
+        if let statusMessage {
+            healthKitStatus = statusMessage
+        }
     }
 
     @discardableResult
     private func loadCachedDashboardIfAvailable() -> Bool {
-        if let cached = dashboardCache.loadDashboard(for: selectedDate, calendar: calendar) {
-            dashboard = cached
-            healthKitStatus = "Showing latest available data"
-            return true
-        }
         if let cached = cachedDashboardFromSyncStore(for: selectedDate) {
             dashboard = cached
             healthKitStatus = "Showing saved daily data"
+            return true
+        }
+        if let cached = dashboardCache.loadDashboard(for: selectedDate, calendar: calendar) {
+            dashboard = sourceRoutedCachedDashboard(for: selectedDate) ?? cached
+            healthKitStatus = "Showing latest available data"
             return true
         }
         if let historical = cachedDashboardFromHistoryStore(for: selectedDate) {
@@ -463,9 +952,16 @@ final class HomeViewModel: ObservableObject {
             PulsarSyncDebugLogger.log("silent payload update rejected because incoming data was older or invalid session=\(payload.syncSessionID?.uuidString ?? "none")")
             return
         }
-        dashboard = dashboard.applying(payload: payload, calendar: calendar)
+        dashboard = sourceRoutedCachedDashboard(for: selectedDate) ?? dashboard.applying(payload: payload, calendar: calendar)
         dashboardCache.save(dashboard)
-        healthKitStatus = payload.sourceDevice == .appleWatch ? "Synced from Apple Watch" : "HealthKit connected"
+        switch payload.sourceDevice {
+        case .appleWatch:
+            healthKitStatus = "Synced from Apple Watch"
+        case .ouraRing:
+            healthKitStatus = "HealthKit connected · Oura synced"
+        case .iPhone:
+            healthKitStatus = "HealthKit connected"
+        }
         PulsarSyncDebugLogger.log("silent payload update accepted source=\(payload.sourceDevice.rawValue) sleepDateKey=\(payload.sleep?.sleepDateKey ?? "none") session=\(payload.syncSessionID?.uuidString ?? "none") fingerprint=\(payload.resolvedDataFingerprint)")
     }
 
@@ -491,38 +987,50 @@ final class HomeViewModel: ObservableObject {
     }
 
     private func canonicalDashboard(for dashboard: HomeDashboard) -> HomeDashboard {
-        let sleepDateKey = SleepWindowResolver.sleepDateKey(forWakeUpDate: selectedDate, calendar: calendar)
-        let dateKey = PulsarDailyMetricsDateKey.dateKey(for: selectedDate, calendar: calendar)
-        var payload = syncStore.cachedDailyPayload(forDateKey: dateKey) ?? syncStore.cachedPayload(for: selectedDate, calendar: calendar)
-        if let sleepPayload = syncStore.cachedSleepPayload(forSleepDateKey: sleepDateKey) {
-            payload = payload.map { $0.merged(with: sleepPayload, calendar: calendar) } ?? sleepPayload
-        }
-        guard let payload else { return dashboard }
-        guard payload.isValidPayload else { return dashboard }
-        let currentTimestamp = latestVisibleMetricTimestamp(in: dashboard)
-        guard payload.syncedAt >= currentTimestamp || payloadImprovesAnyMetric(payload, dashboard: dashboard) else { return dashboard }
-        return dashboard.applying(payload: payload, calendar: calendar)
+        sourceRoutedCachedDashboard(for: selectedDate) ?? dashboard
     }
 
     private func cachedDashboardFromSyncStore(for day: Date) -> HomeDashboard? {
+        sourceRoutedCachedDashboard(for: day)
+    }
+
+    private func sourceRoutedCachedDashboard(for day: Date) -> HomeDashboard? {
         let dateKey = PulsarDailyMetricsDateKey.dateKey(for: day, calendar: calendar)
         let sleepDateKey = SleepWindowResolver.sleepDateKey(forWakeUpDate: day, calendar: calendar)
-        var payload = syncStore.cachedDailyPayload(forDateKey: dateKey) ?? syncStore.cachedPayload(for: day, calendar: calendar)
-        if let sleepPayload = syncStore.cachedSleepPayload(forSleepDateKey: sleepDateKey) {
-            payload = payload.map { $0.merged(with: sleepPayload, calendar: calendar) } ?? sleepPayload
+        var payloadsBySource = syncStore.cachedDailyPayloadsBySource(forDateKey: dateKey)
+            .mapValues { $0.sanitizedForDeclaredSource() }
+        for (source, sleepPayload) in syncStore.cachedSleepPayloadsBySource(forSleepDateKey: sleepDateKey) {
+            let sleepPayload = sleepPayload.sanitizedForDeclaredSource()
+            payloadsBySource[source] = payloadsBySource[source]
+                .map { $0.merged(with: sleepPayload, calendar: calendar).sanitizedForDeclaredSource() } ?? sleepPayload
         }
-        guard let payload, payload.isValidPayload else { return nil }
-        let base = HomeDashboard(
-            profile: profileStore.profile,
-            sleep: .missing,
-            recovery: .missing,
-            strain: .missing,
-            stress: .missing,
-            healthMonitor: .missing(date: day),
-            generatedAt: calendar.startOfDay(for: day),
-            usingSampleData: false
-        )
-        return base.applying(payload: payload, calendar: calendar)
+        if payloadsBySource.isEmpty,
+           let payload = syncStore.cachedDailyPayload(forDateKey: dateKey) ?? syncStore.cachedPayload(for: day, calendar: calendar) {
+            let payload = payload.sanitizedForDeclaredSource()
+            payloadsBySource[payload.sourceDevice] = payload
+        }
+        if let sleepPayload = syncStore.cachedSleepPayload(forSleepDateKey: sleepDateKey) {
+            let sleepPayload = sleepPayload.sanitizedForDeclaredSource()
+            payloadsBySource[sleepPayload.sourceDevice] = payloadsBySource[sleepPayload.sourceDevice]
+                .map { $0.merged(with: sleepPayload, calendar: calendar).sanitizedForDeclaredSource() } ?? sleepPayload
+        }
+        let sourceDashboards = sourceDashboards(from: payloadsBySource, date: day)
+        guard !sourceDashboards.isEmpty else { return nil }
+        let now = Date()
+        let routed = HealthDataSourceRouter(priorityStore: sourcePriorityStore, calendar: calendar)
+            .routedDashboard(
+                profile: profileStore.profile,
+                date: day,
+                generatedAt: sourceDashboards.values.map(\.generatedAt).max() ?? calendar.startOfDay(for: day),
+                sourceDashboards: sourceDashboards,
+                snapshots: sourcePrioritySnapshots(now: now),
+                now: now
+            )
+        #if DEBUG
+        PulsarSourceRouterLogger.log("cached payloads selectedDay=\(day) dateKey=\(dateKey) sleepDateKey=\(sleepDateKey) currentSources=\(diagnosticCurrentSourceSummary()) payloads=\(diagnosticPayloadSummary(payloadsBySource))")
+        logRoutedDashboardResult(context: "cachedPayloads", date: day, routed: routed, sourceDashboards: sourceDashboards)
+        #endif
+        return routed.dashboard
     }
 
     private func persistWidgetSnapshot(for dashboard: HomeDashboard) {
@@ -672,6 +1180,10 @@ final class HomeViewModel: ObservableObject {
         let currentSleepUpdatedAt = dashboard.sleep.lastUpdated ?? .distantPast
         let incomingDailyUpdatedAt = max(payload.strain?.computedAt ?? .distantPast, payload.recovery?.computedAt ?? .distantPast)
         let currentDailyUpdatedAt = max(dashboard.strain.lastUpdated ?? .distantPast, dashboard.recovery.lastUpdated ?? .distantPast)
+        let incomingStrainUpdatedAt = payload.strain?.computedAt ?? .distantPast
+        let currentStrainUpdatedAt = dashboard.strain.lastUpdated ?? .distantPast
+        let incomingRecoveryUpdatedAt = payload.recovery?.computedAt ?? .distantPast
+        let currentRecoveryUpdatedAt = dashboard.recovery.lastUpdated ?? .distantPast
         let incomingStressUpdatedAt = payload.stress?.computedAt ?? .distantPast
         let currentStressUpdatedAt = dashboard.stress.lastUpdated ?? .distantPast
         let canUseIncomingStressAsCanonical = payload.sourceDevice == .iPhone || !hasUsableStress(dashboard.stress)
@@ -679,6 +1191,10 @@ final class HomeViewModel: ObservableObject {
         let currentHealthMonitorUpdatedAt = dashboard.healthMonitor.lastUpdated ?? .distantPast
         return ((!hasUsableStrain(dashboard.strain) || !hasUsableRecovery(dashboard.recovery)) && payload.hasCompleteDailyScores) ||
         (payload.hasCompleteDailyScores && incomingDailyUpdatedAt > currentDailyUpdatedAt) ||
+        (!hasUsableStrain(dashboard.strain) && payload.hasValidStrain) ||
+        (payload.hasValidStrain && incomingStrainUpdatedAt > currentStrainUpdatedAt) ||
+        (!hasUsableRecovery(dashboard.recovery) && payload.hasValidRecovery) ||
+        (payload.hasValidRecovery && incomingRecoveryUpdatedAt > currentRecoveryUpdatedAt) ||
         (!hasUsableSleep(dashboard.sleep) && payload.sleep?.isValid == true) ||
         (payload.sleep?.isValid == true && incomingSleepUpdatedAt > currentSleepUpdatedAt) ||
         (!hasUsableStress(dashboard.stress) && payload.stress?.isValid == true) ||
@@ -686,6 +1202,214 @@ final class HomeViewModel: ObservableObject {
         (!hasUsableHealthMonitor(dashboard.healthMonitor) && payload.healthMonitor?.isValid == true) ||
         (payload.healthMonitor?.isValid == true && incomingHealthMonitorUpdatedAt > currentHealthMonitorUpdatedAt)
     }
+
+    #if DEBUG
+    private func logRoutedDashboardResult(
+        context: String,
+        date: Date,
+        routed: RoutedHealthDashboard,
+        sourceDashboards: [HealthSourceID: HomeDashboard]
+    ) {
+        let dateKey = PulsarDailyMetricsDateKey.dateKey(for: date, calendar: calendar)
+        let sleepDateKey = SleepWindowResolver.sleepDateKey(forWakeUpDate: date, calendar: calendar)
+        let sourceSamples = sourceDashboards
+            .sorted { $0.key.rawValue < $1.key.rawValue }
+            .map { "\($0.key.rawValue){\(diagnosticSampleCounts($0.value))}" }
+            .joined(separator: ";")
+        PulsarSourceRouterLogger.log("dashboard routed context=\(context) selectedDay=\(date) dateKey=\(dateKey) sleepDateKey=\(sleepDateKey) decisions=\(diagnosticDecisionSummary(routed.decisions)) sourceSamples=\(sourceSamples.isEmpty ? "none" : sourceSamples) \(diagnosticDashboardState(routed.dashboard))")
+    }
+
+    private func diagnosticPayloadSummary(_ payloadsBySource: [PulsarSyncSourceDevice: PulsarDailyMetricsSyncPayload]) -> String {
+        let summaries = payloadsBySource
+            .sorted { $0.key.rawValue < $1.key.rawValue }
+            .map { entry in
+                let source = entry.key
+                let payload = entry.value
+                let sleepSamples = payload.sleep?.analyzedSampleCount ?? 0
+                let healthSamples = payload.healthMonitor?.metrics.filter { $0.value != nil }.count ?? 0
+                let recoveryInputs = [
+                    payload.recovery?.hrvSDNN,
+                    payload.recovery?.restingHeartRate,
+                    payload.recovery?.sleepDuration,
+                    payload.recovery?.strainScore,
+                    payload.recovery?.respiratoryRate,
+                    payload.recovery?.oxygenSaturation,
+                    payload.recovery?.wristTemperatureDeviation
+                ].compactMap { $0 }.count
+                let missing = diagnosticMissingPayloadMetrics(payload)
+                return "\(source.sourceRouterLogName){dateKey=\(payload.resolvedDateKey),sleepMinutes=\(diagnosticMinutes(payload.sleep?.totalSleepMinutes)),sleepSamples=\(sleepSamples),recoveryScore=\(payload.recovery?.score.description ?? "nil"),recoveryInputs=\(recoveryInputs),rhr=\(diagnosticNumber(payload.recovery?.restingHeartRate ?? syncHealthValue(.restingHeartRate, in: payload))),hrv=\(diagnosticNumber(payload.recovery?.hrvSDNN ?? syncHealthValue(.hrv, in: payload))),strainSamples=\(payload.strain?.analyzedSampleCount ?? 0),daytimeHRRows=\(payload.strain?.heartRateSampleCount ?? 0),workoutRows=\(payload.strain?.workoutSampleCount ?? 0),stressTimeline=\(payload.stress?.timelineSamples.count ?? 0),healthSamples=\(healthSamples),missing=\(missing.isEmpty ? "none" : missing.joined(separator: ","))}"
+            }
+        return summaries.isEmpty ? "none" : summaries.joined(separator: ";")
+    }
+
+    private func syncHealthValue(_ kind: PulsarHealthMetricSyncKind, in payload: PulsarDailyMetricsSyncPayload) -> Double? {
+        payload.healthMonitor?.metrics.first(where: { $0.kind == kind })?.value
+    }
+
+    private func diagnosticMissingPayloadMetrics(_ payload: PulsarDailyMetricsSyncPayload) -> [String] {
+        var missing: [String] = []
+        if payload.sleep?.isValid != true { missing.append("sleep") }
+        if payload.recovery?.isValid != true { missing.append("recovery") }
+        if payload.strain?.isValid != true { missing.append("strain") }
+        if payload.stress?.isValid != true { missing.append("stress") }
+        for kind in PulsarHealthMetricSyncKind.allCases {
+            if payload.healthMonitor?.metrics.first(where: { $0.kind == kind })?.value == nil {
+                missing.append("health.\(kind.rawValue)")
+            }
+        }
+        return missing
+    }
+
+    private func diagnosticCurrentSourceSummary() -> String {
+        HealthSourcePriorityCategory.allCases.map { category in
+            let preference = sourcePriorityStore.preference(for: category)
+            return "\(category.rawValue){current=\(preference.currentSource.rawValue),fallbackEnabled=\(preference.fallbackEnabled)}"
+        }
+        .joined(separator: ";")
+    }
+
+    private func diagnosticDecisionSummary(_ decisions: [HealthSourcePriorityCategory: SourceRoutingDecision]) -> String {
+        HealthSourcePriorityCategory.allCases.map { category in
+            guard let decision = decisions[category] else {
+                let preference = sourcePriorityStore.preference(for: category)
+                return "\(category.rawValue){current=\(preference.currentSource.rawValue),displayed=none,fallback=false,fallbackEnabled=\(preference.fallbackEnabled),samples=0}"
+            }
+            return "\(category.rawValue){current=\(decision.currentSource.rawValue),displayed=\(diagnosticSourceText(decision.displayedSource)),fallback=\(decision.isFallback),fallbackEnabled=\(decision.fallbackEnabled),last=\(diagnosticDate(decision.lastDataAt))}"
+        }
+        .joined(separator: ";")
+    }
+
+    private func diagnosticRenderedRoutes(_ dashboard: HomeDashboard) -> String {
+        let hrv = dashboard.healthMonitor.metric(.hrv)
+        let rhr = dashboard.healthMonitor.metric(.restingHeartRate)
+        return [
+            diagnosticRenderedRoute(name: "sleep", category: .sleepRecovery, sourceBadges: dashboard.sleep.sourceBadges, sampleCount: dashboard.sleep.analyzedSampleCount),
+            diagnosticRenderedRoute(name: "recovery", category: .sleepRecovery, sourceBadges: dashboard.recovery.sourceBadges, sampleCount: dashboard.recovery.analyzedSampleCount),
+            diagnosticRenderedRoute(name: "activity", category: .activitySteps, sourceBadges: dashboard.strain.sourceBadges, sampleCount: dashboard.strain.analyzedSampleCount),
+            diagnosticRenderedRoute(name: "workouts", category: .workoutsActivity, sourceBadges: dashboard.strain.sourceBadges, sampleCount: dashboard.strain.workouts.count),
+            diagnosticRenderedRoute(name: "stress", category: .stressResilience, sourceBadges: dashboard.stress.sourceBadges, sampleCount: dashboard.stress.analyzedSampleCount),
+            diagnosticMetricRoute(name: "rhr", metric: rhr, defaultCategory: .heartMetrics),
+            diagnosticMetricRoute(name: "hrv", metric: hrv, defaultCategory: .heartMetrics)
+        ].joined(separator: ";")
+    }
+
+    private func diagnosticRenderedRoute(
+        name: String,
+        category: HealthSourcePriorityCategory,
+        sourceBadges: [SourceProvenance],
+        sampleCount: Int
+    ) -> String {
+        let preference = sourcePriorityStore.preference(for: category)
+        let displayed = diagnosticSourceID(from: sourceBadges)
+        let isFallback = displayed.map { $0 != preference.currentSource } ?? false
+        return "\(name){current=\(preference.currentSource.rawValue),displayed=\(diagnosticSourceText(displayed)),fallback=\(isFallback),fallbackEnabled=\(preference.fallbackEnabled),samples=\(sampleCount)}"
+    }
+
+    private func diagnosticMetricRoute(
+        name: String,
+        metric: HealthMetricModel,
+        defaultCategory: HealthSourcePriorityCategory
+    ) -> String {
+        let category = metric.sourceResolution?.category ?? defaultCategory
+        let preference = sourcePriorityStore.preference(for: category)
+        let current = metric.sourceResolution?.currentSource ?? preference.currentSource
+        let displayed = metric.sourceResolution?.displayedRecordSource ?? diagnosticSourceID(from: metric.sourceBadges)
+        let isFallback = metric.sourceResolution?.fallbackUsed ?? (displayed.map { $0 != current } ?? false)
+        return "\(name){current=\(current.rawValue),displayed=\(diagnosticSourceText(displayed)),fallback=\(isFallback),fallbackEnabled=\(preference.fallbackEnabled),samples=\(metric.hasData ? 1 : 0)}"
+    }
+
+    private func diagnosticDashboardState(_ dashboard: HomeDashboard, uiRenderedSleepMinutes: Double? = nil) -> String {
+        let hrv = dashboard.healthMonitor.metric(.hrv)
+        let rhr = dashboard.healthMonitor.metric(.restingHeartRate)
+        let missing = diagnosticMissingMetrics(in: dashboard)
+        let uiSleep = uiRenderedSleepMinutes.map(diagnosticMinutes) ?? "nil"
+        return "rendered={sleepScore=\(dashboard.sleep.score),recoveryScore=\(dashboard.recovery.score),strainScore=\(dashboard.strain.score),stressScore=\(dashboard.stress.score.map(String.init) ?? "nil"),sleepMinutes=\(diagnosticMinutes(dashboard.sleep.totalSleepMinutes)),uiSleepMinutes=\(uiSleep),rhr=\(diagnosticNumber(rhr.value ?? dashboard.recovery.restingHeartRate)),hrv=\(diagnosticNumber(hrv.value ?? dashboard.recovery.hrvSDNN)),samples={\(diagnosticSampleCounts(dashboard))},recoveryInputs={\(diagnosticRecoveryInputs(dashboard.recovery))},missingMetrics=\(missing.isEmpty ? "none" : missing.joined(separator: ","))}"
+    }
+
+    private func diagnosticSampleCounts(_ dashboard: HomeDashboard) -> String {
+        [
+            "sleep=\(dashboard.sleep.analyzedSampleCount)",
+            "recovery=\(dashboard.recovery.analyzedSampleCount)",
+            "strain=\(dashboard.strain.analyzedSampleCount)",
+            "workouts=\(dashboard.strain.workouts.count)",
+            "stress=\(dashboard.stress.analyzedSampleCount)",
+            "stressTimeline=\(dashboard.stress.dailySamples.count)",
+            "healthMonitor=\(dashboard.healthMonitor.availableMetricCount)",
+            "rhr=\(dashboard.healthMonitor.metric(.restingHeartRate).hasData ? 1 : 0)",
+            "hrv=\(dashboard.healthMonitor.metric(.hrv).hasData ? 1 : 0)"
+        ].joined(separator: ",")
+    }
+
+    private func diagnosticRecoveryInputs(_ recovery: RecoverySummary) -> String {
+        [
+            "score=\(recovery.score)",
+            "hrv=\(diagnosticNumber(recovery.hrvSDNN))",
+            "hrvBaseline=\(diagnosticNumber(recovery.hrvBaseline))",
+            "rhr=\(diagnosticNumber(recovery.restingHeartRate))",
+            "rhrBaseline=\(diagnosticNumber(recovery.restingHeartRateBaseline))",
+            "sleepMinutes=\(diagnosticMinutes(recovery.sleepDuration.map { $0 / 60 }))",
+            "sleepEfficiency=\(diagnosticNumber(recovery.sleepEfficiency, fractionDigits: 3))",
+            "strainScore=\(diagnosticNumber(recovery.strainScore))",
+            "hrvReadiness=\(diagnosticNumber(recovery.hrvReadiness, fractionDigits: 3))",
+            "rhrReadiness=\(diagnosticNumber(recovery.restingHeartRateReadiness, fractionDigits: 3))",
+            "sleepContribution=\(diagnosticNumber(recovery.sleepContribution, fractionDigits: 3))",
+            "strainPenalty=\(diagnosticNumber(recovery.strainPenalty, fractionDigits: 3))"
+        ].joined(separator: ",")
+    }
+
+    private func diagnosticMissingMetrics(in dashboard: HomeDashboard) -> [String] {
+        var missing: [String] = []
+        if !hasUsableSleep(dashboard.sleep) { missing.append("sleep") }
+        if !hasUsableRecovery(dashboard.recovery) { missing.append("recovery") }
+        if !hasUsableStrain(dashboard.strain) { missing.append("strain") }
+        if !hasUsableStress(dashboard.stress) { missing.append("stress") }
+        for kind in HealthMetricKind.allCases {
+            if !dashboard.healthMonitor.metric(kind).hasData {
+                missing.append("health.\(kind.rawValue)")
+            }
+        }
+        return missing
+    }
+
+    private func diagnosticSourceID(from badges: [SourceProvenance]) -> HealthSourceID? {
+        guard let first = badges.first else { return nil }
+        let text = [
+            first.sourceName,
+            first.sourceBundleIdentifier,
+            first.productType,
+            first.deviceName,
+            first.deviceManufacturer,
+            first.deviceModel
+        ]
+            .compactMap { $0?.lowercased() }
+            .joined(separator: " ")
+        if text.contains("oura") { return .ouraRing }
+        if first.isAppleWatchLike || text.contains("watch") || text.contains("healthkit") || text.contains("apple health") {
+            return .appleWatch
+        }
+        if text.contains("iphone") { return .iPhone }
+        if text.contains("manual") { return .manual }
+        return nil
+    }
+
+    private func diagnosticSourceText(_ source: HealthSourceID?) -> String {
+        source?.rawValue ?? "none"
+    }
+
+    private func diagnosticMinutes(_ value: Double?) -> String {
+        guard let value, value.isFinite else { return "nil" }
+        return String(format: "%.1f", value)
+    }
+
+    private func diagnosticNumber(_ value: Double?, fractionDigits: Int = 1) -> String {
+        guard let value, value.isFinite else { return "nil" }
+        return String(format: "%.\(fractionDigits)f", value)
+    }
+
+    private func diagnosticDate(_ value: Date?) -> String {
+        value.map { "\($0)" } ?? "nil"
+    }
+    #endif
 
     private func logStrainValidation(dashboard: HomeDashboard, context: String) {
         let strain = dashboard.strain
@@ -729,6 +1453,12 @@ final class HomeViewModel: ObservableObject {
         )
     }
 
+    private func visibleMetricsAreStale(now: Date) -> Bool {
+        let latest = latestVisibleMetricTimestamp(in: dashboard)
+        guard latest > .distantPast else { return true }
+        return now.timeIntervalSince(latest) >= syncPolicy.staleVisibleMetricMinimumInterval
+    }
+
     private func hasVisibleMetrics(_ dashboard: HomeDashboard) -> Bool {
         hasUsableStrain(dashboard.strain) || hasUsableRecovery(dashboard.recovery) || hasUsableSleep(dashboard.sleep) || hasUsableStress(dashboard.stress) || hasUsableHealthMonitor(dashboard.healthMonitor)
     }
@@ -746,7 +1476,18 @@ final class HomeViewModel: ObservableObject {
     }
 
     private func hasUsableStress(_ summary: StressSummary) -> Bool {
-        summary.score != nil || summary.state == .buildingBaseline || summary.analyzedSampleCount > 0
+        summary.score != nil ||
+            summary.state == .workoutPaused ||
+            summary.state == .cooldown ||
+            !summary.dailySamples.isEmpty ||
+            (summary.state == .buildingBaseline && (summary.lastHeartRate != nil || summary.lastHRV != nil))
+    }
+
+    private func dailyStressScore(from summary: StressSummary) -> Int? {
+        let average = PulsarStressTimelineDistribution.weightedAverage(
+            samples: summary.dailySamples.map { PulsarStressTimelineSample(timestamp: $0.timestamp, score: $0.score) }
+        )
+        return (average ?? summary.currentScore).map(PulsarStressScale.roundedScore)
     }
 
     private func hasUsableHealthMonitor(_ summary: HealthMonitorSummary) -> Bool {

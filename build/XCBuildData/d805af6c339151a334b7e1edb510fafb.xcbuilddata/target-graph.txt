@@ -1,2 +1,0 @@
-Target dependency graph (1 target)
-Target 'PulsarWidgetsExtension' in project 'Pulsar' (no dependencies)

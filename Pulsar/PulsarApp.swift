@@ -11,6 +11,8 @@ import SwiftUI
 struct PulsarApp: App {
     init() {
         AppLifecycleStore().registerFirstLaunchIfNeeded()
+        PulsarBackgroundRefreshCoordinator.register()
+        PulsarBackgroundRefreshCoordinator.schedule(reason: "appLaunch")
     }
 
     var body: some Scene {

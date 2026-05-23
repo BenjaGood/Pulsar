@@ -9,14 +9,16 @@ import UIKit
 
 struct LabView: View {
     @ObservedObject var profileStore: ProfileStore
+    private let onClose: (() -> Void)?
     @StateObject private var store = LabModuleStore()
     @State private var isVisible = false
     @State private var isShowingImport = false
     @State private var isShowingManualEntry = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(profileStore: ProfileStore, startsVisible: Bool = false) {
+    init(profileStore: ProfileStore, startsVisible: Bool = false, onClose: (() -> Void)? = nil) {
         self.profileStore = profileStore
+        self.onClose = onClose
         _isVisible = State(initialValue: startsVisible)
     }
 
@@ -76,10 +78,23 @@ struct LabView: View {
                 .padding(.top, 14)
                 .padding(.bottom, 36)
             }
-            .pulsarBottomChromeScrollTracking()
+            .safeAreaPadding(.bottom, 16)
             .background(LabModuleBackground())
-            .premiumScrollHeaderBlur(height: 56)
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationTitle("Lab")
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                if let onClose {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            onClose()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.body.weight(.semibold))
+                        }
+                        .accessibilityLabel("Close Lab")
+                    }
+                }
+            }
         }
         .task {
             store.refresh(profile: profileStore.profile)

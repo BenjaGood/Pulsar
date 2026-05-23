@@ -66,32 +66,87 @@ actor PulsarRunHistoryStore {
             healthStore.execute(query)
         }
 
-        return workouts.map { workout in
+        var summaries: [PulsarRunSummary] = []
+        for workout in workouts {
             let sessionId = PulsarWorkoutMetadata.sessionId(from: workout.metadata)
+            if Self.isPulsarGymWorkout(workout.metadata) {
+                PulsarSyncDebugLogger.log("Run HealthKit import skipped Gym workout session=\(sessionId?.uuidString ?? "none") type=\(PulsarWorkoutMetadata.workoutType(from: workout.metadata) ?? "unknown")")
+                continue
+            }
             let workoutKind = PulsarOutdoorWorkoutKind(metadata: workout.metadata, fallbackActivityType: workout.workoutActivityType)
             let startedFrom = PulsarWorkoutMetadata.startedFrom(from: workout.metadata)
-            PulsarSyncDebugLogger.log("Run HealthKit metadata received session=\(sessionId?.uuidString ?? "none") type=\(PulsarWorkoutMetadata.workoutType(from: workout.metadata) ?? workoutKind.rawValue) startedFrom=\(startedFrom?.rawValue ?? "unknown") hkType=\(workout.workoutActivityType.rawValue) source=\(workout.sourceRevision.source.name)")
-            return PulsarRunSummary(
+            let isAppleWatchSource = startedFrom?.isAppleWatchRecorder == true ||
+                workout.sourceRevision.source.name.localizedCaseInsensitiveContains("watch")
+            if isAppleWatchSource {
+                await MainActor.run {
+                    PulsarWatchConnectivitySyncStore.shared.recordAppleWatchSeen(
+                        reason: "runHealthKitMetadata",
+                        payloadKind: "healthKitWorkoutMetadata"
+                    )
+                }
+            }
+            PulsarSyncDebugLogger.log("Run HealthKit metadata received session=\(sessionId?.uuidString ?? "none") type=\(PulsarWorkoutMetadata.workoutType(from: workout.metadata) ?? workoutKind.rawValue) startedFrom=\(startedFrom?.rawValue ?? "unknown") hkType=\(workout.workoutActivityType.rawValue) source=\(workout.sourceRevision.source.name) watchSource=\(isAppleWatchSource)")
+            let importedRoute = workoutKind.isOutdoorDistanceWorkout
+                ? await PulsarHealthKitWorkoutRouteImporter.route(for: workout, healthStore: healthStore)
+                : nil
+            let route = importedRoute?.runCoordinates ?? []
+            let elevationMetrics = importedRoute?.elevationMetrics
+            let heartRateMetrics = await fetchHeartRateMetrics(
+                healthStore: healthStore,
+                startDate: workout.startDate,
+                endDate: workout.endDate
+            )
+            summaries.append(PulsarRunSummary(
                 id: workout.uuid,
                 pulsarWorkoutSessionId: sessionId,
                 workoutUUID: workout.uuid,
                 workoutKind: workoutKind,
                 startedAt: workout.startDate,
                 endedAt: workout.endDate,
-                source: startedFrom == .appleWatch || workout.sourceRevision.source.name.localizedCaseInsensitiveContains("watch") ? .appleWatch : .iPhone,
+                source: isAppleWatchSource ? .appleWatch : .iPhone,
                 distanceMeters: workout.totalDistance?.doubleValue(for: .meter()) ?? 0,
                 elapsedTime: workout.duration,
                 movingTime: workout.duration,
-                activeEnergyKilocalories: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
-                elevationGainMeters: 0,
-                averageHeartRate: nil,
-                maxHeartRate: nil,
+                activeEnergyKilocalories: Self.activeEnergyKilocalories(for: workout),
+                elevationGainMeters: elevationMetrics?.gainMeters ?? 0,
+                elevationLossMeters: elevationMetrics?.lossMeters ?? 0,
+                minimumElevationMeters: elevationMetrics?.minimumElevationMeters,
+                maximumElevationMeters: elevationMetrics?.maximumElevationMeters,
+                averageHeartRate: heartRateMetrics.average,
+                maxHeartRate: heartRateMetrics.maximum,
                 steps: nil,
                 averageCadenceStepsPerMinute: nil,
-                route: [],
-                splits: []
-            )
+                route: route,
+                splits: importedRoute.map { PulsarHealthKitWorkoutRouteImporter.splitEstimates(from: $0) } ?? []
+            ))
         }
+        return summaries
+    }
+
+    private func fetchHeartRateMetrics(
+        healthStore: HKHealthStore,
+        startDate: Date,
+        endDate: Date
+    ) async -> (average: Double?, maximum: Double?) {
+        guard let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
+            return (nil, nil)
+        }
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate)
+        let samples: [HKQuantitySample] = await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: heartRateType,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: nil
+            ) { _, samples, _ in
+                continuation.resume(returning: samples as? [HKQuantitySample] ?? [])
+            }
+            healthStore.execute(query)
+        }
+        let values = samples.map { $0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute())) }
+            .filter { $0 > 0 }
+        guard !values.isEmpty else { return (nil, nil) }
+        return (values.reduce(0, +) / Double(values.count), values.max())
     }
 
     private func isSameWorkout(_ first: PulsarRunSummary, _ second: PulsarRunSummary) -> Bool {
@@ -109,10 +164,28 @@ actor PulsarRunHistoryStore {
 
         return first.id == second.id
     }
+
+    private nonisolated static func activeEnergyKilocalories(for workout: HKWorkout) -> Double? {
+        guard let activeEnergyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) else { return nil }
+        return workout.statistics(for: activeEnergyType)?
+            .sumQuantity()?
+            .doubleValue(for: .kilocalorie())
+    }
+
+    private nonisolated static func isPulsarGymWorkout(_ metadata: [String: Any]?) -> Bool {
+        guard let metadata else { return false }
+        let rawType = PulsarWorkoutMetadata.workoutType(from: metadata)
+        if rawType == PulsarGymWorkoutKind.routine.rawValue ||
+            rawType == PulsarGymWorkoutKind.freeWorkout.rawValue {
+            return true
+        }
+        guard let category = metadata["PulsarWorkoutCategory"] as? String else { return false }
+        return category.localizedCaseInsensitiveCompare(PulsarGymWorkoutKind.routine.categoryName) == .orderedSame
+    }
 }
 
 private extension PulsarRunSummary {
-    func merged(with incoming: PulsarRunSummary) -> PulsarRunSummary {
+    nonisolated func merged(with incoming: PulsarRunSummary) -> PulsarRunSummary {
         var merged = incoming
         merged.pulsarWorkoutSessionId = incoming.pulsarWorkoutSessionId ?? pulsarWorkoutSessionId
         merged.workoutUUID = incoming.workoutUUID ?? workoutUUID
@@ -128,6 +201,10 @@ private extension PulsarRunSummary {
         merged.averageCadenceStepsPerMinute = incoming.averageCadenceStepsPerMinute ?? averageCadenceStepsPerMinute
         merged.distanceMeters = incoming.distanceMeters > 0 ? incoming.distanceMeters : distanceMeters
         merged.elevationGainMeters = incoming.elevationGainMeters > 0 ? incoming.elevationGainMeters : elevationGainMeters
+        merged.elevationLossMeters = incoming.elevationLossMeters > 0 ? incoming.elevationLossMeters : elevationLossMeters
+        merged.minimumElevationMeters = incoming.minimumElevationMeters ?? minimumElevationMeters
+        merged.maximumElevationMeters = incoming.maximumElevationMeters ?? maximumElevationMeters
+        merged.weatherSummary = incoming.weatherSummary ?? weatherSummary
         merged.movingTime = incoming.movingTime > 0 ? incoming.movingTime : movingTime
         merged.elapsedTime = incoming.elapsedTime > 0 ? incoming.elapsedTime : elapsedTime
         return merged

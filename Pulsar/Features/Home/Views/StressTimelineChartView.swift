@@ -172,6 +172,11 @@ struct StressTimelineChartView: View {
                 Text(total > 0 ? "Usable \(durationText(total))" : "No usable intervals")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(secondaryText)
+                if let range = timeRange, total > 0 {
+                    Text("of \(durationText(range.duration))")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(secondaryText.opacity(0.78))
+                }
             }
 
             HStack(spacing: 7) {
@@ -229,6 +234,11 @@ struct StressTimelineChartView: View {
     }
 
     private var timeRange: DateInterval? {
+        if let start = summary.queryStart,
+           let end = summary.queryEnd,
+           end > start {
+            return DateInterval(start: start, end: end)
+        }
         guard let first = sortedSamples.first?.timestamp,
               let last = sortedSamples.last?.timestamp,
               last > first else { return nil }
@@ -577,8 +587,10 @@ struct StressTimelineChartView: View {
             return "moon.zzz.fill"
         case .workout:
             return "figure.run"
-        case .rest, .recovery:
+        case .cooldown, .rest, .recovery:
             return "leaf.fill"
+        case .movementFiltered:
+            return "figure.walk"
         case .active:
             return "bolt.heart.fill"
         case .unknown, nil:
@@ -594,8 +606,12 @@ struct StressTimelineChartView: View {
             return "Workout pause"
         case .rest:
             return "Resting physiology"
-        case .recovery:
+        case .cooldown:
             return "Cooldown pause"
+        case .recovery:
+            return "Recovery context"
+        case .movementFiltered:
+            return "Movement filtered"
         case .active:
             return "Activity context"
         case .unknown, nil:

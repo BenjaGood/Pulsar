@@ -4,28 +4,40 @@
 //
 
 import Foundation
+import CoreLocation
 import HealthKit
 
 enum PulsarWorkoutStartedFrom: String, Codable, Hashable {
     case iPhone
     case appleWatch = "AppleWatch"
+    case iPhoneRequestedWatchStart
 
-    var displayName: String {
+    nonisolated var displayName: String {
         switch self {
         case .iPhone: "iPhone"
         case .appleWatch: "Apple Watch"
+        case .iPhoneRequestedWatchStart: "Apple Watch"
+        }
+    }
+
+    nonisolated var isAppleWatchRecorder: Bool {
+        switch self {
+        case .appleWatch, .iPhoneRequestedWatchStart:
+            true
+        case .iPhone:
+            false
         }
     }
 }
 
 enum PulsarWorkoutMetadata {
-    static let brandName = "Pulsar"
-    static let sessionIdKey = "pulsarWorkoutSessionId"
-    static let workoutTypeKey = "pulsarWorkoutType"
-    static let startedFromKey = "pulsarStartedFrom"
-    static let legacySessionIdKey = "PulsarSessionID"
+    nonisolated static let brandName = "Pulsar"
+    nonisolated static let sessionIdKey = "pulsarWorkoutSessionId"
+    nonisolated static let workoutTypeKey = "pulsarWorkoutType"
+    nonisolated static let startedFromKey = "pulsarStartedFrom"
+    nonisolated static let legacySessionIdKey = "PulsarSessionID"
 
-    static func base(
+    nonisolated static func base(
         sessionId: UUID,
         workoutType: String,
         startedFrom: PulsarWorkoutStartedFrom
@@ -38,18 +50,18 @@ enum PulsarWorkoutMetadata {
         ]
     }
 
-    static func sessionId(from metadata: [String: Any]?) -> UUID? {
+    nonisolated static func sessionId(from metadata: [String: Any]?) -> UUID? {
         guard let metadata else { return nil }
         let rawValue = metadata[sessionIdKey] as? String ?? metadata[legacySessionIdKey] as? String
         return rawValue.flatMap(UUID.init(uuidString:))
     }
 
-    static func workoutType(from metadata: [String: Any]?) -> String? {
+    nonisolated static func workoutType(from metadata: [String: Any]?) -> String? {
         (metadata?[workoutTypeKey] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func startedFrom(from metadata: [String: Any]?) -> PulsarWorkoutStartedFrom? {
+    nonisolated static func startedFrom(from metadata: [String: Any]?) -> PulsarWorkoutStartedFrom? {
         guard let rawValue = (metadata?[startedFromKey] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
         return PulsarWorkoutStartedFrom(rawValue: rawValue)
@@ -77,9 +89,9 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
     case cooldown
     case other
 
-    var id: String { rawValue }
+    nonisolated var id: String { rawValue }
 
-    var displayName: String {
+    nonisolated var displayName: String {
         switch self {
         case .running: "Running"
         case .walking: "Walking"
@@ -103,7 +115,7 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
         }
     }
 
-    var shortName: String {
+    nonisolated var shortName: String {
         switch self {
         case .running: "Run"
         case .walking: "Walk"
@@ -127,7 +139,7 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
         }
     }
 
-    var actionName: String {
+    nonisolated var actionName: String {
         switch self {
         case .running: "run"
         case .walking: "walk"
@@ -151,19 +163,19 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
         }
     }
 
-    var outdoorTitle: String {
+    nonisolated var outdoorTitle: String {
         isOutdoorDistanceWorkout ? "Outdoor \(shortName)" : displayName
     }
 
-    var startTitle: String {
+    nonisolated var startTitle: String {
         "Start \(shortName)"
     }
 
-    var savedTitle: String {
+    nonisolated var savedTitle: String {
         "\(shortName) Saved"
     }
 
-    var systemImageName: String {
+    nonisolated var systemImageName: String {
         switch self {
         case .running: "figure.run"
         case .walking: "figure.walk"
@@ -187,7 +199,7 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
         }
     }
 
-    var healthKitActivityType: HKWorkoutActivityType {
+    nonisolated var healthKitActivityType: HKWorkoutActivityType {
         switch self {
         case .running: .running
         case .walking: .walking
@@ -199,7 +211,7 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
         case .pilates: .pilates
         case .swimming: .swimming
         case .rowing: .rowing
-        case .dance: .dance
+        case .dance: .cardioDance
         case .boxing: .boxing
         case .stretching: .flexibility
         case .core: .coreTraining
@@ -211,7 +223,7 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
         }
     }
 
-    var defaultLocationType: HKWorkoutSessionLocationType {
+    nonisolated var defaultLocationType: HKWorkoutSessionLocationType {
         switch self {
         case .running, .walking, .hiking, .cycling:
             .outdoor
@@ -222,7 +234,7 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
         }
     }
 
-    var isOutdoorDistanceWorkout: Bool {
+    nonisolated var isOutdoorDistanceWorkout: Bool {
         switch self {
         case .running, .walking, .hiking, .cycling:
             true
@@ -231,7 +243,7 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
         }
     }
 
-    init(activityType: HKWorkoutActivityType) {
+    nonisolated init(activityType: HKWorkoutActivityType) {
         switch activityType {
         case .running:
             self = .running
@@ -253,7 +265,7 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
             self = .swimming
         case .rowing:
             self = .rowing
-        case .dance, .socialDance:
+        case .cardioDance, .socialDance:
             self = .dance
         case .boxing, .kickboxing:
             self = .boxing
@@ -272,7 +284,7 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
         }
     }
 
-    init(metadata: [String: Any]?, fallbackActivityType: HKWorkoutActivityType) {
+    nonisolated init(metadata: [String: Any]?, fallbackActivityType: HKWorkoutActivityType) {
         if let rawType = PulsarWorkoutMetadata.workoutType(from: metadata),
            let workoutKind = PulsarOutdoorWorkoutKind(rawValue: rawType) {
             self = workoutKind
@@ -290,13 +302,44 @@ enum PulsarActiveWorkoutSyncPhase: String, Codable, Hashable {
     case ending
     case ended
     case failed
+    case cancelled
 
-    var isLive: Bool {
+    nonisolated var isLive: Bool {
         switch self {
         case .starting, .active, .paused, .resumed, .ending:
             true
-        case .ended, .failed:
+        case .ended, .failed, .cancelled:
             false
+        }
+    }
+
+    nonisolated var isRestoreEligible: Bool {
+        switch self {
+        case .starting, .active, .paused, .resumed:
+            true
+        case .ending, .ended, .failed, .cancelled:
+            false
+        }
+    }
+
+    nonisolated var mergePriority: Int {
+        switch self {
+        case .starting:
+            0
+        case .active:
+            1
+        case .resumed:
+            2
+        case .paused:
+            3
+        case .ending:
+            4
+        case .ended:
+            5
+        case .cancelled:
+            6
+        case .failed:
+            7
         }
     }
 }
@@ -316,7 +359,7 @@ enum PulsarActiveWorkoutSyncKind: Codable, Hashable {
         case gym
     }
 
-    var displayName: String {
+    nonisolated var displayName: String {
         switch self {
         case .outdoor(let kind):
             kind.displayName
@@ -325,7 +368,7 @@ enum PulsarActiveWorkoutSyncKind: Codable, Hashable {
         }
     }
 
-    var workoutTypeRawValue: String {
+    nonisolated var workoutTypeRawValue: String {
         switch self {
         case .outdoor(let kind):
             kind.rawValue
@@ -334,12 +377,12 @@ enum PulsarActiveWorkoutSyncKind: Codable, Hashable {
         }
     }
 
-    var outdoorWorkoutKind: PulsarOutdoorWorkoutKind? {
+    nonisolated var outdoorWorkoutKind: PulsarOutdoorWorkoutKind? {
         if case .outdoor(let kind) = self { return kind }
         return nil
     }
 
-    var gymWorkoutKind: PulsarGymWorkoutKind? {
+    nonisolated var gymWorkoutKind: PulsarGymWorkoutKind? {
         if case .gym(let kind) = self { return kind }
         return nil
     }
@@ -368,7 +411,7 @@ enum PulsarActiveWorkoutSyncKind: Codable, Hashable {
 }
 
 struct PulsarActiveWorkoutSyncState: Codable, Hashable, Identifiable {
-    var id: UUID { sessionId }
+    nonisolated var id: UUID { sessionId }
 
     var sessionId: UUID
     var kind: PulsarActiveWorkoutSyncKind
@@ -383,12 +426,39 @@ struct PulsarActiveWorkoutSyncState: Codable, Hashable, Identifiable {
     var activeEnergyKilocalories: Double?
     var healthKitWorkoutUUID: UUID?
     var updatedAt: Date
+    var sessionGeneration: Int?
+    var runMetricsUpdatedAt: Date?
+    var movingSeconds: Int?
+    var distanceMeters: Double?
+    var currentPaceSecondsPerKilometer: Double?
+    var averagePaceSecondsPerKilometer: Double?
+    var splitPaceSecondsPerKilometer: Double?
+    var activeSplitIndex: Int?
+    var elevationGainMeters: Double?
+    var elevationLossMeters: Double?
+    var currentElevationMeters: Double?
+    var averageHeartRate: Double?
+    var maxHeartRate: Double?
+    var stepCount: Int?
+    var cadenceStepsPerMinute: Double?
+    var routePointCount: Int?
+    var lastLatitude: Double?
+    var lastLongitude: Double?
+    var lastLocationUpdatedAt: Date?
 
-    var isEnded: Bool {
-        phase == .ended || phase == .failed
+    nonisolated var isEnded: Bool {
+        phase == .ended || phase == .failed || phase == .cancelled
     }
 
-    init(
+    nonisolated var averageSpeedMetersPerSecond: Double? {
+        guard let distanceMeters,
+              distanceMeters > 0,
+              let movingSeconds,
+              movingSeconds > 0 else { return nil }
+        return distanceMeters / Double(movingSeconds)
+    }
+
+    nonisolated init(
         sessionId: UUID,
         kind: PulsarActiveWorkoutSyncKind,
         displayName: String? = nil,
@@ -401,7 +471,26 @@ struct PulsarActiveWorkoutSyncState: Codable, Hashable, Identifiable {
         currentHeartRate: Double? = nil,
         activeEnergyKilocalories: Double? = nil,
         healthKitWorkoutUUID: UUID? = nil,
-        updatedAt: Date = Date()
+        updatedAt: Date = Date(),
+        sessionGeneration: Int? = nil,
+        runMetricsUpdatedAt: Date? = nil,
+        movingSeconds: Int? = nil,
+        distanceMeters: Double? = nil,
+        currentPaceSecondsPerKilometer: Double? = nil,
+        averagePaceSecondsPerKilometer: Double? = nil,
+        splitPaceSecondsPerKilometer: Double? = nil,
+        activeSplitIndex: Int? = nil,
+        elevationGainMeters: Double? = nil,
+        elevationLossMeters: Double? = nil,
+        currentElevationMeters: Double? = nil,
+        averageHeartRate: Double? = nil,
+        maxHeartRate: Double? = nil,
+        stepCount: Int? = nil,
+        cadenceStepsPerMinute: Double? = nil,
+        routePointCount: Int? = nil,
+        lastLatitude: Double? = nil,
+        lastLongitude: Double? = nil,
+        lastLocationUpdatedAt: Date? = nil
     ) {
         self.sessionId = sessionId
         self.kind = kind
@@ -416,11 +505,160 @@ struct PulsarActiveWorkoutSyncState: Codable, Hashable, Identifiable {
         self.activeEnergyKilocalories = activeEnergyKilocalories
         self.healthKitWorkoutUUID = healthKitWorkoutUUID
         self.updatedAt = updatedAt
+        self.sessionGeneration = sessionGeneration ?? Int(startedAt.timeIntervalSince1970.rounded())
+        self.runMetricsUpdatedAt = runMetricsUpdatedAt
+        self.movingSeconds = movingSeconds
+        self.distanceMeters = distanceMeters
+        self.currentPaceSecondsPerKilometer = currentPaceSecondsPerKilometer
+        self.averagePaceSecondsPerKilometer = averagePaceSecondsPerKilometer
+        self.splitPaceSecondsPerKilometer = splitPaceSecondsPerKilometer
+        self.activeSplitIndex = activeSplitIndex
+        self.elevationGainMeters = elevationGainMeters
+        self.elevationLossMeters = elevationLossMeters
+        self.currentElevationMeters = currentElevationMeters
+        self.averageHeartRate = averageHeartRate
+        self.maxHeartRate = maxHeartRate
+        self.stepCount = stepCount
+        self.cadenceStepsPerMinute = cadenceStepsPerMinute
+        self.routePointCount = routePointCount
+        self.lastLatitude = lastLatitude
+        self.lastLongitude = lastLongitude
+        self.lastLocationUpdatedAt = lastLocationUpdatedAt
     }
 }
 
+enum ActiveWorkoutUpdateDecision: Equatable {
+    case appliedActive(UUID)
+    case appliedPaused(UUID)
+    case endedCurrent(UUID)
+    case failedCurrentAndShouldAlert(UUID)
+    case ignoredStaleFailed(UUID)
+    case ignoredDuplicateStaleFailed(UUID)
+    case ignoredInvalidNoSession
+    case ignoredHistoricalOnly
+
+    nonisolated var sessionID: UUID? {
+        switch self {
+        case .appliedActive(let sessionID),
+             .appliedPaused(let sessionID),
+             .endedCurrent(let sessionID),
+             .failedCurrentAndShouldAlert(let sessionID),
+             .ignoredStaleFailed(let sessionID),
+             .ignoredDuplicateStaleFailed(let sessionID):
+            sessionID
+        case .ignoredInvalidNoSession, .ignoredHistoricalOnly:
+            nil
+        }
+    }
+
+    nonisolated var didApplySyncState: Bool {
+        switch self {
+        case .appliedActive, .appliedPaused, .endedCurrent, .failedCurrentAndShouldAlert:
+            true
+        case .ignoredStaleFailed, .ignoredDuplicateStaleFailed, .ignoredInvalidNoSession, .ignoredHistoricalOnly:
+            false
+        }
+    }
+
+    nonisolated var isIgnoredFailedUpdate: Bool {
+        switch self {
+        case .ignoredStaleFailed, .ignoredDuplicateStaleFailed:
+            true
+        case .appliedActive, .appliedPaused, .endedCurrent, .failedCurrentAndShouldAlert, .ignoredInvalidNoSession, .ignoredHistoricalOnly:
+            false
+        }
+    }
+
+    nonisolated static func appliedDecision(for state: PulsarActiveWorkoutSyncState) -> ActiveWorkoutUpdateDecision {
+        switch state.phase {
+        case .paused:
+            .appliedPaused(state.sessionId)
+        case .ended, .cancelled:
+            .endedCurrent(state.sessionId)
+        case .failed:
+            .failedCurrentAndShouldAlert(state.sessionId)
+        case .starting, .active, .resumed, .ending:
+            .appliedActive(state.sessionId)
+        }
+    }
+
+    nonisolated static func userInterfaceDecision(
+        for state: PulsarActiveWorkoutSyncState?,
+        currentSessionID: UUID?,
+        currentSessionUpdatedAt: Date? = nil,
+        currentSessionCanShowConnectionLostAlert: Bool = true,
+        ignoredFailedSessionIDs: Set<UUID>
+    ) -> ActiveWorkoutUpdateDecision {
+        guard let state else { return .ignoredInvalidNoSession }
+
+        if state.phase == .failed {
+            if ignoredFailedSessionIDs.contains(state.sessionId) {
+                return .ignoredDuplicateStaleFailed(state.sessionId)
+            }
+            guard let currentSessionID else {
+                return .ignoredStaleFailed(state.sessionId)
+            }
+            guard currentSessionID == state.sessionId else {
+                return .ignoredStaleFailed(state.sessionId)
+            }
+            guard currentSessionCanShowConnectionLostAlert else {
+                return .ignoredStaleFailed(state.sessionId)
+            }
+            return .failedCurrentAndShouldAlert(state.sessionId)
+        }
+
+        if state.isEnded {
+            guard currentSessionID == state.sessionId else {
+                return .ignoredHistoricalOnly
+            }
+            if let currentSessionUpdatedAt,
+               state.updatedAt < currentSessionUpdatedAt {
+                return .ignoredHistoricalOnly
+            }
+            return .endedCurrent(state.sessionId)
+        }
+
+        if state.phase == .ending,
+           currentSessionID != state.sessionId {
+            return .ignoredHistoricalOnly
+        }
+
+        return appliedDecision(for: state)
+    }
+
+    nonisolated static func syncStoreFailedDecision(
+        for state: PulsarActiveWorkoutSyncState,
+        priorCurrentSessionID: UUID?,
+        priorCurrentWorkoutCanShowConnectionLostAlert: Bool = true,
+        priorSyncedSessionID: UUID?,
+        ignoredFailedSessionIDs: Set<UUID>,
+        isIncomingFromCounterpart: Bool
+    ) -> ActiveWorkoutUpdateDecision {
+        if ignoredFailedSessionIDs.contains(state.sessionId) {
+            return .ignoredDuplicateStaleFailed(state.sessionId)
+        }
+
+        guard let priorCurrentSessionID else {
+            return .ignoredStaleFailed(state.sessionId)
+        }
+
+        guard priorCurrentSessionID == state.sessionId,
+              priorCurrentWorkoutCanShowConnectionLostAlert else {
+            return .ignoredStaleFailed(state.sessionId)
+        }
+
+        return .failedCurrentAndShouldAlert(state.sessionId)
+    }
+}
+
+struct ActiveWorkoutUpdateEvent: Equatable {
+    var decision: ActiveWorkoutUpdateDecision
+    var state: PulsarActiveWorkoutSyncState
+    var source: String
+}
+
 extension PulsarActiveWorkoutSyncState {
-    init(runSnapshot snapshot: PulsarRunMetricSnapshot, startedFrom: PulsarWorkoutStartedFrom, lastUpdatedFrom: PulsarWorkoutStartedFrom) {
+    nonisolated init(runSnapshot snapshot: PulsarRunMetricSnapshot, startedFrom: PulsarWorkoutStartedFrom, lastUpdatedFrom: PulsarWorkoutStartedFrom) {
         let startedAt = snapshot.startedAt ?? Date()
         let sessionId = snapshot.pulsarWorkoutSessionId ?? UUID()
         self.init(
@@ -435,11 +673,29 @@ extension PulsarActiveWorkoutSyncState {
             elapsedSeconds: Int(snapshot.elapsedTime.rounded()),
             currentHeartRate: snapshot.currentHeartRate,
             activeEnergyKilocalories: snapshot.activeEnergyKilocalories,
-            healthKitWorkoutUUID: nil
+            healthKitWorkoutUUID: nil,
+            runMetricsUpdatedAt: Date(),
+            movingSeconds: Int(snapshot.movingTime.rounded()),
+            distanceMeters: snapshot.distanceMeters,
+            currentPaceSecondsPerKilometer: snapshot.currentPaceSecondsPerKilometer,
+            averagePaceSecondsPerKilometer: snapshot.averagePaceSecondsPerKilometer,
+            splitPaceSecondsPerKilometer: snapshot.splitPaceSecondsPerKilometer,
+            activeSplitIndex: snapshot.activeSplitIndex,
+            elevationGainMeters: snapshot.elevationGainMeters,
+            elevationLossMeters: snapshot.elevationLossMeters,
+            currentElevationMeters: snapshot.currentElevationMeters,
+            averageHeartRate: snapshot.averageHeartRate,
+            maxHeartRate: snapshot.maxHeartRate,
+            stepCount: snapshot.stepCount,
+            cadenceStepsPerMinute: snapshot.cadenceStepsPerMinute,
+            routePointCount: snapshot.route.count,
+            lastLatitude: snapshot.route.last?.latitude,
+            lastLongitude: snapshot.route.last?.longitude,
+            lastLocationUpdatedAt: snapshot.route.last?.timestamp
         )
     }
 
-    init(gymState state: ActiveGymWorkoutState, lastUpdatedFrom: PulsarWorkoutStartedFrom? = nil) {
+    nonisolated init(gymState state: ActiveGymWorkoutState, lastUpdatedFrom: PulsarWorkoutStartedFrom? = nil) {
         let workoutKind = state.workoutKind ?? PulsarGymWorkoutKind.inferred(
             routineName: state.routineName,
             exerciseCount: state.exercises.count
@@ -464,7 +720,7 @@ extension PulsarActiveWorkoutSyncState {
 }
 
 extension PulsarActiveWorkoutSyncPhase {
-    init(runPhase: PulsarRunPhase) {
+    nonisolated init(runPhase: PulsarRunPhase) {
         switch runPhase {
         case .idle:
             self = .ended
@@ -483,7 +739,7 @@ extension PulsarActiveWorkoutSyncPhase {
         }
     }
 
-    var runPhase: PulsarRunPhase {
+    nonisolated var runPhase: PulsarRunPhase {
         switch self {
         case .starting:
             .connectingToWatch
@@ -497,6 +753,8 @@ extension PulsarActiveWorkoutSyncPhase {
             .finished
         case .failed:
             .failed
+        case .cancelled:
+            .finished
         }
     }
 }
@@ -505,12 +763,31 @@ enum PulsarRunRecordingSource: String, Codable, Hashable {
     case appleWatch
     case iPhone
 
-    var label: String {
+    nonisolated var label: String {
         switch self {
         case .appleWatch: "Apple Watch"
         case .iPhone: "iPhone"
         }
     }
+}
+
+enum PulsarWatchRecorderFallbackReason: String, Codable, Hashable {
+    case unsupported
+    case activationPending
+    case noPairedWatch
+    case watchAppNotInstalled
+    case notReachable
+    case watchLaunchFailed
+    case mirroringTimedOut
+
+    nonisolated var logValue: String { rawValue }
+}
+
+struct PulsarWatchRecorderFallbackPrompt: Identifiable, Equatable {
+    let id = UUID()
+    var reason: PulsarWatchRecorderFallbackReason
+    var title: String
+    var message: String
 }
 
 enum PulsarRunPhase: String, Codable, Hashable {
@@ -530,7 +807,7 @@ struct PulsarRunOptions: Codable, Equatable {
     var autoPauseEnabled: Bool
     var audioCuesEnabled: Bool
 
-    static let `default` = PulsarRunOptions(
+    nonisolated static let `default` = PulsarRunOptions(
         prefersWatchRecorder: true,
         autoPauseEnabled: true,
         audioCuesEnabled: false
@@ -538,7 +815,7 @@ struct PulsarRunOptions: Codable, Equatable {
 }
 
 struct PulsarRunCoordinate: Codable, Hashable, Identifiable {
-    var id: String { "\(timestamp.timeIntervalSince1970)-\(latitude)-\(longitude)" }
+    nonisolated var id: String { "\(timestamp.timeIntervalSince1970)-\(latitude)-\(longitude)" }
     var latitude: Double
     var longitude: Double
     var altitude: Double?
@@ -546,7 +823,7 @@ struct PulsarRunCoordinate: Codable, Hashable, Identifiable {
     var verticalAccuracy: Double?
     var timestamp: Date
 
-    init(
+    nonisolated init(
         latitude: Double,
         longitude: Double,
         altitude: Double? = nil,
@@ -578,6 +855,7 @@ struct PulsarRunMetricSnapshot: Codable, Equatable {
     var splitPaceSecondsPerKilometer: Double?
     var activeSplitIndex: Int
     var elevationGainMeters: Double
+    var elevationLossMeters: Double
     var currentElevationMeters: Double?
     var activeEnergyKilocalories: Double?
     var currentHeartRate: Double?
@@ -593,7 +871,7 @@ struct PulsarRunMetricSnapshot: Codable, Equatable {
     var splits: [PulsarRunSplit]
     var statusMessage: String?
 
-    static let empty = PulsarRunMetricSnapshot(
+    nonisolated static let empty = PulsarRunMetricSnapshot(
         pulsarWorkoutSessionId: nil,
         phase: .idle,
         source: .iPhone,
@@ -608,6 +886,7 @@ struct PulsarRunMetricSnapshot: Codable, Equatable {
         splitPaceSecondsPerKilometer: nil,
         activeSplitIndex: 1,
         elevationGainMeters: 0,
+        elevationLossMeters: 0,
         currentElevationMeters: nil,
         activeEnergyKilocalories: nil,
         currentHeartRate: nil,
@@ -626,14 +905,50 @@ struct PulsarRunMetricSnapshot: Codable, Equatable {
 }
 
 struct PulsarRunSplit: Codable, Equatable, Identifiable {
-    var id: Int { index }
+    nonisolated var id: Int { index }
     var index: Int
     var distanceMeters: Double
     var movingTime: TimeInterval
     var elevationGainMeters: Double
+    var elevationLossMeters: Double
     var averageHeartRate: Double?
 
-    var paceSecondsPerKilometer: Double? {
+    init(
+        index: Int,
+        distanceMeters: Double,
+        movingTime: TimeInterval,
+        elevationGainMeters: Double,
+        elevationLossMeters: Double = 0,
+        averageHeartRate: Double?
+    ) {
+        self.index = index
+        self.distanceMeters = distanceMeters
+        self.movingTime = movingTime
+        self.elevationGainMeters = elevationGainMeters
+        self.elevationLossMeters = elevationLossMeters
+        self.averageHeartRate = averageHeartRate
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case index
+        case distanceMeters
+        case movingTime
+        case elevationGainMeters
+        case elevationLossMeters
+        case averageHeartRate
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        index = try container.decode(Int.self, forKey: .index)
+        distanceMeters = try container.decode(Double.self, forKey: .distanceMeters)
+        movingTime = try container.decode(TimeInterval.self, forKey: .movingTime)
+        elevationGainMeters = try container.decodeIfPresent(Double.self, forKey: .elevationGainMeters) ?? 0
+        elevationLossMeters = try container.decodeIfPresent(Double.self, forKey: .elevationLossMeters) ?? 0
+        averageHeartRate = try container.decodeIfPresent(Double.self, forKey: .averageHeartRate)
+    }
+
+    nonisolated var paceSecondsPerKilometer: Double? {
         guard distanceMeters > 0 else { return nil }
         return movingTime / (distanceMeters / 1_000)
     }
@@ -652,6 +967,10 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
     var movingTime: TimeInterval
     var activeEnergyKilocalories: Double?
     var elevationGainMeters: Double
+    var elevationLossMeters: Double
+    var minimumElevationMeters: Double?
+    var maximumElevationMeters: Double?
+    var weatherSummary: String?
     var averageHeartRate: Double?
     var maxHeartRate: Double?
     var steps: Int?
@@ -659,12 +978,41 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
     var route: [PulsarRunCoordinate]
     var splits: [PulsarRunSplit]
 
-    var averagePaceSecondsPerKilometer: Double? {
+    nonisolated var averagePaceSecondsPerKilometer: Double? {
         guard distanceMeters > 0 else { return nil }
         return movingTime / (distanceMeters / 1_000)
     }
 
-    init(
+    nonisolated var averageSpeedMetersPerSecond: Double? {
+        guard movingTime > 0, distanceMeters > 0 else { return nil }
+        return distanceMeters / movingTime
+    }
+
+    nonisolated var stoppedTime: TimeInterval {
+        max(0, elapsedTime - movingTime)
+    }
+
+    nonisolated var gpsRoute: GPSWorkoutRoute {
+        GPSWorkoutRoute(
+            runCoordinates: route,
+            source: source == .appleWatch ? .healthKitRoute : .pulsarLive,
+            capturedAt: endedAt
+        )
+    }
+
+    nonisolated var effectiveElevationGainMeters: Double {
+        elevationGainMeters > 0 ? elevationGainMeters : gpsRoute.elevationMetrics.gainMeters
+    }
+
+    nonisolated var effectiveElevationLossMeters: Double {
+        elevationLossMeters > 0 ? elevationLossMeters : gpsRoute.elevationMetrics.lossMeters
+    }
+
+    nonisolated var sourceDeviceName: String {
+        source.label
+    }
+
+    nonisolated init(
         id: UUID,
         pulsarWorkoutSessionId: UUID? = nil,
         workoutUUID: UUID?,
@@ -677,6 +1025,10 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
         movingTime: TimeInterval,
         activeEnergyKilocalories: Double?,
         elevationGainMeters: Double,
+        elevationLossMeters: Double = 0,
+        minimumElevationMeters: Double? = nil,
+        maximumElevationMeters: Double? = nil,
+        weatherSummary: String? = nil,
         averageHeartRate: Double?,
         maxHeartRate: Double?,
         steps: Int?,
@@ -696,6 +1048,10 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
         self.movingTime = movingTime
         self.activeEnergyKilocalories = activeEnergyKilocalories
         self.elevationGainMeters = elevationGainMeters
+        self.elevationLossMeters = elevationLossMeters
+        self.minimumElevationMeters = minimumElevationMeters
+        self.maximumElevationMeters = maximumElevationMeters
+        self.weatherSummary = weatherSummary
         self.averageHeartRate = averageHeartRate
         self.maxHeartRate = maxHeartRate
         self.steps = steps
@@ -717,6 +1073,10 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
         case movingTime
         case activeEnergyKilocalories
         case elevationGainMeters
+        case elevationLossMeters
+        case minimumElevationMeters
+        case maximumElevationMeters
+        case weatherSummary
         case averageHeartRate
         case maxHeartRate
         case steps
@@ -738,7 +1098,11 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
         elapsedTime = try container.decode(TimeInterval.self, forKey: .elapsedTime)
         movingTime = try container.decode(TimeInterval.self, forKey: .movingTime)
         activeEnergyKilocalories = try container.decodeIfPresent(Double.self, forKey: .activeEnergyKilocalories)
-        elevationGainMeters = try container.decode(Double.self, forKey: .elevationGainMeters)
+        elevationGainMeters = try container.decodeIfPresent(Double.self, forKey: .elevationGainMeters) ?? 0
+        elevationLossMeters = try container.decodeIfPresent(Double.self, forKey: .elevationLossMeters) ?? 0
+        minimumElevationMeters = try container.decodeIfPresent(Double.self, forKey: .minimumElevationMeters)
+        maximumElevationMeters = try container.decodeIfPresent(Double.self, forKey: .maximumElevationMeters)
+        weatherSummary = try container.decodeIfPresent(String.self, forKey: .weatherSummary)
         averageHeartRate = try container.decodeIfPresent(Double.self, forKey: .averageHeartRate)
         maxHeartRate = try container.decodeIfPresent(Double.self, forKey: .maxHeartRate)
         steps = try container.decodeIfPresent(Int.self, forKey: .steps)
@@ -755,6 +1119,13 @@ struct PulsarRunSessionIdentity: Codable, Equatable {
     var sentAt: Date
 }
 
+struct PulsarRunRouteDelta: Codable, Equatable {
+    var sessionId: UUID
+    var workoutKind: PulsarOutdoorWorkoutKind
+    var points: [PulsarRunCoordinate]
+    var sentAt: Date
+}
+
 enum PulsarRunControlCommand: String, Codable, Hashable {
     case pause
     case resume
@@ -765,6 +1136,7 @@ enum PulsarRunTransportEnvelope: Codable, Equatable {
     case identity(PulsarRunSessionIdentity)
     case options(PulsarRunOptions)
     case metrics(PulsarRunMetricSnapshot)
+    case routeDelta(PulsarRunRouteDelta)
     case command(PulsarRunControlCommand)
     case summary(PulsarRunSummary)
 
@@ -773,6 +1145,7 @@ enum PulsarRunTransportEnvelope: Codable, Equatable {
         case identity
         case options
         case metrics
+        case routeDelta
         case command
         case summary
     }
@@ -781,6 +1154,7 @@ enum PulsarRunTransportEnvelope: Codable, Equatable {
         case identity
         case options
         case metrics
+        case routeDelta
         case command
         case summary
     }
@@ -795,6 +1169,8 @@ enum PulsarRunTransportEnvelope: Codable, Equatable {
             self = .options(try container.decode(PulsarRunOptions.self, forKey: .options))
         case .metrics:
             self = .metrics(try container.decode(PulsarRunMetricSnapshot.self, forKey: .metrics))
+        case .routeDelta:
+            self = .routeDelta(try container.decode(PulsarRunRouteDelta.self, forKey: .routeDelta))
         case .command:
             self = .command(try container.decode(PulsarRunControlCommand.self, forKey: .command))
         case .summary:
@@ -814,6 +1190,9 @@ enum PulsarRunTransportEnvelope: Codable, Equatable {
         case .metrics(let metrics):
             try container.encode(Kind.metrics, forKey: .kind)
             try container.encode(metrics, forKey: .metrics)
+        case .routeDelta(let routeDelta):
+            try container.encode(Kind.routeDelta, forKey: .kind)
+            try container.encode(routeDelta, forKey: .routeDelta)
         case .command(let command):
             try container.encode(Kind.command, forKey: .kind)
             try container.encode(command, forKey: .command)
@@ -867,6 +1246,35 @@ enum PulsarRunFormatters {
         return String(format: "%d:%02d /km", minutes, seconds)
     }
 
+    static func speed(_ metersPerSecond: Double?) -> String {
+        guard let metersPerSecond, metersPerSecond.isFinite, metersPerSecond > 0 else {
+            return "--"
+        }
+        return String(format: "%.1f km/h", metersPerSecond * 3.6)
+    }
+
+    static func paceOrSpeed(
+        workoutKind: PulsarOutdoorWorkoutKind,
+        paceSecondsPerKilometer: Double?,
+        speedMetersPerSecond: Double?
+    ) -> String {
+        if workoutKind == .cycling {
+            let derivedSpeed = paceSecondsPerKilometer.flatMap { pace -> Double? in
+                guard pace.isFinite, pace > 0 else { return nil }
+                return 1_000 / pace
+            }
+            return speed(speedMetersPerSecond ?? derivedSpeed)
+        }
+        return pace(paceSecondsPerKilometer)
+    }
+
+    static func paceOrSpeedTitle(for workoutKind: PulsarOutdoorWorkoutKind, average: Bool = false) -> String {
+        if workoutKind == .cycling {
+            return average ? "Avg Speed" : "Speed"
+        }
+        return average ? "Avg Pace" : "Pace"
+    }
+
     static func heartRate(_ bpm: Double?) -> String {
         guard let bpm, bpm > 0 else { return "--" }
         return "\(Int(bpm.rounded()))"
@@ -889,6 +1297,14 @@ enum PulsarRunFormatters {
 }
 
 struct PulsarRunDerivedMetrics {
+    enum LocationRejectionReason: String {
+        case beforeWorkoutStart
+        case cachedSample
+        case futureSample
+        case invalidHorizontalAccuracy
+        case poorHorizontalAccuracy
+    }
+
     static func averagePace(distanceMeters: Double, movingTime: TimeInterval) -> Double? {
         guard distanceMeters >= 10, movingTime > 0 else { return nil }
         return movingTime / (distanceMeters / 1_000)
@@ -898,17 +1314,721 @@ struct PulsarRunDerivedMetrics {
         max(1, Int(distanceMeters / 1_000) + 1)
     }
 
-    static func shouldAutoPause(speedMetersPerSecond: Double?, horizontalAccuracy: Double?) -> Bool {
+    static func shouldAutoPause(
+        speedMetersPerSecond: Double?,
+        horizontalAccuracy: Double?,
+        workoutKind: PulsarOutdoorWorkoutKind = .running
+    ) -> Bool {
         guard let speedMetersPerSecond else { return false }
         if let horizontalAccuracy, horizontalAccuracy > 35 { return false }
-        return speedMetersPerSecond >= 0 && speedMetersPerSecond < 0.55
+        return speedMetersPerSecond >= 0 && speedMetersPerSecond < autoPauseSpeedThresholdMetersPerSecond(for: workoutKind)
+    }
+
+    static func autoPauseSpeedThresholdMetersPerSecond(for workoutKind: PulsarOutdoorWorkoutKind) -> Double {
+        switch workoutKind {
+        case .walking:
+            0.35
+        case .hiking:
+            0.30
+        case .cycling:
+            1.2
+        case .running:
+            0.55
+        default:
+            0.55
+        }
+    }
+
+    static func isUsableLocationSample(
+        timestamp: Date,
+        startDate: Date,
+        receivedAt: Date = Date(),
+        horizontalAccuracy: Double?
+    ) -> Bool {
+        guard let horizontalAccuracy,
+              horizontalAccuracy >= 0,
+              horizontalAccuracy <= 35 else {
+            return false
+        }
+        guard timestamp >= startDate else { return false }
+        guard timestamp <= receivedAt.addingTimeInterval(3) else { return false }
+        return receivedAt.timeIntervalSince(timestamp) <= 45
+    }
+
+    static func watchLocationSampleRejectionReason(
+        timestamp: Date,
+        startDate: Date,
+        receivedAt: Date = Date(),
+        horizontalAccuracy: Double?,
+        workoutKind: PulsarOutdoorWorkoutKind
+    ) -> LocationRejectionReason? {
+        guard timestamp >= startDate else { return .beforeWorkoutStart }
+        guard receivedAt.timeIntervalSince(timestamp) <= 3 else { return .cachedSample }
+        guard timestamp <= receivedAt.addingTimeInterval(3) else { return .futureSample }
+        guard let horizontalAccuracy, horizontalAccuracy > 0 else {
+            return .invalidHorizontalAccuracy
+        }
+        guard horizontalAccuracy <= maximumWatchHorizontalAccuracyMeters(for: workoutKind) else {
+            return .poorHorizontalAccuracy
+        }
+        return nil
+    }
+
+    static func maximumWatchHorizontalAccuracyMeters(for workoutKind: PulsarOutdoorWorkoutKind) -> Double {
+        switch workoutKind {
+        case .running, .walking:
+            20
+        case .hiking:
+            35
+        default:
+            35
+        }
+    }
+
+    static func shouldDeferHikingDistanceUntilAccuracyStabilizes(
+        horizontalAccuracy: Double,
+        workoutKind: PulsarOutdoorWorkoutKind
+    ) -> Bool {
+        workoutKind == .hiking && horizontalAccuracy > 20
+    }
+
+    static func maximumPlausibleSpeedMetersPerSecond(for workoutKind: PulsarOutdoorWorkoutKind) -> Double {
+        switch workoutKind {
+        case .running:
+            8.0
+        case .walking:
+            3.0
+        case .hiking:
+            4.0
+        case .cycling:
+            18.0
+        default:
+            8.0
+        }
+    }
+
+    static func isPlausibleLocationDelta(
+        distanceMeters: Double,
+        elapsedSeconds: TimeInterval,
+        workoutKind: PulsarOutdoorWorkoutKind
+    ) -> Bool {
+        guard distanceMeters.isFinite,
+              elapsedSeconds.isFinite,
+              distanceMeters >= 0,
+              elapsedSeconds > 0 else {
+            return false
+        }
+        let maxSpeed = maximumPlausibleSpeedMetersPerSecond(for: workoutKind)
+        return distanceMeters / elapsedSeconds <= maxSpeed
+    }
+
+    static func minimumMovingSpeedMetersPerSecond(for workoutKind: PulsarOutdoorWorkoutKind) -> Double {
+        switch workoutKind {
+        case .hiking:
+            0.4
+        case .walking:
+            0.35
+        case .running:
+            0.5
+        case .cycling:
+            1.5
+        default:
+            0.4
+        }
+    }
+
+    static func gpsJitterDistanceThreshold(previousAccuracy: Double?, currentAccuracy: Double?) -> Double {
+        max(8, previousAccuracy ?? 0, currentAccuracy ?? 0)
     }
 
     static func elevationGain(previousAltitude: Double?, nextAltitude: Double, verticalAccuracy: Double?) -> Double {
-        guard let previousAltitude else { return 0 }
-        if let verticalAccuracy, verticalAccuracy > 18 { return 0 }
+        elevationChange(
+            previousAltitude: previousAltitude,
+            nextAltitude: nextAltitude,
+            verticalAccuracy: verticalAccuracy
+        ).gain
+    }
+
+    static func elevationChange(
+        previousAltitude: Double?,
+        nextAltitude: Double,
+        verticalAccuracy: Double?
+    ) -> (gain: Double, loss: Double) {
+        guard let previousAltitude else { return (0, 0) }
+        if let verticalAccuracy, verticalAccuracy > 18 { return (0, 0) }
         let delta = nextAltitude - previousAltitude
-        return delta >= 1.5 ? delta : 0
+        if delta >= 1.5 {
+            return (delta, 0)
+        }
+        if delta <= -1.5 {
+            return (0, abs(delta))
+        }
+        return (0, 0)
+    }
+}
+
+struct PulsarRunGPSDistanceFilter {
+    struct Decision {
+        var timestamp: Date
+        var horizontalAccuracy: Double?
+        var rawDistanceDelta: Double
+        var acceptedDistanceDelta: Double
+        var totalAcceptedDistance: Double
+        var movingTimeDelta: TimeInterval
+        var totalMovingTime: TimeInterval
+        var speedMetersPerSecond: Double?
+        var stationaryLock: Bool
+        var movementConfidence: Int
+        var rejectedReason: String?
+        var routeLocationsToAppend: [CLLocation]
+    }
+
+    private(set) var totalAcceptedDistanceMeters: Double = 0
+    private(set) var totalMovingTime: TimeInterval = 0
+    private(set) var stationaryLockActive = true
+    private(set) var movementConfidence = 0
+
+    private var stationaryBaselineLocation: CLLocation?
+    private var lastRawLocation: CLLocation?
+    private var movementStartLocation: CLLocation?
+    private var movementStartDate: Date?
+    private var movementBearingDegrees: Double?
+    private var lastAcceptedDistanceLocation: CLLocation?
+    private var lastAcceptedRouteLocation: CLLocation?
+    private var pendingMovingTime: TimeInterval = 0
+
+    private static let gpsWarmupDuration: TimeInterval = 10
+    private static let stationaryUnlockDistanceMeters: Double = 14
+    private static let requiredMovementConfidenceSamples = 3
+    private static let routeSimplificationDistanceMeters: Double = 6
+    private static let directionReversalDegrees: Double = 110
+    private static let movementDirectionToleranceDegrees: Double = 70
+
+    mutating func reset() {
+        totalAcceptedDistanceMeters = 0
+        totalMovingTime = 0
+        stationaryLockActive = true
+        movementConfidence = 0
+        stationaryBaselineLocation = nil
+        lastRawLocation = nil
+        movementStartLocation = nil
+        movementStartDate = nil
+        movementBearingDegrees = nil
+        lastAcceptedDistanceLocation = nil
+        lastAcceptedRouteLocation = nil
+        pendingMovingTime = 0
+    }
+
+    mutating func resetBaselineKeepingTotals() {
+        stationaryLockActive = true
+        movementConfidence = 0
+        stationaryBaselineLocation = nil
+        lastRawLocation = nil
+        movementStartLocation = nil
+        movementStartDate = nil
+        movementBearingDegrees = nil
+        lastAcceptedDistanceLocation = nil
+        pendingMovingTime = 0
+    }
+
+    mutating func process(
+        location: CLLocation,
+        startDate: Date,
+        receivedAt: Date,
+        workoutKind: PulsarOutdoorWorkoutKind,
+        isRunning: Bool
+    ) -> Decision {
+        let rawDistanceDelta = lastRawLocation.map { location.distance(from: $0) } ?? 0
+        let rawElapsedSeconds = lastRawLocation.map { location.timestamp.timeIntervalSince($0.timestamp) } ?? 0
+        let effectiveSpeed = Self.effectiveSpeed(
+            reportedSpeed: location.speed,
+            distanceMeters: rawDistanceDelta,
+            elapsedSeconds: rawElapsedSeconds
+        )
+
+        if let rejectionReason = sampleRejectionReason(
+            location: location,
+            startDate: startDate,
+            receivedAt: receivedAt,
+            workoutKind: workoutKind
+        ) {
+            resetMovementCandidate()
+            return makeDecision(
+                location: location,
+                rawDistanceDelta: rawDistanceDelta,
+                acceptedDistanceDelta: 0,
+                movingTimeDelta: 0,
+                speed: effectiveSpeed,
+                rejectedReason: rejectionReason,
+                routeLocationsToAppend: []
+            )
+        }
+
+        guard isRunning else {
+            resetBaselineKeepingTotals()
+            return makeDecision(
+                location: location,
+                rawDistanceDelta: 0,
+                acceptedDistanceDelta: 0,
+                movingTimeDelta: 0,
+                speed: effectiveSpeed,
+                rejectedReason: "notRunning",
+                routeLocationsToAppend: []
+            )
+        }
+
+        if location.timestamp.timeIntervalSince(startDate) < Self.gpsWarmupDuration {
+            resetMovementCandidate()
+            lastRawLocation = nil
+            stationaryBaselineLocation = nil
+            return makeDecision(
+                location: location,
+                rawDistanceDelta: 0,
+                acceptedDistanceDelta: 0,
+                movingTimeDelta: 0,
+                speed: location.speed >= 0 ? location.speed : nil,
+                rejectedReason: "gpsWarmup",
+                routeLocationsToAppend: []
+            )
+        }
+
+        if let lastRawLocation, location.timestamp <= lastRawLocation.timestamp {
+            return makeDecision(
+                location: location,
+                rawDistanceDelta: 0,
+                acceptedDistanceDelta: 0,
+                movingTimeDelta: 0,
+                speed: effectiveSpeed,
+                rejectedReason: "outOfOrder",
+                routeLocationsToAppend: []
+            )
+        }
+
+        if stationaryBaselineLocation == nil {
+            stationaryBaselineLocation = location
+            lastRawLocation = location
+            resetMovementCandidate()
+            return makeDecision(
+                location: location,
+                rawDistanceDelta: 0,
+                acceptedDistanceDelta: 0,
+                movingTimeDelta: 0,
+                speed: location.speed >= 0 ? location.speed : nil,
+                rejectedReason: "stationaryLock",
+                routeLocationsToAppend: []
+            )
+        }
+
+        if stationaryLockActive {
+            return processStationaryLockedLocation(
+                location,
+                rawDistanceDelta: rawDistanceDelta,
+                rawElapsedSeconds: rawElapsedSeconds,
+                speed: effectiveSpeed,
+                workoutKind: workoutKind
+            )
+        }
+
+        return processUnlockedLocation(
+            location,
+            rawDistanceDelta: rawDistanceDelta,
+            rawElapsedSeconds: rawElapsedSeconds,
+            speed: effectiveSpeed,
+            workoutKind: workoutKind
+        )
+    }
+
+    private mutating func processStationaryLockedLocation(
+        _ location: CLLocation,
+        rawDistanceDelta: Double,
+        rawElapsedSeconds: TimeInterval,
+        speed: Double?,
+        workoutKind: PulsarOutdoorWorkoutKind
+    ) -> Decision {
+        guard let baseline = stationaryBaselineLocation else {
+            stationaryBaselineLocation = location
+            lastRawLocation = location
+            return makeDecision(
+                location: location,
+                rawDistanceDelta: 0,
+                acceptedDistanceDelta: 0,
+                movingTimeDelta: 0,
+                speed: speed,
+                rejectedReason: "stationaryLock",
+                routeLocationsToAppend: []
+            )
+        }
+
+        let distanceFromBaseline = location.distance(from: baseline)
+        let unlockDistance = max(
+            Self.stationaryUnlockDistanceMeters,
+            Self.validAccuracy(baseline.horizontalAccuracy) ?? 0,
+            Self.validAccuracy(location.horizontalAccuracy) ?? 0
+        )
+
+        guard let speed, speed > PulsarRunDerivedMetrics.minimumMovingSpeedMetersPerSecond(for: workoutKind) else {
+            resetMovementCandidate()
+            lastRawLocation = location
+            return makeDecision(
+                location: location,
+                rawDistanceDelta: rawDistanceDelta,
+                acceptedDistanceDelta: 0,
+                movingTimeDelta: 0,
+                speed: speed,
+                rejectedReason: "tooSlow",
+                routeLocationsToAppend: []
+            )
+        }
+
+        guard PulsarRunDerivedMetrics.isPlausibleLocationDelta(
+            distanceMeters: rawDistanceDelta,
+            elapsedSeconds: rawElapsedSeconds,
+            workoutKind: workoutKind
+        ) else {
+            resetMovementCandidate()
+            lastRawLocation = location
+            return makeDecision(
+                location: location,
+                rawDistanceDelta: rawDistanceDelta,
+                acceptedDistanceDelta: 0,
+                movingTimeDelta: 0,
+                speed: speed,
+                rejectedReason: "impossibleSpeed",
+                routeLocationsToAppend: []
+            )
+        }
+
+        guard distanceFromBaseline >= unlockDistance else {
+            let reason = detectsDirectionReversal(from: baseline, to: location) ? "directionReversal" : "gpsJitter"
+            resetMovementCandidate()
+            lastRawLocation = location
+            return makeDecision(
+                location: location,
+                rawDistanceDelta: rawDistanceDelta,
+                acceptedDistanceDelta: 0,
+                movingTimeDelta: 0,
+                speed: speed,
+                rejectedReason: reason,
+                routeLocationsToAppend: []
+            )
+        }
+
+        let bearing = Self.bearingDegrees(from: baseline, to: location)
+        if let movementBearingDegrees,
+           Self.directionDifferenceDegrees(movementBearingDegrees, bearing) > Self.movementDirectionToleranceDegrees {
+            movementConfidence = 1
+            movementStartLocation = location
+            movementStartDate = location.timestamp
+            self.movementBearingDegrees = bearing
+            lastRawLocation = location
+            return makeDecision(
+                location: location,
+                rawDistanceDelta: rawDistanceDelta,
+                acceptedDistanceDelta: 0,
+                movingTimeDelta: 0,
+                speed: speed,
+                rejectedReason: "directionReversal",
+                routeLocationsToAppend: []
+            )
+        }
+
+        if movementStartLocation == nil {
+            movementStartLocation = location
+            movementStartDate = location.timestamp
+        }
+        movementBearingDegrees = bearing
+        movementConfidence += 1
+        lastRawLocation = location
+
+        guard movementConfidence >= Self.requiredMovementConfidenceSamples else {
+            return makeDecision(
+                location: location,
+                rawDistanceDelta: rawDistanceDelta,
+                acceptedDistanceDelta: 0,
+                movingTimeDelta: 0,
+                speed: speed,
+                rejectedReason: "stationaryLock",
+                routeLocationsToAppend: []
+            )
+        }
+
+        stationaryLockActive = false
+        let movementStart = movementStartLocation ?? location
+        lastAcceptedDistanceLocation = movementStart
+        let pendingDistance = location.distance(from: movementStart)
+        let threshold = PulsarRunDerivedMetrics.gpsJitterDistanceThreshold(
+            previousAccuracy: Self.validAccuracy(movementStart.horizontalAccuracy),
+            currentAccuracy: Self.validAccuracy(location.horizontalAccuracy)
+        )
+
+        guard pendingDistance >= threshold else {
+            pendingMovingTime = max(0, location.timestamp.timeIntervalSince(movementStart.timestamp))
+            return makeDecision(
+                location: location,
+                rawDistanceDelta: rawDistanceDelta,
+                acceptedDistanceDelta: 0,
+                movingTimeDelta: 0,
+                speed: speed,
+                rejectedReason: "belowThreshold",
+                routeLocationsToAppend: []
+            )
+        }
+
+        let movingTimeDelta = max(0, location.timestamp.timeIntervalSince(movementStart.timestamp))
+        return accept(
+            distance: pendingDistance,
+            movingTimeDelta: movingTimeDelta,
+            location: location,
+            priorRouteLocation: movementStart,
+            rawDistanceDelta: rawDistanceDelta,
+            speed: speed
+        )
+    }
+
+    private mutating func processUnlockedLocation(
+        _ location: CLLocation,
+        rawDistanceDelta: Double,
+        rawElapsedSeconds: TimeInterval,
+        speed: Double?,
+        workoutKind: PulsarOutdoorWorkoutKind
+    ) -> Decision {
+        guard let previousDistanceLocation = lastAcceptedDistanceLocation else {
+            lastAcceptedDistanceLocation = location
+            lastRawLocation = location
+            return makeDecision(
+                location: location,
+                rawDistanceDelta: 0,
+                acceptedDistanceDelta: 0,
+                movingTimeDelta: 0,
+                speed: speed,
+                rejectedReason: "baselineAfterMovement",
+                routeLocationsToAppend: []
+            )
+        }
+
+        let candidateDistance = location.distance(from: previousDistanceLocation)
+        let threshold = PulsarRunDerivedMetrics.gpsJitterDistanceThreshold(
+            previousAccuracy: Self.validAccuracy(previousDistanceLocation.horizontalAccuracy),
+            currentAccuracy: Self.validAccuracy(location.horizontalAccuracy)
+        )
+
+        guard let speed, speed > PulsarRunDerivedMetrics.minimumMovingSpeedMetersPerSecond(for: workoutKind) else {
+            pendingMovingTime = 0
+            lastRawLocation = location
+            return makeDecision(
+                location: location,
+                rawDistanceDelta: rawDistanceDelta,
+                acceptedDistanceDelta: 0,
+                movingTimeDelta: 0,
+                speed: speed,
+                rejectedReason: "tooSlow",
+                routeLocationsToAppend: []
+            )
+        }
+
+        guard PulsarRunDerivedMetrics.isPlausibleLocationDelta(
+            distanceMeters: rawDistanceDelta,
+            elapsedSeconds: rawElapsedSeconds,
+            workoutKind: workoutKind
+        ) else {
+            pendingMovingTime = 0
+            lastRawLocation = location
+            return makeDecision(
+                location: location,
+                rawDistanceDelta: rawDistanceDelta,
+                acceptedDistanceDelta: 0,
+                movingTimeDelta: 0,
+                speed: speed,
+                rejectedReason: "impossibleSpeed",
+                routeLocationsToAppend: []
+            )
+        }
+
+        if detectsDirectionReversal(from: previousDistanceLocation, to: location),
+           candidateDistance < max(Self.stationaryUnlockDistanceMeters, threshold) {
+            pendingMovingTime = 0
+            lastRawLocation = location
+            return makeDecision(
+                location: location,
+                rawDistanceDelta: rawDistanceDelta,
+                acceptedDistanceDelta: 0,
+                movingTimeDelta: 0,
+                speed: speed,
+                rejectedReason: "directionReversal",
+                routeLocationsToAppend: []
+            )
+        }
+
+        guard candidateDistance >= threshold else {
+            if rawElapsedSeconds > 0 {
+                pendingMovingTime += rawElapsedSeconds
+            }
+            lastRawLocation = location
+            return makeDecision(
+                location: location,
+                rawDistanceDelta: rawDistanceDelta,
+                acceptedDistanceDelta: 0,
+                movingTimeDelta: 0,
+                speed: speed,
+                rejectedReason: "belowThreshold",
+                routeLocationsToAppend: []
+            )
+        }
+
+        let movingTimeDelta = max(0, rawElapsedSeconds + pendingMovingTime)
+        pendingMovingTime = 0
+        return accept(
+            distance: candidateDistance,
+            movingTimeDelta: movingTimeDelta,
+            location: location,
+            priorRouteLocation: previousDistanceLocation,
+            rawDistanceDelta: rawDistanceDelta,
+            speed: speed
+        )
+    }
+
+    private mutating func accept(
+        distance: Double,
+        movingTimeDelta: TimeInterval,
+        location: CLLocation,
+        priorRouteLocation: CLLocation,
+        rawDistanceDelta: Double,
+        speed: Double?
+    ) -> Decision {
+        totalAcceptedDistanceMeters += distance
+        totalMovingTime += movingTimeDelta
+        lastAcceptedDistanceLocation = location
+        lastRawLocation = location
+        movementConfidence = max(movementConfidence, Self.requiredMovementConfidenceSamples)
+
+        var routeLocations: [CLLocation] = []
+        if lastAcceptedRouteLocation == nil {
+            routeLocations.append(priorRouteLocation)
+            lastAcceptedRouteLocation = priorRouteLocation
+        }
+
+        if let lastAcceptedRouteLocation {
+            let routeDelta = location.distance(from: lastAcceptedRouteLocation)
+            if routeDelta >= Self.routeSimplificationDistanceMeters {
+                routeLocations.append(location)
+                self.lastAcceptedRouteLocation = location
+            }
+        }
+
+        return makeDecision(
+            location: location,
+            rawDistanceDelta: rawDistanceDelta,
+            acceptedDistanceDelta: distance,
+            movingTimeDelta: movingTimeDelta,
+            speed: speed,
+            rejectedReason: nil,
+            routeLocationsToAppend: routeLocations
+        )
+    }
+
+    private mutating func resetMovementCandidate() {
+        movementConfidence = 0
+        movementStartLocation = nil
+        movementStartDate = nil
+        movementBearingDegrees = nil
+        pendingMovingTime = 0
+    }
+
+    private func detectsDirectionReversal(from start: CLLocation, to end: CLLocation) -> Bool {
+        guard let movementBearingDegrees else { return false }
+        let nextBearing = Self.bearingDegrees(from: start, to: end)
+        return Self.directionDifferenceDegrees(movementBearingDegrees, nextBearing) > Self.directionReversalDegrees
+    }
+
+    private func sampleRejectionReason(
+        location: CLLocation,
+        startDate: Date,
+        receivedAt: Date,
+        workoutKind: PulsarOutdoorWorkoutKind
+    ) -> String? {
+        guard location.timestamp >= startDate else { return "staleSample" }
+        guard receivedAt.timeIntervalSince(location.timestamp) <= 3 else { return "staleSample" }
+        guard location.timestamp <= receivedAt.addingTimeInterval(3) else { return "staleSample" }
+        guard let horizontalAccuracy = Self.validAccuracy(location.horizontalAccuracy) else {
+            return "poorAccuracy"
+        }
+        guard horizontalAccuracy <= PulsarRunDerivedMetrics.maximumWatchHorizontalAccuracyMeters(for: workoutKind) else {
+            return "poorAccuracy"
+        }
+        return nil
+    }
+
+    private func makeDecision(
+        location: CLLocation,
+        rawDistanceDelta: Double,
+        acceptedDistanceDelta: Double,
+        movingTimeDelta: TimeInterval,
+        speed: Double?,
+        rejectedReason: String?,
+        routeLocationsToAppend: [CLLocation]
+    ) -> Decision {
+        Decision(
+            timestamp: location.timestamp,
+            horizontalAccuracy: Self.validAccuracy(location.horizontalAccuracy),
+            rawDistanceDelta: rawDistanceDelta.isFinite ? rawDistanceDelta : 0,
+            acceptedDistanceDelta: acceptedDistanceDelta,
+            totalAcceptedDistance: totalAcceptedDistanceMeters,
+            movingTimeDelta: movingTimeDelta,
+            totalMovingTime: totalMovingTime,
+            speedMetersPerSecond: speed,
+            stationaryLock: stationaryLockActive,
+            movementConfidence: movementConfidence,
+            rejectedReason: rejectedReason,
+            routeLocationsToAppend: routeLocationsToAppend
+        )
+    }
+
+    private static func effectiveSpeed(
+        reportedSpeed: Double,
+        distanceMeters: Double,
+        elapsedSeconds: TimeInterval
+    ) -> Double? {
+        let reported = reportedSpeed.isFinite && reportedSpeed >= 0 ? reportedSpeed : nil
+        let derived: Double?
+        if distanceMeters.isFinite,
+           elapsedSeconds.isFinite,
+           elapsedSeconds > 0 {
+            derived = distanceMeters / elapsedSeconds
+        } else {
+            derived = nil
+        }
+
+        switch (reported, derived) {
+        case let (reported?, derived?):
+            return max(reported, derived)
+        case let (reported?, nil):
+            return reported
+        case let (nil, derived?):
+            return derived
+        case (nil, nil):
+            return nil
+        }
+    }
+
+    private static func validAccuracy(_ value: Double) -> Double? {
+        value.isFinite && value > 0 ? value : nil
+    }
+
+    private static func bearingDegrees(from start: CLLocation, to end: CLLocation) -> Double {
+        let startLatitude = start.coordinate.latitude * .pi / 180
+        let startLongitude = start.coordinate.longitude * .pi / 180
+        let endLatitude = end.coordinate.latitude * .pi / 180
+        let endLongitude = end.coordinate.longitude * .pi / 180
+        let longitudeDelta = endLongitude - startLongitude
+        let y = sin(longitudeDelta) * cos(endLatitude)
+        let x = cos(startLatitude) * sin(endLatitude) - sin(startLatitude) * cos(endLatitude) * cos(longitudeDelta)
+        let bearing = atan2(y, x) * 180 / .pi
+        return bearing >= 0 ? bearing : bearing + 360
+    }
+
+    private static func directionDifferenceDegrees(_ first: Double, _ second: Double) -> Double {
+        let difference = abs(first - second).truncatingRemainder(dividingBy: 360)
+        return min(difference, 360 - difference)
     }
 }
 

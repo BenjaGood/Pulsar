@@ -30,9 +30,13 @@ extension HomeDashboard {
         let recoveryMetric = recovery.syncMetric()
         let stressMetric = stress.syncMetric()
         let healthMonitorMetric = healthMonitor.syncMetric()
-        let hasCompleteDailyMetrics = strainMetric?.isValid == true && recoveryMetric?.isValid == true
-        if (strainMetric != nil || recoveryMetric != nil) && !hasCompleteDailyMetrics {
-            PulsarSyncDebugLogger.log("invalid or partial Recovery/Strain payload ignored before build dateKey=\(PulsarDailyMetricsDateKey.dateKey(for: day, calendar: calendar)) strainValid=\(strainMetric?.isValid == true) recoveryValid=\(recoveryMetric?.isValid == true)")
+        let validStrainMetric = strainMetric?.isValid == true ? strainMetric : nil
+        let validRecoveryMetric = recoveryMetric?.isValid == true ? recoveryMetric : nil
+        if strainMetric != nil && validStrainMetric == nil {
+            PulsarSyncDebugLogger.log("invalid Strain payload ignored before build dateKey=\(PulsarDailyMetricsDateKey.dateKey(for: day, calendar: calendar))")
+        }
+        if recoveryMetric != nil && validRecoveryMetric == nil {
+            PulsarSyncDebugLogger.log("invalid Recovery payload ignored before build dateKey=\(PulsarDailyMetricsDateKey.dateKey(for: day, calendar: calendar))")
         }
         let syncedAt = max(
             max(
@@ -46,8 +50,8 @@ extension HomeDashboard {
             dateKey: PulsarDailyMetricsDateKey.dateKey(for: day, calendar: calendar),
             syncedAt: syncedAt,
             sourceDevice: sourceDevice,
-            strain: hasCompleteDailyMetrics ? strainMetric : nil,
-            recovery: hasCompleteDailyMetrics ? recoveryMetric : nil,
+            strain: validStrainMetric,
+            recovery: validRecoveryMetric,
             sleep: sleepMetric,
             stress: stressMetric,
             healthMonitor: healthMonitorMetric,
@@ -61,14 +65,20 @@ extension HomeDashboard {
         guard payload.isValidPayload,
               payload.applies(to: sleep.wakeUpDate ?? strain.date ?? recovery.date ?? healthMonitor.date ?? generatedAt, calendar: calendar) else { return self }
         var copy = self
-        if payload.hasCompleteDailyScores, let strain = payload.strain, let recovery = payload.recovery {
-            let incomingDailyUpdatedAt = max(strain.computedAt, recovery.computedAt)
-            let currentDailyUpdatedAt = max(copy.strain.lastUpdated ?? .distantPast, copy.recovery.lastUpdated ?? .distantPast)
-            if incomingDailyUpdatedAt >= currentDailyUpdatedAt || copy.strain.score == 0 || copy.recovery.score == 0 {
+        if let strain = payload.strain, strain.isValid {
+            let currentStrainUpdatedAt = copy.strain.lastUpdated ?? .distantPast
+            if strain.computedAt >= currentStrainUpdatedAt || copy.strain.score == 0 {
                 copy.strain = copy.strain.applying(syncMetric: strain, sourceDevice: payload.sourceDevice)
+            } else {
+                PulsarSyncDebugLogger.log("skipped Strain UI update because incoming metric was older dateKey=\(payload.resolvedDateKey) incoming=\(strain.computedAt) current=\(currentStrainUpdatedAt) session=\(payload.syncSessionID?.uuidString ?? "none")")
+            }
+        }
+        if let recovery = payload.recovery, recovery.isValid {
+            let currentRecoveryUpdatedAt = copy.recovery.lastUpdated ?? .distantPast
+            if recovery.computedAt >= currentRecoveryUpdatedAt || copy.recovery.score == 0 {
                 copy.recovery = copy.recovery.applying(syncMetric: recovery, sourceDevice: payload.sourceDevice)
             } else {
-                PulsarSyncDebugLogger.log("skipped Recovery/Strain UI update because daily metrics were older dateKey=\(payload.resolvedDateKey) incoming=\(incomingDailyUpdatedAt) current=\(currentDailyUpdatedAt) session=\(payload.syncSessionID?.uuidString ?? "none")")
+                PulsarSyncDebugLogger.log("skipped Recovery UI update because incoming metric was older dateKey=\(payload.resolvedDateKey) incoming=\(recovery.computedAt) current=\(currentRecoveryUpdatedAt) session=\(payload.syncSessionID?.uuidString ?? "none")")
             }
         }
         if let sleep = payload.sleep, sleep.isValid {
@@ -161,7 +171,7 @@ private extension SleepSummary {
         copy.queryEnd = syncMetric.queryEnd
         copy.lastUpdated = syncMetric.computedAt
         copy.sourceBadges = mergeSources(existing: copy.sourceBadges, names: syncMetric.sourceNames, sourceDevice: sourceDevice)
-        copy.notes = mergeNotes(copy.notes, sourceDevice: sourceDevice, title: "Synced sleep from \(sourceDevice == .appleWatch ? "Apple Watch" : "iPhone") while local HealthKit data refreshes.")
+        copy.notes = mergeNotes(copy.notes, sourceDevice: sourceDevice, title: "Synced sleep from \(sourceDevice.displayName) while local HealthKit data refreshes.")
         return copy
     }
 
@@ -278,10 +288,13 @@ private extension StrainSummary {
         copy.workoutMinutes = max(copy.workoutMinutes, syncMetric.workoutMinutes)
         copy.averageActiveHeartRate = syncMetric.averageActiveHeartRate ?? copy.averageActiveHeartRate
         copy.peakHeartRate = syncMetric.peakHeartRate ?? copy.peakHeartRate
+        if let analyzedSampleCount = syncMetric.analyzedSampleCount {
+            copy.analyzedSampleCount = max(copy.analyzedSampleCount, analyzedSampleCount)
+        }
         copy.lastUpdated = syncMetric.computedAt
         if copy.queryEnd == nil { copy.queryEnd = syncMetric.computedAt }
         copy.sourceBadges = mergeSources(existing: copy.sourceBadges, names: syncMetric.sourceNames, sourceDevice: sourceDevice)
-        copy.notes = mergeNotes(copy.notes, sourceDevice: sourceDevice, title: "Synced strain from \(sourceDevice == .appleWatch ? "Apple Watch" : "iPhone") while local HealthKit data refreshes.")
+        copy.notes = mergeNotes(copy.notes, sourceDevice: sourceDevice, title: "Synced strain from \(sourceDevice.displayName) while local HealthKit data refreshes.")
         return copy
     }
 }
@@ -337,7 +350,7 @@ private extension RecoverySummary {
         copy.lastUpdated = syncMetric.computedAt
         if copy.queryEnd == nil { copy.queryEnd = syncMetric.computedAt }
         copy.sourceBadges = mergeSources(existing: copy.sourceBadges, names: syncMetric.sourceNames, sourceDevice: sourceDevice)
-        copy.notes = mergeNotes(copy.notes, sourceDevice: sourceDevice, title: "Synced recovery from \(sourceDevice == .appleWatch ? "Apple Watch" : "iPhone") while local HealthKit data refreshes.")
+        copy.notes = mergeNotes(copy.notes, sourceDevice: sourceDevice, title: "Synced recovery from \(sourceDevice.displayName) while local HealthKit data refreshes.")
         if copy.explanation.isEmpty || copy.explanation == RecoverySummary.missing.explanation {
             copy.explanation = syncMetric.statusText
         }
@@ -347,11 +360,12 @@ private extension RecoverySummary {
 
 private extension StressSummary {
     func syncMetric() -> PulsarStressSyncMetric? {
-        guard let score else { return nil }
+        let isPaused = state == .workoutPaused || state == .cooldown
+        guard let score = score ?? (isPaused ? 0 : nil) else { return nil }
         let metric = PulsarStressSyncMetric(
             score: score,
             confidence: confidence.syncConfidence,
-            levelText: PulsarSharedMetricCalculator.stressLevelText(score: score),
+            levelText: isPaused ? (stressStatusText ?? syncCalculationStateRawValue) : PulsarSharedMetricCalculator.stressLevelText(score: score),
             driverInsights: Array(driverInsights.prefix(2)),
             hrvSDNN: lastHRV ?? signalValue(id: "hrv"),
             hrvTimestamp: lastHRVTimestamp,
@@ -397,7 +411,7 @@ private extension StressSummary {
             StressDriver(
                 id: "synced-stress-driver-\(index)",
                 title: insight,
-                detail: "Synced from \(sourceDevice == .appleWatch ? "Apple Watch" : "iPhone") while local HealthKit data refreshes.",
+                detail: "Synced from \(sourceDevice.displayName) while local HealthKit data refreshes.",
                 severity: syncMetric.score >= Int(PulsarStressScale.highLowerBound) ? .elevated : .neutral,
                 relatedMetric: nil
             )
@@ -419,6 +433,9 @@ private extension StressSummary {
                 context: $0.context.flatMap(StressContext.init(rawValue:))
             )
         }
+        copy.dailyAverageScore = PulsarStressTimelineDistribution.weightedAverage(
+            samples: copy.dailySamples.map { PulsarStressTimelineSample(timestamp: $0.timestamp, score: $0.score) }
+        ).map(PulsarStressScale.roundedScore)
         copy.analyzedSampleCount = max(copy.analyzedSampleCount, syncMetric.availableSignalCount)
         copy.baselineWindowDays = max(copy.baselineWindowDays, syncMetric.baselineWindowDays)
         copy.availableSignalCount = max(copy.availableSignalCount, syncMetric.availableSignalCount)
@@ -520,10 +537,10 @@ private func mergeSources(existing: [SourceProvenance], names: [String], sourceD
             sourceBundleIdentifier: nil,
             sourceVersion: nil,
             operatingSystemVersion: nil,
-            productType: sourceDevice == .appleWatch ? "AppleWatchSync" : "iPhoneSync",
+            productType: sourceDevice.productType,
             deviceName: $0,
-            deviceManufacturer: "Apple",
-            deviceModel: sourceDevice == .appleWatch ? "Apple Watch" : "iPhone"
+            deviceManufacturer: sourceDevice.manufacturer,
+            deviceModel: sourceDevice.displayName
         )
     }
     return SourceResolver.uniqueSourceBadges(existing + syncedSources)
@@ -533,6 +550,39 @@ private func mergeNotes(_ existing: [String], sourceDevice: PulsarSyncSourceDevi
     let combined = existing + [title]
     var seen = Set<String>()
     return combined.filter { seen.insert($0).inserted }
+}
+
+private extension PulsarSyncSourceDevice {
+    var displayName: String {
+        switch self {
+        case .iPhone:
+            return "iPhone"
+        case .appleWatch:
+            return "Apple Watch"
+        case .ouraRing:
+            return "Oura Ring"
+        }
+    }
+
+    var productType: String {
+        switch self {
+        case .iPhone:
+            return "iPhoneSync"
+        case .appleWatch:
+            return "AppleWatchSync"
+        case .ouraRing:
+            return "OuraCloudSync"
+        }
+    }
+
+    var manufacturer: String {
+        switch self {
+        case .iPhone, .appleWatch:
+            return "Apple"
+        case .ouraRing:
+            return "Oura"
+        }
+    }
 }
 
 private func statusFromLabel(_ label: String) -> RecoveryStatus {

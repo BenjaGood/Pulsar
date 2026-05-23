@@ -17,7 +17,7 @@ struct MeasurementDeviceIconView: View {
             switch type {
             case .appleWatch:
                 appleWatchIcon
-            case .amazfitHelioRing:
+            case .ouraRing:
                 ringIcon
             }
         }
@@ -98,9 +98,11 @@ struct MeasurementDeviceIconView: View {
 
 struct MeasurementSourceSheet: View {
     @ObservedObject var manager: MeasurementSourceManager
+    var onSyncAppleHealthKit: () async -> Void = {}
     var onDismiss: () -> Void
 
     @State private var focusedDeviceType: MeasurementDeviceType?
+    @State private var sourceChangeConfirmation: String?
     @Environment(\.colorScheme) private var colorScheme
 
     private var focusedDevice: MeasurementDevice {
@@ -118,8 +120,24 @@ struct MeasurementSourceSheet: View {
 
                 changeSourceSection
 
-                MeasurementDeviceDetailPanel(device: focusedDevice) {
-                    handlePrimaryAction(for: focusedDevice)
+                sourcePrioritySection
+
+                MeasurementDeviceDetailPanel(
+                    device: focusedDevice,
+                    isPrimaryActionDisabled: manager.isPrimaryActionDisabled(for: focusedDevice)
+                ) {
+                    Task { await handlePrimaryAction(for: focusedDevice) }
+                } onSync: {
+                    Task { await syncNow(for: focusedDevice) }
+                } onDisconnect: {
+                    Task { await manager.disconnectOura() }
+                }
+
+                if focusedDevice.type == .ouraRing {
+                    OuraCloudDataPanel(
+                        rows: manager.ouraTodayRows,
+                        lastSyncAt: focusedDevice.lastSyncAt
+                    )
                 }
 
                 footerNote
@@ -129,9 +147,20 @@ struct MeasurementSourceSheet: View {
             .padding(.bottom, 42)
         }
         .background(MeasurementSourceBackground())
+        .overlay(alignment: .bottom) {
+            if let sourceChangeConfirmation {
+                SourceChangeConfirmationBanner(message: sourceChangeConfirmation)
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 18)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         .presentationDragIndicator(.visible)
         .animation(.spring(response: 0.48, dampingFraction: 0.88), value: manager.activeDeviceType)
         .animation(.spring(response: 0.42, dampingFraction: 0.86), value: focusedDeviceType)
+        .animation(.easeInOut(duration: 0.18), value: manager.ouraConnectionFlowState)
+        .animation(.spring(response: 0.34, dampingFraction: 0.88), value: sourceChangeConfirmation)
+        .alert(item: ouraConnectionAlertBinding, content: makeOuraConnectionAlert)
         .onAppear {
             manager.refreshDeviceStatus()
             focusedDeviceType = manager.activeDevice.type
@@ -197,11 +226,12 @@ struct MeasurementSourceSheet: View {
                     ForEach(manager.availableDevices) { device in
                         MeasurementDeviceSourceCard(
                             device: device,
-                            isFocused: focusedDevice.type == device.type
+                            isFocused: focusedDevice.type == device.type,
+                            isPrimaryActionDisabled: manager.isPrimaryActionDisabled(for: device)
                         ) {
                             focusedDeviceType = device.type
                         } onAction: {
-                            handlePrimaryAction(for: device)
+                            Task { await handlePrimaryAction(for: device) }
                         }
                         .frame(width: 268, height: 382, alignment: .top)
                     }
@@ -212,8 +242,45 @@ struct MeasurementSourceSheet: View {
         }
     }
 
+    private var sourcePrioritySection: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack {
+                Text("Current sources")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(primaryText)
+
+                Spacer()
+
+                if HealthSourcePriorityCategory.allCases.contains(where: { manager.routingDecision(for: $0).isFallback }) {
+                    DeviceStatusPill(text: "Using fallback source", tint: Color(red: 0.76, green: 0.34, blue: 0.08))
+                }
+            }
+
+            VStack(spacing: 11) {
+                ForEach(HealthSourcePriorityCategory.allCases) { category in
+                    SourcePriorityCategoryRow(
+                        category: category,
+                        preference: manager.preference(for: category),
+                        decision: manager.routingDecision(for: category),
+                        onSourceChange: { source in
+                            manager.setCurrentSource(source, for: category)
+                            showSourceChangeConfirmation(source: source, category: category)
+                        },
+                        onFallbackChange: { enabled in
+                            manager.setFallbackEnabled(enabled, for: category)
+                        }
+                    )
+                }
+            }
+
+            #if DEBUG
+            SourceRoutingDebugPanel(manager: manager)
+            #endif
+        }
+    }
+
     private var footerNote: some View {
-        Text("Pulsar uses your selected source to prioritize sleep, recovery, strain, stress, and workout metrics when multiple devices are available.")
+        Text("Pulsar uses your current source for sleep, recovery, strain, stress, and workout metrics. Auto fallback only uses another source when you allow it.")
             .font(.caption.weight(.medium))
             .foregroundStyle(secondaryText)
             .fixedSize(horizontal: false, vertical: true)
@@ -226,8 +293,26 @@ struct MeasurementSourceSheet: View {
             }
     }
 
-    private func handlePrimaryAction(for device: MeasurementDevice) {
+    private func handlePrimaryAction(for device: MeasurementDevice) async {
         focusedDeviceType = device.type
+
+        if device.type == .ouraRing {
+            switch device.connectionStatus {
+            case .setupRequired, .disconnected, .tokenExpired:
+                await manager.connectOura()
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                return
+            case .syncError:
+                await manager.syncOuraNow()
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                return
+            case .connecting:
+                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                return
+            case .connected, .available:
+                break
+            }
+        }
 
         guard !device.isActiveSource else {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -241,6 +326,65 @@ struct MeasurementSourceSheet: View {
 
         manager.selectActiveDevice(device)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    private func syncNow(for device: MeasurementDevice) async {
+        switch device.type {
+        case .appleWatch:
+            await onSyncAppleHealthKit()
+        case .ouraRing:
+            await manager.syncOuraNow()
+        }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    private func showSourceChangeConfirmation(source: HealthSourceID, category: HealthSourcePriorityCategory) {
+        let message = "\(source.priorityDisplayName) will be used for \(category.confirmationTitle) from now on."
+        sourceChangeConfirmation = message
+        Task {
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            await MainActor.run {
+                if sourceChangeConfirmation == message {
+                    sourceChangeConfirmation = nil
+                }
+            }
+        }
+    }
+
+    private var ouraConnectionAlertBinding: Binding<OuraConnectionAlert?> {
+        Binding(
+            get: { manager.ouraConnectionAlert },
+            set: { newValue in
+                if newValue == nil {
+                    manager.dismissOuraConnectionAlert()
+                }
+            }
+        )
+    }
+
+    private func makeOuraConnectionAlert(_ alert: OuraConnectionAlert) -> Alert {
+        #if DEBUG
+        if let debugAuthorizationURL = alert.debugAuthorizationURL {
+            return Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                primaryButton: .default(Text("Open Oura login in browser")) {
+                    UIApplication.shared.open(debugAuthorizationURL)
+                    manager.dismissOuraConnectionAlert()
+                },
+                secondaryButton: .default(Text("OK")) {
+                    manager.dismissOuraConnectionAlert()
+                }
+            )
+        }
+        #endif
+        return Alert(
+            title: Text(alert.title),
+            message: Text(alert.message),
+            dismissButton: .default(Text("OK")) {
+                manager.dismissOuraConnectionAlert()
+            }
+        )
     }
 
     private var primaryText: Color {
@@ -265,6 +409,129 @@ struct MeasurementSourceSheet: View {
         colorScheme == .dark
             ? .white.opacity(0.13)
             : Color(red: 0.44, green: 0.56, blue: 0.70).opacity(0.24)
+    }
+}
+
+private struct OuraCloudDataPanel: View {
+    let rows: [OuraVisibleDataRow]
+    let lastSyncAt: Date?
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Oura cloud data")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(primaryText)
+                    Text(lastSyncText)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(secondaryText)
+                }
+
+                Spacer(minLength: 0)
+
+                DeviceStatusPill(text: availableCountText, tint: statusTint)
+            }
+
+            VStack(spacing: 10) {
+                ForEach(rows) { row in
+                    HStack(alignment: .top, spacing: 11) {
+                        Image(systemName: row.isAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(row.isAvailable ? availableTint : unavailableTint)
+                            .frame(width: 18)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                                Text(row.title)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(primaryText)
+                                Text(row.value)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(row.isAvailable ? primaryText : secondaryText)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.76)
+                            }
+
+                            Text(row.detail)
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Spacer(minLength: 0)
+                    }
+                    .padding(12)
+                    .background(rowBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(cardBorder, lineWidth: 1)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(cardBorder, lineWidth: 1)
+        }
+    }
+
+    private var availableCountText: String {
+        "\(rows.filter(\.isAvailable).count)/\(rows.count) available"
+    }
+
+    private var lastSyncText: String {
+        guard let lastSyncAt else { return "Last sync unavailable" }
+        return "Last sync \(Self.relativeFormatter.localizedString(for: lastSyncAt, relativeTo: Date()))"
+    }
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter
+    }()
+
+    private var availableTint: Color {
+        colorScheme == .dark ? Color(red: 0.36, green: 0.94, blue: 0.68) : Color(red: 0.00, green: 0.47, blue: 0.30)
+    }
+
+    private var unavailableTint: Color {
+        colorScheme == .dark ? Color(red: 1.0, green: 0.70, blue: 0.38) : Color(red: 0.76, green: 0.34, blue: 0.08)
+    }
+
+    private var statusTint: Color {
+        rows.contains(where: \.isAvailable) ? availableTint : unavailableTint
+    }
+
+    private var primaryText: Color {
+        colorScheme == .dark ? .white.opacity(0.96) : Color(red: 0.07, green: 0.10, blue: 0.15)
+    }
+
+    private var secondaryText: Color {
+        colorScheme == .dark ? .white.opacity(0.62) : Color(red: 0.35, green: 0.39, blue: 0.47)
+    }
+
+    private var cardBackground: LinearGradient {
+        LinearGradient(
+            colors: colorScheme == .dark
+                ? [.white.opacity(0.10), Color(red: 0.05, green: 0.07, blue: 0.11).opacity(0.90)]
+                : [.white.opacity(0.92), Color(red: 0.93, green: 0.97, blue: 1.0).opacity(0.70)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var rowBackground: Color {
+        colorScheme == .dark ? .white.opacity(0.055) : .white.opacity(0.58)
+    }
+
+    private var cardBorder: Color {
+        colorScheme == .dark
+            ? .white.opacity(0.12)
+            : Color(red: 0.44, green: 0.56, blue: 0.70).opacity(0.22)
     }
 }
 
@@ -296,7 +563,7 @@ private struct MeasurementActiveDeviceHero: View {
                             .foregroundStyle(primaryText)
                         HStack(spacing: 8) {
                             DeviceStatusPill(text: device.connectionStatus.label, tint: statusTint)
-                            DeviceStatusPill(text: "Active source", tint: tint)
+                            DeviceStatusPill(text: HealthSourceDisplayCopy.preferredSource, tint: tint)
                         }
                     }
 
@@ -370,8 +637,8 @@ private struct MeasurementActiveDeviceHero: View {
         switch device.type {
         case .appleWatch:
             return colorScheme == .dark ? Color(red: 0.72, green: 0.86, blue: 1.0) : Color(red: 0.08, green: 0.34, blue: 0.58)
-        case .amazfitHelioRing:
-            return colorScheme == .dark ? Color(red: 0.34, green: 0.92, blue: 0.80) : Color(red: 0.00, green: 0.48, blue: 0.42)
+        case .ouraRing:
+            return colorScheme == .dark ? Color(red: 0.72, green: 0.78, blue: 0.90) : Color(red: 0.18, green: 0.24, blue: 0.34)
         }
     }
 
@@ -379,9 +646,9 @@ private struct MeasurementActiveDeviceHero: View {
         switch device.connectionStatus {
         case .connected:
             return colorScheme == .dark ? Color(red: 0.36, green: 0.94, blue: 0.68) : Color(red: 0.00, green: 0.47, blue: 0.30)
-        case .available:
+        case .available, .connecting:
             return tint
-        case .setupRequired:
+        case .setupRequired, .tokenExpired, .syncError:
             return colorScheme == .dark ? Color(red: 1.0, green: 0.70, blue: 0.38) : Color(red: 0.76, green: 0.34, blue: 0.08)
         case .disconnected:
             return secondaryText
@@ -444,6 +711,7 @@ private struct MeasurementActiveDeviceHero: View {
 private struct MeasurementDeviceSourceCard: View {
     let device: MeasurementDevice
     let isFocused: Bool
+    let isPrimaryActionDisabled: Bool
     let onFocus: () -> Void
     let onAction: () -> Void
 
@@ -490,11 +758,12 @@ private struct MeasurementDeviceSourceCard: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if device.type == .amazfitHelioRing {
-                    Text("Integration is not connected yet.")
+                if device.type == .ouraRing {
+                    Text(ouraCardCaption)
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(statusTint)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.74)
                 }
             }
 
@@ -513,7 +782,7 @@ private struct MeasurementDeviceSourceCard: View {
                     }
             }
             .buttonStyle(.plain)
-            .disabled(device.isActiveSource)
+            .disabled(isPrimaryActionDisabled)
         }
         .padding(14)
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
@@ -529,15 +798,39 @@ private struct MeasurementDeviceSourceCard: View {
     }
 
     private var metricSummary: String {
-        device.supportedMetrics.prefix(4).map(\.label).joined(separator: " • ")
+        if device.type == .ouraRing {
+            return "Sleep · Recovery · HRV · Temp · Activity"
+        }
+        return device.supportedMetrics.prefix(4).map(\.label).joined(separator: " • ")
+    }
+
+    private var ouraCardCaption: String {
+        switch device.connectionStatus {
+        case .connected:
+            return "Cloud sync connected"
+        case .syncError:
+            return "Last sync needs attention"
+        case .tokenExpired:
+            return "Authorization expired"
+        case .connecting:
+            return "Authorization in progress"
+        case .setupRequired:
+            #if DEBUG
+            return "Backend setup required"
+            #else
+            return "Setup unavailable"
+            #endif
+        case .available, .disconnected:
+            return "Not connected"
+        }
     }
 
     private var tint: Color {
         switch device.type {
         case .appleWatch:
             return colorScheme == .dark ? Color(red: 0.72, green: 0.86, blue: 1.0) : Color(red: 0.08, green: 0.34, blue: 0.58)
-        case .amazfitHelioRing:
-            return colorScheme == .dark ? Color(red: 0.34, green: 0.92, blue: 0.80) : Color(red: 0.00, green: 0.48, blue: 0.42)
+        case .ouraRing:
+            return colorScheme == .dark ? Color(red: 0.72, green: 0.78, blue: 0.90) : Color(red: 0.18, green: 0.24, blue: 0.34)
         }
     }
 
@@ -545,9 +838,9 @@ private struct MeasurementDeviceSourceCard: View {
         switch device.connectionStatus {
         case .connected:
             return colorScheme == .dark ? Color(red: 0.36, green: 0.94, blue: 0.68) : Color(red: 0.00, green: 0.47, blue: 0.30)
-        case .available:
+        case .available, .connecting:
             return tint
-        case .setupRequired:
+        case .setupRequired, .tokenExpired, .syncError:
             return colorScheme == .dark ? Color(red: 1.0, green: 0.70, blue: 0.38) : Color(red: 0.76, green: 0.34, blue: 0.08)
         case .disconnected:
             return secondaryText
@@ -616,9 +909,341 @@ private struct MeasurementDeviceSourceCard: View {
     }
 }
 
+private struct SourcePriorityCategoryRow: View {
+    let category: HealthSourcePriorityCategory
+    let preference: HealthSourcePreference
+    let decision: SourceRoutingDecision
+    let onSourceChange: (HealthSourceID) -> Void
+    let onFallbackChange: (Bool) -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(category.title)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(primaryText)
+                    Text(activeSourceText)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(decision.isFallback || decision.displayedSource == nil ? fallbackTint : secondaryText)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Menu {
+                    ForEach(category.fallbackOrder, id: \.self) { source in
+                        Button {
+                            onSourceChange(source)
+                        } label: {
+                            if preference.currentSource == source {
+                                Label(source.priorityDisplayName, systemImage: "checkmark")
+                            } else {
+                                Text(source.priorityDisplayName)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 7) {
+                        Text(preference.currentSource.priorityDisplayName)
+                            .font(.caption.weight(.bold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.74)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2.weight(.bold))
+                    }
+                    .foregroundStyle(primaryText)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 9)
+                    .background(.white.opacity(colorScheme == .dark ? 0.07 : 0.60), in: Capsule(style: .continuous))
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .stroke(cardBorder, lineWidth: 1)
+                    }
+                }
+            }
+
+            Toggle(isOn: Binding(
+                get: { preference.fallbackEnabled },
+                set: onFallbackChange
+            )) {
+                Text("Auto fallback")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(secondaryText)
+            }
+            .toggleStyle(.switch)
+        }
+        .padding(14)
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(cardBorder, lineWidth: 1)
+        }
+    }
+
+    private var activeSourceText: String {
+        let lastData = decision.lastDataAt.map { " · Last data \(Self.relativeFormatter.localizedString(for: $0, relativeTo: Date()))" } ?? ""
+        if decision.isFallback, let activeSource = decision.displayedSource {
+            return "\(HealthSourceDisplayCopy.preferredSource): \(decision.currentSource.priorityDisplayName) · \(HealthSourceDisplayCopy.activeSource): \(activeSource.priorityDisplayName) via fallback\(lastData)"
+        }
+        guard let activeSource = decision.displayedSource else {
+            return "\(HealthSourceDisplayCopy.preferredSource): \(decision.currentSource.priorityDisplayName) · No recent \(decision.currentSource.priorityDisplayName) data available"
+        }
+        return "\(HealthSourceDisplayCopy.preferredSource): \(decision.currentSource.priorityDisplayName) · \(HealthSourceDisplayCopy.activeSource): \(activeSource.priorityDisplayName)\(lastData)"
+    }
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter
+    }()
+
+    private var primaryText: Color {
+        colorScheme == .dark ? .white.opacity(0.96) : Color(red: 0.07, green: 0.10, blue: 0.15)
+    }
+
+    private var secondaryText: Color {
+        colorScheme == .dark ? .white.opacity(0.62) : Color(red: 0.35, green: 0.39, blue: 0.47)
+    }
+
+    private var fallbackTint: Color {
+        colorScheme == .dark ? Color(red: 1.0, green: 0.70, blue: 0.38) : Color(red: 0.76, green: 0.34, blue: 0.08)
+    }
+
+    private var cardBackground: LinearGradient {
+        LinearGradient(
+            colors: colorScheme == .dark
+                ? [.white.opacity(0.10), Color(red: 0.05, green: 0.07, blue: 0.11).opacity(0.88)]
+                : [.white.opacity(0.90), Color(red: 0.93, green: 0.97, blue: 1.0).opacity(0.66)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var cardBorder: Color {
+        colorScheme == .dark
+            ? .white.opacity(0.12)
+            : Color(red: 0.44, green: 0.56, blue: 0.70).opacity(0.22)
+    }
+}
+
+private extension HealthSourceID {
+    var priorityDisplayName: String {
+        switch self {
+        case .appleWatch:
+            return "Apple Watch / HealthKit"
+        case .ouraRing:
+            return "Oura Ring"
+        case .iPhone:
+            return "iPhone Sensors"
+        case .manual:
+            return "Manual Entry"
+        }
+    }
+
+    var shortDebugName: String {
+        switch self {
+        case .appleWatch:
+            return "HK"
+        case .ouraRing:
+            return "Oura"
+        case .iPhone:
+            return "iPhone"
+        case .manual:
+            return "Manual"
+        }
+    }
+}
+
+private extension HealthSourcePriorityCategory {
+    var confirmationTitle: String {
+        switch self {
+        case .sleepRecovery:
+            return "Sleep & Recovery"
+        case .workoutsActivity:
+            return "Workouts"
+        case .activitySteps:
+            return "Activity / Steps"
+        case .heartMetrics:
+            return "Heart Metrics"
+        case .temperatureCycle:
+            return "Temperature & Cycle"
+        case .stressResilience:
+            return "Stress & Resilience"
+        case .manualEntries:
+            return "Manual Entries"
+        }
+    }
+}
+
+private struct SourceChangeConfirmationBanner: View {
+    let message: String
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Color(red: 0.18, green: 0.62, blue: 0.39))
+
+            Text(message)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(primaryText)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(colorScheme == .dark ? .white.opacity(0.14) : Color.black.opacity(0.08), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.34 : 0.12), radius: 18, y: 10)
+    }
+
+    private var primaryText: Color {
+        colorScheme == .dark ? .white.opacity(0.95) : Color(red: 0.07, green: 0.10, blue: 0.15)
+    }
+}
+
+#if DEBUG
+private struct SourceRoutingDebugPanel: View {
+    @ObservedObject var manager: MeasurementSourceManager
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Source routing debug", systemImage: "ladybug")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(primaryText)
+
+            VStack(alignment: .leading, spacing: 9) {
+                ForEach(HealthSourcePriorityCategory.allCases) { category in
+                    let preference = manager.preference(for: category)
+                    let decision = manager.routingDecision(for: category)
+                    let resolutions = manager.metricRoutingResolutions(for: category)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(category.confirmationTitle)
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(primaryText)
+                        Text("Current \(preference.currentSource.priorityDisplayName) · Displayed \(decision.displayedSource?.priorityDisplayName ?? "none")\(decision.isFallback ? " · fallback" : "")")
+                        Text("Switched \(relativeText(for: preference.sourceSwitchTimestamp)) · Last metric data \(relativeText(for: decision.lastDataAt))")
+                        ForEach(resolutions) { resolution in
+                            Text(metricDebugText(for: resolution))
+                                .foregroundStyle(resolution.fallbackUsed || resolution.displayedRecordSource == nil ? fallbackTint : secondaryText)
+                            if let reason = resolution.fallbackReason, resolution.fallbackUsed || resolution.displayedRecordSource == nil {
+                                Text("Reason: \(reason)")
+                                    .foregroundStyle(fallbackTint)
+                            }
+                        }
+                    }
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(secondaryText)
+                }
+            }
+
+            Divider()
+                .overlay(secondaryText.opacity(0.24))
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Connections")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(primaryText)
+                ForEach(manager.sourcePrioritySnapshots, id: \.sourceID) { snapshot in
+                    Text("\(snapshot.sourceID.priorityDisplayName): sync \(relativeText(for: snapshot.lastSyncAt)) · \(snapshot.connectionState.debugLabel)")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(secondaryText)
+                }
+            }
+        }
+        .padding(13)
+        .background(debugBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(cardBorder, lineWidth: 1)
+        }
+    }
+
+    private func relativeText(for date: Date?) -> String {
+        guard let date else { return "none" }
+        return Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    private func metricDebugText(for resolution: MetricSourceResolution) -> String {
+        let displayed = resolution.displayedRecordSource?.priorityDisplayName ?? "none"
+        let sampleCounts = resolution.sourceAvailabilityByProvider
+            .filter { $0.source != .manual || $0.sampleCount > 0 }
+            .map { "\($0.source.shortDebugName) \($0.sampleCount)" }
+            .joined(separator: " · ")
+        return "\(resolution.metricTitle): current \(resolution.currentSource.priorityDisplayName) · displayed \(displayed) · latest \(relativeText(for: resolution.lastAvailableSampleDate)) · \(sampleCounts)"
+    }
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter
+    }()
+
+    private var primaryText: Color {
+        colorScheme == .dark ? .white.opacity(0.94) : Color(red: 0.08, green: 0.11, blue: 0.16)
+    }
+
+    private var secondaryText: Color {
+        colorScheme == .dark ? .white.opacity(0.64) : Color(red: 0.35, green: 0.39, blue: 0.47)
+    }
+
+    private var fallbackTint: Color {
+        colorScheme == .dark ? Color(red: 1.0, green: 0.70, blue: 0.38) : Color(red: 0.76, green: 0.34, blue: 0.08)
+    }
+
+    private var debugBackground: Color {
+        colorScheme == .dark ? .white.opacity(0.07) : Color(red: 0.96, green: 0.98, blue: 1.0).opacity(0.82)
+    }
+
+    private var cardBorder: Color {
+        colorScheme == .dark ? .white.opacity(0.12) : Color(red: 0.44, green: 0.56, blue: 0.70).opacity(0.22)
+    }
+}
+#endif
+
+private extension SourceConnectionState {
+    var debugLabel: String {
+        switch self {
+        case .connected:
+            return "connected"
+        case .available:
+            return "available"
+        case .setupRequired:
+            return "setup required"
+        case .syncing:
+            return "syncing"
+        case .authExpired:
+            return "auth expired"
+        case .missingScopes:
+            return "missing scopes"
+        case .rateLimited:
+            return "rate limited"
+        case .syncError:
+            return "sync error"
+        case .disconnected:
+            return "disconnected"
+        }
+    }
+}
+
 private struct MeasurementDeviceDetailPanel: View {
     let device: MeasurementDevice
+    let isPrimaryActionDisabled: Bool
     let onAction: () -> Void
+    let onSync: () -> Void
+    let onDisconnect: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -626,7 +1251,7 @@ private struct MeasurementDeviceDetailPanel: View {
         VStack(alignment: .leading, spacing: 17) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Device details")
+                    Text(detailTitle)
                         .font(.headline.weight(.semibold))
                         .foregroundStyle(primaryText)
                     Text(detailSubtitle)
@@ -711,7 +1336,41 @@ private struct MeasurementDeviceDetailPanel: View {
                     }
             }
             .buttonStyle(.plain)
-            .disabled(device.isActiveSource)
+            .disabled(isPrimaryActionDisabled)
+
+            if device.connectionStatus == .connected || device.connectionStatus == .syncError {
+                HStack(spacing: 10) {
+                    Button(action: onSync) {
+                        Label("Sync now", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(tint)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(metricBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .stroke(buttonBorder, lineWidth: 1)
+                            }
+                    }
+                    .buttonStyle(.plain)
+
+                    if device.type == .ouraRing {
+                        Button(action: onDisconnect) {
+                            Label("Disconnect", systemImage: "xmark.circle")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(statusTint)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(metricBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .stroke(cardBorder, lineWidth: 1)
+                                }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
         }
         .padding(17)
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
@@ -725,17 +1384,41 @@ private struct MeasurementDeviceDetailPanel: View {
         switch device.type {
         case .appleWatch:
             return device.isActiveSource ? "Powering your current health measurements." : "Available for wearable measurements."
-        case .amazfitHelioRing:
-            return "Amazfit Helio Ring integration is not connected yet."
+        case .ouraRing:
+            switch device.connectionStatus {
+            case .connected:
+                return "Oura Ring connected. Cloud sync is enabled for sleep, recovery, HRV, temperature trends, activity, and workouts."
+            case .connecting:
+                return "Waiting for Oura authorization."
+            case .syncError:
+                return "Oura is connected, but the last sync needs attention."
+            case .tokenExpired:
+                return "Connect Oura again to refresh authorization."
+            case .setupRequired:
+                #if DEBUG
+                return "Backend token exchange must be configured before OAuth can start."
+                #else
+                return "Oura connection is not available yet."
+                #endif
+            case .available, .disconnected:
+                return "Sign in with Oura to sync sleep, recovery, HRV, temperature trends, and activity."
+            }
         }
+    }
+
+    private var detailTitle: String {
+        if device.type == .ouraRing, device.connectionStatus != .connected {
+            return "Connect your Oura Ring"
+        }
+        return "Device details"
     }
 
     private var explanation: String {
         switch device.type {
         case .appleWatch:
             return "Apple Watch data is prioritized for sleep, recovery, strain, stress, and workout metrics when it is the active source."
-        case .amazfitHelioRing:
-            return "Amazfit Helio Ring integration is not connected yet. Set up support before using it as a measurement source."
+        case .ouraRing:
+            return "Pulsar reads Oura cloud data after the ring syncs to Oura. This is not direct Bluetooth or live ring streaming."
         }
     }
 
@@ -748,8 +1431,8 @@ private struct MeasurementDeviceDetailPanel: View {
         switch device.type {
         case .appleWatch:
             return colorScheme == .dark ? Color(red: 0.72, green: 0.86, blue: 1.0) : Color(red: 0.08, green: 0.34, blue: 0.58)
-        case .amazfitHelioRing:
-            return colorScheme == .dark ? Color(red: 0.34, green: 0.92, blue: 0.80) : Color(red: 0.00, green: 0.48, blue: 0.42)
+        case .ouraRing:
+            return colorScheme == .dark ? Color(red: 0.72, green: 0.78, blue: 0.90) : Color(red: 0.18, green: 0.24, blue: 0.34)
         }
     }
 
@@ -757,9 +1440,9 @@ private struct MeasurementDeviceDetailPanel: View {
         switch device.connectionStatus {
         case .connected:
             return colorScheme == .dark ? Color(red: 0.36, green: 0.94, blue: 0.68) : Color(red: 0.00, green: 0.47, blue: 0.30)
-        case .available:
+        case .available, .connecting:
             return tint
-        case .setupRequired:
+        case .setupRequired, .tokenExpired, .syncError:
             return colorScheme == .dark ? Color(red: 1.0, green: 0.70, blue: 0.38) : Color(red: 0.76, green: 0.34, blue: 0.08)
         case .disconnected:
             return secondaryText
@@ -1073,8 +1756,8 @@ private struct DeviceProductImageView: View {
         switch deviceType {
         case .appleWatch:
             AppleWatchDeviceIllustrationView(tint: tint)
-        case .amazfitHelioRing:
-            HelioRingDeviceIllustrationView(tint: tint)
+        case .ouraRing:
+            OuraRingDeviceIllustrationView(tint: tint)
         }
     }
 
@@ -1134,11 +1817,11 @@ private struct DeviceProductImageView: View {
             return 1.04
         case (.appleWatch, .detail):
             return 1.02
-        case (.amazfitHelioRing, .hero):
+        case (.ouraRing, .hero):
             return 0.92
-        case (.amazfitHelioRing, .card):
+        case (.ouraRing, .card):
             return 0.92
-        case (.amazfitHelioRing, .detail):
+        case (.ouraRing, .detail):
             return 0.93
         }
     }
@@ -1158,7 +1841,7 @@ private struct DeviceProductImageView: View {
         switch (deviceType, mode) {
         case (.appleWatch, .hero):
             return -4
-        case (.amazfitHelioRing, .hero):
+        case (.ouraRing, .hero):
             return 2
         default:
             return 0
@@ -1169,8 +1852,8 @@ private struct DeviceProductImageView: View {
         switch deviceType {
         case .appleWatch:
             return colorScheme == .dark ? Color(red: 0.72, green: 0.86, blue: 1.0) : Color(red: 0.08, green: 0.34, blue: 0.58)
-        case .amazfitHelioRing:
-            return colorScheme == .dark ? Color(red: 0.34, green: 0.92, blue: 0.80) : Color(red: 0.00, green: 0.48, blue: 0.42)
+        case .ouraRing:
+            return colorScheme == .dark ? Color(red: 0.72, green: 0.78, blue: 0.90) : Color(red: 0.18, green: 0.24, blue: 0.34)
         }
     }
 }
@@ -1296,7 +1979,7 @@ private struct AppleWatchDeviceIllustrationView: View {
     }
 }
 
-private struct HelioRingDeviceIllustrationView: View {
+private struct OuraRingDeviceIllustrationView: View {
     let tint: Color
     @Environment(\.colorScheme) private var colorScheme
 
@@ -1466,4 +2149,9 @@ private struct MeasurementSourceBackground: View {
 
 #Preview("Measurement Source") {
     MeasurementSourceSheet(manager: MeasurementSourceManager(), onDismiss: {})
+}
+
+#Preview("Measurement Source Dark") {
+    MeasurementSourceSheet(manager: MeasurementSourceManager(), onDismiss: {})
+        .preferredColorScheme(.dark)
 }

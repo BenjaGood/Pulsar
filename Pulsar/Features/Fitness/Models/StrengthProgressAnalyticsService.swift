@@ -739,7 +739,7 @@ private extension StrengthProgressAnalyticsService {
         return ((current - previous) / previous) * 100
     }
 
-    static func completedSetCount(for session: PulsarGymWorkoutSession) -> Int {
+    nonisolated static func completedSetCount(for session: PulsarGymWorkoutSession) -> Int {
         session.exercises.flatMap(\.sets).filter(\.isCompleted).count
     }
 

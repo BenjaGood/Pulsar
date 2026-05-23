@@ -10,7 +10,6 @@ struct InsightsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    sectionHeader
                     PlaceholderMetricCard(
                         title: "Breathing",
                         value: "+7%",
@@ -28,22 +27,13 @@ struct InsightsView: View {
                 .padding(.top, 12)
                 .padding(.bottom, 28)
             }
-            .pulsarBottomChromeScrollTracking()
-            .background(PulsarSectionBackground())
-            .premiumScrollHeaderBlur(height: 56)
-            .toolbar(.hidden, for: .navigationBar)
+            .safeAreaPadding(.bottom, 16)
+            .scrollContentBackground(.hidden)
+            .navigationTitle("Mindfulness")
+            .toolbarTitleDisplayMode(.large)
         }
-    }
-
-    private var sectionHeader: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Mindfulness")
-                .font(.largeTitle.weight(.semibold))
-            Text("Breathing, reflection, and calm recovery patterns will live here.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(PulsarSectionBackground())
+        .toolbarBackground(.hidden, for: .navigationBar)
     }
 }
 

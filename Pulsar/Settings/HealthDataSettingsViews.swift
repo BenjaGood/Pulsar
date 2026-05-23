@@ -24,8 +24,8 @@ struct DevicesView: View {
         SettingsDetailScaffold(title: "Devices", hasChanges: draft != store.profile, save: save) {
             VStack(spacing: 18) {
                 currentSourceCard
-                SettingsSectionCard(title: "Preferred Source", footer: "Pulsar uses HealthKit as the central data layer. Devices are compatible when connected to Apple Health.") {
-                    Picker("Preferred Data Source", selection: $draft.preferredDataSource) {
+                SettingsSectionCard(title: "Data Source", footer: "Pulsar uses HealthKit as the central data layer. Devices are compatible when connected to Apple Health.") {
+                    Picker("Current Data Source", selection: $draft.preferredDataSource) {
                         ForEach(PreferredDataSource.allCases) { source in Text(source.rawValue).tag(source) }
                     }
                     .padding(.horizontal, 16)
@@ -65,7 +65,7 @@ struct DevicesView: View {
                         .font(.headline)
                     Text(currentSourceLabel)
                         .font(.title2.weight(.semibold))
-                    Text("Based on available HealthKit data and your preferred source setting.")
+                    Text("Based on available HealthKit data and your current source setting.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -130,6 +130,7 @@ struct DataSourcesView: View {
 
 struct HealthPermissionsView: View {
     @ObservedObject var healthKitStore: HealthKitSettingsStore
+    var onAuthorizationUpdated: (() -> Void)? = nil
     @State private var isRequesting = false
 
     var body: some View {
@@ -155,6 +156,9 @@ struct HealthPermissionsView: View {
                             isRequesting = true
                             await healthKitStore.requestAuthorization()
                             isRequesting = false
+                            if healthKitStore.permissionState == .connected {
+                                onAuthorizationUpdated?()
+                            }
                         }
                     } label: {
                         Label(isRequesting ? "Requesting..." : "Connect Apple Health", systemImage: "heart.circle.fill")

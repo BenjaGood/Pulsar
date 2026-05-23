@@ -28,6 +28,7 @@ struct PulsarSharedActivityInput {
     var peakHeartRate: Double? = nil
     var restingHeartRate: Double? = nil
     var maxHeartRate: Double? = nil
+    var sourceName: String? = nil
 }
 
 struct PulsarSharedHeartRateSample {
@@ -99,6 +100,7 @@ struct PulsarSharedStressInput {
     var recentExerciseMinutes: Double? = nil
     var movementState: PulsarSharedStressMovementState = .unknown
     var previousScore: Int? = nil
+    var previousScoreTimestamp: Date? = nil
     var sourceNames: [String]
 }
 
@@ -130,7 +132,7 @@ enum PulsarSharedMetricCalculator {
         let score = safeguard.score
         let averageActiveHeartRate = average(workouts.compactMap(\.averageHeartRate) + [activity.averageElevatedHeartRate].compactMap { $0 })
         let peakHeartRate = (workouts.compactMap { $0.peakHeartRate ?? $0.averageHeartRate } + [activity.peakHeartRate].compactMap { $0 }).max()
-        let sourceNames = Array(Set(workouts.compactMap(\.sourceName))).sorted()
+        let sourceNames = Array(Set(workouts.compactMap(\.sourceName) + [activity.sourceName].compactMap { $0 })).sorted()
         let confidence: PulsarSyncConfidence
 
         if averageActiveHeartRate != nil || peakHeartRate != nil || passiveHeartLoad > 0 {
@@ -451,9 +453,10 @@ enum PulsarSharedMetricCalculator {
         strain: PulsarStrainSyncMetric?,
         computedAt: Date
     ) -> PulsarStressSyncMetric? {
-        let baselineHRV = metricBaseline(baselineDays.compactMap(\.hrvSDNN).filter(validHRV), minimumStandardDeviation: 4)
-        let baselineRHR = metricBaseline(baselineDays.compactMap(\.restingHeartRate).filter(validHeartRate), minimumStandardDeviation: 2)
-        let baselineDaytimeHR = metricBaseline(baselineDays.compactMap(\.daytimeHeartRate).filter(validRecentHeartRate), minimumStandardDeviation: 5)
+        let scoringBaselineDays = stressScoringBaselineDays(from: baselineDays)
+        let baselineHRV = metricBaseline(scoringBaselineDays.compactMap(\.hrvSDNN).filter(validHRV), minimumStandardDeviation: 4)
+        let baselineRHR = metricBaseline(scoringBaselineDays.compactMap(\.restingHeartRate).filter(validHeartRate), minimumStandardDeviation: 2)
+        let baselineDaytimeHR = metricBaseline(scoringBaselineDays.compactMap(\.daytimeHeartRate).filter(validRecentHeartRate), minimumStandardDeviation: 5)
         let movementState = resolvedStressMovementState(today: today, computedAt: computedAt)
         let cooldownMinutes = today.lastWorkoutEnd.map { max(0, computedAt.timeIntervalSince($0) / 60) }
         let cooldownActive = movementState == .cooldown && (cooldownMinutes ?? .infinity) <= 12
@@ -500,7 +503,7 @@ enum PulsarSharedMetricCalculator {
                 sleepDurationMinutes: today.sleepDurationMinutes ?? sleep?.totalSleepMinutes,
                 strainScore: today.strainScore ?? strain.map { Double($0.score) },
                 availableSignalCount: availableSignalCount,
-                baselineWindowDays: stressBaselineDayCount(baselineDays),
+                baselineWindowDays: stressBaselineDayCount(scoringBaselineDays),
                 timelineSamples: [PulsarStressSyncSample(timestamp: computedAt, score: 0, context: state == .workoutPaused ? "workout" : "recovery")],
                 sourceNames: sourceNames,
                 computedAt: computedAt
@@ -580,7 +583,13 @@ enum PulsarSharedMetricCalculator {
             heartRateIsStale: heartRateIsStale,
             adjustments: &adjustments
         )
-        let smoothed = smoothedStressScore(current: capped, previous: today.previousScore, movementState: movementState)
+        let smoothed = smoothedStressScore(
+            current: capped,
+            previous: today.previousScore,
+            previousTimestamp: today.previousScoreTimestamp,
+            computedAt: computedAt,
+            movementState: movementState
+        )
         if today.previousScore != nil, abs(smoothed - capped) >= 0.5 {
             adjustments.append("short-window smoothing")
         }
@@ -588,7 +597,7 @@ enum PulsarSharedMetricCalculator {
         let score = PulsarStressScale.roundedScore(smoothed)
         let calculationState: PulsarSharedStressCalculationState = heartRateIsStale || hrvIsStale ? .lowConfidence : .measuring
         let confidence = stressConfidence(
-            baselineDayCount: stressBaselineDayCount(baselineDays),
+            baselineDayCount: stressBaselineDayCount(scoringBaselineDays),
             hasHeartRate: contextualHeartDeviation != nil,
             hasHRV: hrvDeviation != nil,
             heartRateIsStale: heartRateIsStale,
@@ -640,7 +649,7 @@ enum PulsarSharedMetricCalculator {
             sleepDurationMinutes: today.sleepDurationMinutes ?? sleep?.totalSleepMinutes,
             strainScore: today.strainScore ?? strain.map { Double($0.score) },
             availableSignalCount: availableSignalCount,
-            baselineWindowDays: stressBaselineDayCount(baselineDays),
+            baselineWindowDays: stressBaselineDayCount(scoringBaselineDays),
             timelineSamples: [sample],
             sourceNames: sourceNames,
             computedAt: computedAt
@@ -653,23 +662,48 @@ enum PulsarSharedMetricCalculator {
         days.filter {
             $0.hrvSDNN != nil ||
                 $0.restingHeartRate != nil ||
-                $0.daytimeHeartRate != nil ||
-                $0.respiratoryRate != nil
+                $0.daytimeHeartRate != nil
         }.count
+    }
+
+    nonisolated private static func stressScoringBaselineDays(from days: [PulsarSharedBiometricsDay]) -> [PulsarSharedBiometricsDay] {
+        Array(
+            days
+                .filter {
+                    $0.hrvSDNN != nil ||
+                        $0.restingHeartRate != nil ||
+                        $0.daytimeHeartRate != nil
+                }
+                .sorted { $0.date < $1.date }
+                .suffix(14)
+        )
     }
 
     nonisolated private static func resolvedStressMovementState(today: PulsarSharedStressInput, computedAt: Date) -> PulsarSharedStressMovementState {
         if today.isWorkoutActive { return .workout }
         if let lastWorkoutEnd = today.lastWorkoutEnd {
             let minutesSinceWorkout = computedAt.timeIntervalSince(lastWorkoutEnd) / 60
-            if minutesSinceWorkout >= 0 && minutesSinceWorkout <= 12 {
+            if minutesSinceWorkout >= 0 && minutesSinceWorkout <= 30 {
                 return .cooldown
             }
         }
+        let inferredMovement = inferredStressMovementState(today: today)
         if today.movementState != .unknown {
+            if today.movementState == .inactive,
+               inferredMovement == .lightMovement || inferredMovement == .activeMovement {
+                return inferredMovement
+            }
+            if today.movementState == .lightMovement,
+               inferredMovement == .activeMovement {
+                return .activeMovement
+            }
             return today.movementState
         }
 
+        return inferredMovement
+    }
+
+    nonisolated private static func inferredStressMovementState(today: PulsarSharedStressInput) -> PulsarSharedStressMovementState {
         let steps = today.recentSteps ?? 0
         let energy = today.recentActiveEnergyKilocalories ?? 0
         let exercise = today.recentExerciseMinutes ?? 0
@@ -849,6 +883,12 @@ enum PulsarSharedMetricCalculator {
                 capped = cap
                 adjustments.append("active movement cap")
             }
+        } else if movementState == .cooldown {
+            let cap = max(38, min(58, nonActivityScore - 18))
+            if capped > cap {
+                capped = cap
+                adjustments.append("cooldown recovery cap")
+            }
         }
 
         if capped > 75, !(inactive && heart >= 1.55 && hrv >= 1.25 && !hrvIsStale && !heartRateIsStale) {
@@ -869,8 +909,20 @@ enum PulsarSharedMetricCalculator {
         return PulsarStressScale.clampedScore(capped)
     }
 
-    nonisolated private static func smoothedStressScore(current: Double, previous: Int?, movementState: PulsarSharedStressMovementState) -> Double {
+    nonisolated private static func smoothedStressScore(
+        current: Double,
+        previous: Int?,
+        previousTimestamp: Date?,
+        computedAt: Date,
+        movementState: PulsarSharedStressMovementState
+    ) -> Double {
         guard let previous else { return current }
+        if let previousTimestamp {
+            let ageMinutes = computedAt.timeIntervalSince(previousTimestamp) / 60
+            if ageMinutes < 0 || ageMinutes > 20 {
+                return current
+            }
+        }
         let previousValue = Double(previous)
         if current >= previousValue {
             return previousValue * 0.30 + current * 0.70
@@ -898,7 +950,11 @@ enum PulsarSharedMetricCalculator {
         let heartAge = today.heartRateTimestamp.map { String(format: "%.1fm", max(0, computedAt.timeIntervalSince($0) / 60)) } ?? "nil"
         let hrvAge = today.hrvTimestamp.map { String(format: "%.1fm", max(0, computedAt.timeIntervalSince($0) / 60)) } ?? "nil"
         let adjustments = metric.appliedAdjustments.isEmpty ? "none" : metric.appliedAdjustments.joined(separator: ",")
-        PulsarSyncDebugLogger.log("stress validation currentHR=\(metric.recentHeartRate.map { String(format: "%.1f", $0) } ?? "nil") HRTimestamp=\(today.heartRateTimestamp.map { "\($0)" } ?? "nil") HRAge=\(heartAge) HRV=\(metric.hrvSDNN.map { String(format: "%.1f", $0) } ?? "nil") HRVTimestamp=\(today.hrvTimestamp.map { "\($0)" } ?? "nil") HRVAge=\(hrvAge) restingHRBaseline=\(metric.restingHeartRateBaseline.map { String(format: "%.1f", $0) } ?? "nil") daytimeHRBaseline=\(metric.daytimeHeartRateBaseline.map { String(format: "%.1f", $0) } ?? "nil") HRVBaseline=\(metric.hrvBaseline.map { String(format: "%.1f", $0) } ?? "nil") HRDeviation=\(metric.heartRateDeviation.map { String(format: "%.2f", $0) } ?? "nil") HRVDeviation=\(metric.hrvDeviation.map { String(format: "%.2f", $0) } ?? "nil") movementState=\(metric.movementState ?? "nil") recentSteps=\(metric.recentSteps.map { String(format: "%.0f", $0) } ?? "nil") recentActiveEnergy=\(metric.recentActiveEnergyKilocalories.map { String(format: "%.1f", $0) } ?? "nil") workoutActive=\(metric.isWorkoutActive) lastWorkoutEnd=\(metric.lastWorkoutEnd.map { "\($0)" } ?? "nil") cooldownActive=\(metric.cooldownActive) rawStress=\(metric.rawStressScore.map { String(format: "%.1f", $0) } ?? "nil") activityAdjustment=\(metric.activityAdjustment.map { String(format: "%.1f", $0) } ?? "nil") smoothedStress=\(metric.smoothedStressScore.map { String(format: "%.1f", $0) } ?? "nil") finalStress=\(metric.score) label=\(metric.levelText) confidence=\(metric.confidence.rawValue) adjustments=\(adjustments)")
+        let sourceUsed = metric.sourceNames.isEmpty ? "unknown" : metric.sourceNames.joined(separator: "+")
+        let dailyAverage = PulsarStressTimelineDistribution.weightedAverage(
+            samples: metric.timelineSamples.map { PulsarStressTimelineSample(timestamp: $0.timestamp, score: $0.score) }
+        )
+        PulsarSyncDebugLogger.log("stress validation sourceUsed=\(sourceUsed) currentHR=\(metric.recentHeartRate.map { String(format: "%.1f", $0) } ?? "nil") HRTimestamp=\(today.heartRateTimestamp.map { "\($0)" } ?? "nil") HRAge=\(heartAge) HRV=\(metric.hrvSDNN.map { String(format: "%.1f", $0) } ?? "nil") HRVTimestamp=\(today.hrvTimestamp.map { "\($0)" } ?? "nil") HRVAge=\(hrvAge) restingHRBaseline=\(metric.restingHeartRateBaseline.map { String(format: "%.1f", $0) } ?? "nil") daytimeHRBaseline=\(metric.daytimeHeartRateBaseline.map { String(format: "%.1f", $0) } ?? "nil") HRVBaseline=\(metric.hrvBaseline.map { String(format: "%.1f", $0) } ?? "nil") HRDeviation=\(metric.heartRateDeviation.map { String(format: "%.2f", $0) } ?? "nil") HRVDeviation=\(metric.hrvDeviation.map { String(format: "%.2f", $0) } ?? "nil") movementState=\(metric.movementState ?? "nil") recentSteps=\(metric.recentSteps.map { String(format: "%.0f", $0) } ?? "nil") recentActiveEnergy=\(metric.recentActiveEnergyKilocalories.map { String(format: "%.1f", $0) } ?? "nil") workoutActive=\(metric.isWorkoutActive) lastWorkoutEnd=\(metric.lastWorkoutEnd.map { "\($0)" } ?? "nil") cooldownActive=\(metric.cooldownActive) rawStress=\(metric.rawStressScore.map { String(format: "%.1f", $0) } ?? "nil") activityAdjustment=\(metric.activityAdjustment.map { String(format: "%.1f", $0) } ?? "nil") smoothedStress=\(metric.smoothedStressScore.map { String(format: "%.1f", $0) } ?? "nil") finalStress=\(metric.score) dailyAverageStress=\(dailyAverage.map { String(format: "%.1f", $0) } ?? "nil") label=\(metric.levelText) confidence=\(metric.confidence.rawValue) adjustments=\(adjustments)")
     }
 
     private enum WorkoutStrainCategory {
@@ -1345,7 +1401,7 @@ enum PulsarSharedMetricCalculator {
         if movementState == .lightMovement || movementState == .activeMovement || movementState == .cooldown {
             points -= 1
         }
-        if points >= 4 { return .high }
+        if points >= 4 { return hasHeartRate && hasHRV ? .high : .moderate }
         if points >= 2 { return .moderate }
         if hasHeartRate || hasHRV { return .low }
         return .missing

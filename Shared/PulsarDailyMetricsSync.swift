@@ -1,8 +1,18 @@
 import Foundation
 
-enum PulsarSyncSourceDevice: String, Codable {
+enum PulsarSyncSourceDevice: String, Codable, Hashable {
     case iPhone
     case appleWatch
+    case ouraRing
+
+    nonisolated var sourceRouterLogName: String {
+        switch self {
+        case .iPhone, .appleWatch:
+            return "appleWatchHealthKit"
+        case .ouraRing:
+            return "ouraRing"
+        }
+    }
 }
 
 enum PulsarSyncConfidence: String, Codable {
@@ -48,6 +58,10 @@ struct PulsarStrainSyncMetric: Codable, Equatable {
     var peakHeartRate: Double?
     var sourceNames: [String]
     var computedAt: Date
+    var analyzedSampleCount: Int? = nil
+    var heartRateSampleCount: Int? = nil
+    var workoutSampleCount: Int? = nil
+    var activitySampleCount: Int? = nil
 
     nonisolated var isValid: Bool {
         guard (0...100).contains(score),
@@ -68,6 +82,9 @@ struct PulsarStrainSyncMetric: Codable, Equatable {
         if let activeEnergyKilocalories, (!activeEnergyKilocalories.isFinite || activeEnergyKilocalories < 0 || activeEnergyKilocalories > 20_000) { return false }
         if let averageActiveHeartRate, !(30...240).contains(averageActiveHeartRate) { return false }
         if let peakHeartRate, !(30...260).contains(peakHeartRate) { return false }
+        for count in [analyzedSampleCount, heartRateSampleCount, workoutSampleCount, activitySampleCount].compactMap({ $0 }) {
+            if count < 0 || count > 100_000 { return false }
+        }
         return true
     }
 }
@@ -390,7 +407,7 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
     var validityFlag: Bool? = nil
 
     nonisolated var hasValidData: Bool {
-        hasCompleteDailyScores || hasValidSleep || hasValidStress
+        hasCompleteDailyScores || hasValidRecovery || hasValidStrain || hasValidSleep || hasValidStress || hasValidHealthMonitor
     }
 
     nonisolated var hasCompleteDailyScores: Bool {
@@ -399,6 +416,14 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
 
     nonisolated var hasPartialDailyScores: Bool {
         (strain != nil || recovery != nil) && !hasCompleteDailyScores
+    }
+
+    nonisolated var hasValidRecovery: Bool {
+        recovery?.isValid == true
+    }
+
+    nonisolated var hasValidStrain: Bool {
+        strain?.isValid == true
     }
 
     nonisolated var hasValidSleep: Bool {
@@ -441,7 +466,6 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
     nonisolated var isValidPayload: Bool {
         guard validityFlag ?? true,
               hasValidData,
-              !hasPartialDailyScores,
               syncSessionID != nil,
               !resolvedDateKey.isEmpty,
               date.timeIntervalSinceReferenceDate.isFinite,
@@ -451,7 +475,7 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
 
     nonisolated var resolvedDataFingerprint: String {
         if let dataFingerprint, !dataFingerprint.isEmpty { return dataFingerprint }
-        return Self.makeFingerprint(dateKey: resolvedDateKey, strain: strain, recovery: recovery, sleep: sleep, stress: stress, healthMonitor: healthMonitor)
+        return Self.makeFingerprint(dateKey: resolvedDateKey, sourceDevice: sourceDevice, strain: strain, recovery: recovery, sleep: sleep, stress: stress, healthMonitor: healthMonitor)
     }
 
     nonisolated func applies(to day: Date, calendar: Calendar = .current) -> Bool {
@@ -467,6 +491,8 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
 
         let newer = syncedAt >= other.syncedAt ? self : other
         let dailySource = Self.newerMetricSource(lhs: self, rhs: other, timestamp: \.dailyMetricsComputedAt, isPresent: \.hasCompleteDailyScores)
+        let strainSource = Self.newerMetricSource(lhs: self, rhs: other, timestamp: \.strainComputedAt, isPresent: \.hasValidStrain)
+        let recoverySource = Self.newerMetricSource(lhs: self, rhs: other, timestamp: \.recoveryComputedAt, isPresent: \.hasValidRecovery)
         let sleepSource = Self.newerMetricSource(lhs: self, rhs: other, timestamp: \.sleepComputedAt, isPresent: \.hasValidSleep)
         let stressSource = Self.newerMetricSource(lhs: self, rhs: other, timestamp: \.stressComputedAt, isPresent: \.hasValidStress)
         let healthMonitorSource = Self.newerMetricSource(lhs: self, rhs: other, timestamp: \.healthMonitorComputedAt, isPresent: \.hasValidHealthMonitor)
@@ -476,8 +502,8 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
             dateKey: newer.resolvedDateKey,
             syncedAt: newer.syncedAt,
             sourceDevice: newer.sourceDevice,
-            strain: dailySource?.strain,
-            recovery: dailySource?.recovery,
+            strain: dailySource?.strain ?? strainSource?.strain,
+            recovery: dailySource?.recovery ?? recoverySource?.recovery,
             sleep: sleepSource?.sleep,
             stress: stressSource?.stress,
             healthMonitor: healthMonitorSource?.healthMonitor,
@@ -485,8 +511,9 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
             dataFingerprint: nil,
             validityFlag: true
         )
-        guard merged.resolvedDataFingerprint != resolvedDataFingerprint else { return self }
-        return merged
+        let sanitized = merged.sanitizedForDeclaredSource()
+        guard sanitized.resolvedDataFingerprint != resolvedDataFingerprint else { return self }
+        return sanitized
     }
 
     private nonisolated static func newerMetricSource(
@@ -503,7 +530,74 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
         return lhsTimestamp >= rhsTimestamp ? lhs : rhs
     }
 
-    private nonisolated static func makeFingerprint(dateKey: String, strain: PulsarStrainSyncMetric?, recovery: PulsarRecoverySyncMetric?, sleep: PulsarSleepSyncMetric?, stress: PulsarStressSyncMetric? = nil, healthMonitor: PulsarHealthMonitorSyncMetric? = nil) -> String {
+    nonisolated var strainComputedAt: Date? {
+        guard let strain, strain.isValid else { return nil }
+        return strain.computedAt
+    }
+
+    nonisolated var recoveryComputedAt: Date? {
+        guard let recovery, recovery.isValid else { return nil }
+        return recovery.computedAt
+    }
+
+    nonisolated func sanitizedForDeclaredSource() -> PulsarDailyMetricsSyncPayload {
+        var copy = self
+        copy.dataFingerprint = nil
+
+        if let strain, !Self.sourceNamesMatch(strain.sourceNames, sourceDevice: sourceDevice) {
+            Self.logInvalidSourceMix(metric: "strain", currentSource: sourceDevice, displayedSourceNames: strain.sourceNames)
+            copy.strain = nil
+        }
+
+        if let recovery, !Self.sourceNamesMatch(recovery.sourceNames, sourceDevice: sourceDevice) {
+            Self.logInvalidSourceMix(metric: "recovery", currentSource: sourceDevice, displayedSourceNames: recovery.sourceNames)
+            copy.recovery = nil
+        }
+
+        if let sleep, !Self.sourceNamesMatch(sleep.sourceNames, sourceDevice: sourceDevice) {
+            Self.logInvalidSourceMix(metric: "sleep", currentSource: sourceDevice, displayedSourceNames: sleep.sourceNames)
+            copy.sleep = nil
+        }
+
+        if let stress, !Self.sourceNamesMatch(stress.sourceNames, sourceDevice: sourceDevice) {
+            Self.logInvalidSourceMix(metric: "stress", currentSource: sourceDevice, displayedSourceNames: stress.sourceNames)
+            copy.stress = nil
+        }
+
+        if let healthMonitor {
+            let filteredMetrics = healthMonitor.metrics.filter { metric in
+                if metric.value == nil, metric.status == .noData, metric.sourceNames.isEmpty {
+                    return false
+                }
+                let matches = Self.sourceNamesMatch(metric.sourceNames, sourceDevice: sourceDevice)
+                if !matches {
+                    Self.logInvalidSourceMix(
+                        metric: "healthMonitor.\(metric.kind.rawValue)",
+                        currentSource: sourceDevice,
+                        displayedSourceNames: metric.sourceNames
+                    )
+                }
+                return matches
+            }
+
+            let sourceNames = Self.sourceNamesMatch(healthMonitor.sourceNames, sourceDevice: sourceDevice)
+                ? healthMonitor.sourceNames
+                : Array(Set(filteredMetrics.flatMap(\.sourceNames))).sorted()
+
+            let sanitizedHealthMonitor = PulsarHealthMonitorSyncMetric(
+                metrics: filteredMetrics,
+                baselineWindowDays: healthMonitor.baselineWindowDays,
+                sourceNames: sourceNames,
+                computedAt: healthMonitor.computedAt
+            )
+            copy.healthMonitor = sanitizedHealthMonitor.isValid ? sanitizedHealthMonitor : nil
+        }
+
+        copy.validityFlag = copy.validityFlag ?? true
+        return copy
+    }
+
+    private nonisolated static func makeFingerprint(dateKey: String, sourceDevice: PulsarSyncSourceDevice, strain: PulsarStrainSyncMetric?, recovery: PulsarRecoverySyncMetric?, sleep: PulsarSleepSyncMetric?, stress: PulsarStressSyncMetric? = nil, healthMonitor: PulsarHealthMonitorSyncMetric? = nil) -> String {
         var parts: [String] = []
         if !dateKey.isEmpty {
             parts.append("date:\(dateKey)")
@@ -521,7 +615,11 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
                 rounded(strain.workoutMinutes),
                 rounded(strain.averageActiveHeartRate),
                 rounded(strain.peakHeartRate),
-                strain.confidence.rawValue
+                strain.confidence.rawValue,
+                "\(strain.analyzedSampleCount ?? 0)",
+                "\(strain.heartRateSampleCount ?? 0)",
+                "\(strain.workoutSampleCount ?? 0)",
+                "\(strain.activitySampleCount ?? 0)"
             ].joined(separator: ":"))
             parts.append([
                 "recovery",
@@ -544,6 +642,50 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
                 rounded(recovery.sleepContribution),
                 rounded(recovery.strainPenalty)
             ].joined(separator: ":"))
+        } else {
+            if let strain, strain.isValid {
+                parts.append([
+                    "strain",
+                    "\(strain.score)",
+                    rounded(strain.rawLoad),
+                    rounded(strain.workoutLoad),
+                    rounded(strain.movementLoad),
+                    "\(strain.steps)",
+                    rounded(strain.activeEnergyKilocalories),
+                    rounded(strain.exerciseMinutes),
+                    rounded(strain.workoutMinutes),
+                    rounded(strain.averageActiveHeartRate),
+                    rounded(strain.peakHeartRate),
+                    strain.confidence.rawValue,
+                    "\(strain.analyzedSampleCount ?? 0)",
+                    "\(strain.heartRateSampleCount ?? 0)",
+                    "\(strain.workoutSampleCount ?? 0)",
+                    "\(strain.activitySampleCount ?? 0)"
+                ].joined(separator: ":"))
+            }
+            if let recovery, recovery.isValid {
+                parts.append([
+                    "recovery",
+                    "\(recovery.score)",
+                    recovery.confidence.rawValue,
+                    recovery.statusText,
+                    rounded(recovery.hrvSDNN),
+                    rounded(recovery.hrvBaseline),
+                    rounded(recovery.restingHeartRate),
+                    rounded(recovery.restingHeartRateBaseline),
+                    rounded(recovery.sleepDuration),
+                    rounded(recovery.sleepEfficiency),
+                    rounded(recovery.strainScore),
+                    rounded(recovery.respiratoryRate),
+                    rounded(recovery.oxygenSaturation),
+                    rounded(recovery.wristTemperatureDeviation),
+                    rounded(recovery.hrvReadiness),
+                    rounded(recovery.restingHeartRateReadiness),
+                    rounded(recovery.respiratoryStability),
+                    rounded(recovery.sleepContribution),
+                    rounded(recovery.strainPenalty)
+                ].joined(separator: ":"))
+            }
         }
         if let sleep, sleep.isValid {
             parts.append([
@@ -631,6 +773,8 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
                         metric.status.rawValue,
                         rounded(metric.baselineValue),
                         metric.comparisonText,
+                        "source=\(sourceIDFingerprint(for: metric.sourceNames, fallback: sourceDevice))",
+                        "fallback=false",
                         metric.sourceNames.joined(separator: ",")
                     ].joined(separator: ":")
                 }
@@ -647,6 +791,48 @@ struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
     private nonisolated static func rounded(_ value: Double?) -> String {
         guard let value, value.isFinite else { return "nil" }
         return String(format: "%.3f", value)
+    }
+
+    private nonisolated static func sourceNamesMatch(_ sourceNames: [String], sourceDevice: PulsarSyncSourceDevice) -> Bool {
+        let joined = sourceNames.joined(separator: " ").lowercased()
+        guard !joined.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        switch sourceDevice {
+        case .ouraRing:
+            return joined.contains("oura")
+        case .appleWatch:
+            return joined.contains("apple") ||
+                joined.contains("watch") ||
+                joined.contains("healthkit") ||
+                joined.contains("health")
+        case .iPhone:
+            return joined.contains("iphone") ||
+                joined.contains("apple") ||
+                joined.contains("watch") ||
+                joined.contains("healthkit") ||
+                joined.contains("health")
+        }
+    }
+
+    private nonisolated static func sourceIDFingerprint(for sourceNames: [String], fallback sourceDevice: PulsarSyncSourceDevice) -> String {
+        let joined = sourceNames.joined(separator: " ").lowercased()
+        guard !joined.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "unknown" }
+        if joined.contains("oura") { return "ouraRing" }
+        if joined.contains("apple") || joined.contains("watch") || joined.contains("healthkit") || joined.contains("health") {
+            return "appleWatchHealthKit"
+        }
+        if joined.contains("iphone") { return "iPhoneSensors" }
+        return sourceDevice.sourceRouterLogName
+    }
+
+    private nonisolated static func logInvalidSourceMix(
+        metric: String,
+        currentSource: PulsarSyncSourceDevice,
+        displayedSourceNames: [String]
+    ) {
+        #if DEBUG
+        let displayedSource = sourceIDFingerprint(for: displayedSourceNames, fallback: currentSource)
+        print("[PulsarSourceRouter] Invalid source mix metric=\(metric) currentSource=\(currentSource.sourceRouterLogName) displayedSource=\(displayedSource) fallback=false")
+        #endif
     }
 }
 

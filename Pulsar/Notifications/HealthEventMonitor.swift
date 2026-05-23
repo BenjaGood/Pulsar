@@ -79,7 +79,10 @@ final class HealthEventMonitor {
             .restingHeartRate,
             .respiratoryRate,
             .appleSleepingWristTemperature,
-            .activeEnergyBurned
+            .activeEnergyBurned,
+            .stepCount,
+            .appleExerciseTime,
+            .distanceWalkingRunning
         ]
         return identifiers
             .compactMap { HKObjectType.quantityType(forIdentifier: $0)?.identifier }

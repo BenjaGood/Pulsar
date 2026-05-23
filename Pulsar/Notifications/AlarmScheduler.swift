@@ -15,10 +15,10 @@ final class AlarmScheduler {
 
     init(
         center: UNUserNotificationCenter = .current(),
-        permissionStore: NotificationPermissionStore = .shared
+        permissionStore: NotificationPermissionStore? = nil
     ) {
         self.center = center
-        self.permissionStore = permissionStore
+        self.permissionStore = permissionStore ?? .shared
     }
 
     func authorizationStatus() async -> UNAuthorizationStatus {

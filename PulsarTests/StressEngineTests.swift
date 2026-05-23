@@ -75,6 +75,40 @@ final class StressEngineTests: XCTestCase {
         XCTAssertNotEqual(summary.level, .high)
     }
 
+    func testElevatedHeartRateAndLowHRVIncreaseStressAboveNormal() {
+        let day = MockHealthData.calendar.date(from: DateComponents(year: 2026, month: 5, day: 7))!
+        let measuredAt = day.addingTimeInterval(13 * 60 * 60)
+        let baseline = stressBaseline(day: day, hrv: 58, restingHeartRate: 56, walkingHeartRate: 76)
+        var calm = StressDailySignals(
+            date: day,
+            computedAt: measuredAt,
+            heartRateVariabilitySDNN: 62,
+            heartRateVariabilityTimestamp: measuredAt.addingTimeInterval(-20 * 60),
+            restingHeartRate: 56,
+            walkingHeartRateAverage: 76,
+            currentMotionContext: .resting,
+            currentHeartRate: 60,
+            currentHeartRateTimestamp: measuredAt.addingTimeInterval(-2 * 60),
+            recentHeartRate: 60,
+            recentSteps: 0,
+            recentActiveEnergyKilocalories: 0,
+            recentExerciseMinutes: 0,
+            sourceBadges: [.sample]
+        )
+        var stressed = calm
+        stressed.heartRateVariabilitySDNN = 34
+        stressed.currentHeartRate = 86
+        stressed.recentHeartRate = 86
+
+        let calmSummary = StressEngine().score(today: calm, baselineDays: baseline)
+        let stressedSummary = StressEngine().score(today: stressed, baselineDays: baseline)
+
+        XCTAssertNotNil(calmSummary.score)
+        XCTAssertNotNil(stressedSummary.score)
+        XCTAssertGreaterThan((stressedSummary.score ?? 0) - (calmSummary.score ?? 0), 20)
+        XCTAssertGreaterThanOrEqual(stressedSummary.score ?? 0, 50)
+    }
+
     func testLowHRVAloneCannotCreateHighStress() {
         let day = MockHealthData.calendar.date(from: DateComponents(year: 2026, month: 5, day: 7))!
         let measuredAt = day.addingTimeInterval(12 * 60 * 60)
@@ -164,6 +198,68 @@ final class StressEngineTests: XCTestCase {
         let cooldownSummary = StressEngine().score(today: workout, baselineDays: baseline)
         XCTAssertNil(cooldownSummary.score)
         XCTAssertEqual(cooldownSummary.state, .cooldown)
+
+        workout.minutesSinceWorkout = 20
+        workout.lastWorkoutEnd = measuredAt.addingTimeInterval(-20 * 60)
+
+        let decayedCooldownSummary = StressEngine().score(today: workout, baselineDays: baseline)
+        XCTAssertNotNil(decayedCooldownSummary.score)
+        XCTAssertNotEqual(decayedCooldownSummary.state, .cooldown)
+        XCTAssertLessThan(decayedCooldownSummary.score ?? 100, 65)
+    }
+
+    func testRecentMovementUpgradesInactiveContextBeforeScoring() {
+        let day = MockHealthData.calendar.date(from: DateComponents(year: 2026, month: 5, day: 7))!
+        let measuredAt = day.addingTimeInterval(15 * 60 * 60)
+        let today = StressDailySignals(
+            date: day,
+            computedAt: measuredAt,
+            heartRateVariabilitySDNN: 36,
+            heartRateVariabilityTimestamp: measuredAt.addingTimeInterval(-45 * 60),
+            restingHeartRate: 60,
+            walkingHeartRateAverage: 82,
+            currentMotionContext: .resting,
+            currentHeartRate: 108,
+            currentHeartRateTimestamp: measuredAt.addingTimeInterval(-2 * 60),
+            recentHeartRate: 108,
+            recentSteps: 620,
+            recentActiveEnergyKilocalories: 24,
+            recentExerciseMinutes: 4,
+            sourceBadges: [.sample]
+        )
+
+        let summary = StressEngine().score(today: today, baselineDays: stressBaseline(day: day, hrv: 44, restingHeartRate: 60, walkingHeartRate: 82))
+
+        XCTAssertNotNil(summary.score)
+        XCTAssertEqual(summary.movementStateText, PulsarSharedStressMovementState.activeMovement.displayText)
+        XCTAssertLessThan(summary.score ?? 100, 70)
+    }
+
+    func testMissingHRVUsesPartialConfidenceInsteadOfUnavailable() {
+        let day = MockHealthData.calendar.date(from: DateComponents(year: 2026, month: 5, day: 7))!
+        let measuredAt = day.addingTimeInterval(13 * 60 * 60)
+        let today = StressDailySignals(
+            date: day,
+            computedAt: measuredAt,
+            heartRateVariabilitySDNN: nil,
+            restingHeartRate: 58,
+            walkingHeartRateAverage: 78,
+            currentMotionContext: .resting,
+            currentHeartRate: 82,
+            currentHeartRateTimestamp: measuredAt.addingTimeInterval(-2 * 60),
+            recentHeartRate: 82,
+            recentSteps: 0,
+            recentActiveEnergyKilocalories: 0,
+            recentExerciseMinutes: 0,
+            sourceBadges: [.sample]
+        )
+
+        let summary = StressEngine().score(today: today, baselineDays: stressBaseline(day: day, hrv: 48, restingHeartRate: 58, walkingHeartRate: 78))
+
+        XCTAssertNotNil(summary.score)
+        XCTAssertEqual(summary.confidence, .moderate)
+        XCTAssertNotEqual(summary.state, .noData)
+        XCTAssertTrue(summary.signals.contains { $0.id == "hrv" && $0.availability == .unavailable })
     }
 
     func testStressCategoriesUseSharedFourBandScale() {
@@ -355,6 +451,26 @@ final class StressEngineTests: XCTestCase {
         XCTAssertNil(summary.score)
         XCTAssertEqual(summary.state, .buildingBaseline)
         XCTAssertEqual(summary.baselineWindowDays, 3)
+    }
+
+    func testStressBaselineRequiresHRorHRVCalibrationSignals() {
+        let day = MockHealthData.calendar.date(from: DateComponents(year: 2026, month: 5, day: 7))!
+        let baseline = (1...21).map { offset in
+            StressDailySignals(
+                date: MockHealthData.calendar.date(byAdding: .day, value: -offset, to: day)!,
+                sleepRespiratoryRate: 15,
+                sleepDurationHours: 7.5,
+                currentMotionContext: .unknown,
+                sourceBadges: [.sample]
+            )
+        }
+        var today = MockHealthData.stressTodaySignals
+        today.date = day
+
+        let summary = StressEngine().score(today: today, baselineDays: baseline)
+
+        XCTAssertNil(summary.score)
+        XCTAssertEqual(summary.state, .buildingBaseline)
     }
 
     func testStressReturnsNoDataWhenCurrentSignalsAreMissing() {

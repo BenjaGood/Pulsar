@@ -16,17 +16,11 @@ struct FitnessWeekHeaderView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Fitness")
-                        .font(.largeTitle.weight(.bold))
-                        .foregroundStyle(primaryText)
-
-                    Text("Weekly training rhythm")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(secondaryText)
-                }
+                Text("Weekly training rhythm")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(secondaryText)
 
                 Spacer(minLength: 12)
 

@@ -67,6 +67,8 @@
 		EDF33A132FA9000000000004 /* PulsarWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PulsarWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		EDF33A1E2FA900000000000F /* PulsarWidgetsExtension-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "PulsarWidgetsExtension-Info.plist"; sourceTree = "<group>"; };
 		EDF33A1F2FA9000000000010 /* PulsarWatchApp-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "PulsarWatchApp-Info.plist"; sourceTree = "<group>"; };
+		EDF33B012FAA000000000001 /* Oura.shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Oura.shared.xcconfig; sourceTree = "<group>"; };
+		EDF33B022FAA000000000002 /* Oura.local.xcconfig.example */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Oura.local.xcconfig.example; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -138,6 +140,7 @@
 			isa = PBXGroup;
 			children = (
 				EDF330002FA9000000000001 /* Shared */,
+				EDF33B002FAA000000000000 /* Config */,
 				EDF33A142FA9000000000005 /* PulsarWidgetShared */,
 				EDF329BA2FA7FA4B00359606 /* Pulsar */,
 				EDF33A152FA9000000000006 /* PulsarWidgetsExtension */,
@@ -158,6 +161,15 @@
 				EDF329E12FA8000000000001 /* PulsarTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		EDF33B002FAA000000000000 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				EDF33B012FAA000000000001 /* Oura.shared.xcconfig */,
+				EDF33B022FAA000000000002 /* Oura.local.xcconfig.example */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -511,15 +523,17 @@
 		};
 		EDF329C42FA7FA4C00359606 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = EDF33B012FAA000000000001 /* Oura.shared.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Pulsar/Pulsar.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "PulsarApp-Info.plist";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Pulsar reads sleep, heart rate, activity, workout, and profile data from Apple Health to calculate Sleep, Recovery, Strain, and live workout intensity.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Pulsar saves running and gym workouts, routes when available, distance, calories, heart-rate metrics, and workout summaries to Apple Health.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Pulsar uses location during outdoor runs to show your live map, distance, pace, elevation, and route.";
@@ -549,15 +563,17 @@
 		};
 		EDF329C52FA7FA4C00359606 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = EDF33B012FAA000000000001 /* Oura.shared.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Pulsar/Pulsar.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "PulsarApp-Info.plist";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Pulsar reads sleep, heart rate, activity, workout, and profile data from Apple Health to calculate Sleep, Recovery, Strain, and live workout intensity.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Pulsar saves running and gym workouts, routes when available, distance, calories, heart-rate metrics, and workout summaries to Apple Health.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Pulsar uses location during outdoor runs to show your live map, distance, pace, elevation, and route.";
@@ -592,8 +608,9 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "Pulsar Watch App Watch App/Pulsar Watch App Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
+				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "PulsarWatchApp-Info.plist";
@@ -615,7 +632,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = aetherial.Pulsar.watchkitapp;
 				PRODUCT_NAME = "Pulsar Watch App";
 				SDKROOT = watchos;
-				SKIP_INSTALL = NO;
+				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -634,8 +651,9 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "Pulsar Watch App Watch App/Pulsar Watch App Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
+				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "PulsarWatchApp-Info.plist";
@@ -657,7 +675,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = aetherial.Pulsar.watchkitapp;
 				PRODUCT_NAME = "Pulsar Watch App";
 				SDKROOT = watchos;
-				SKIP_INSTALL = NO;
+				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -675,7 +693,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -704,7 +722,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -733,7 +751,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = PulsarWidgetsExtension/PulsarWidgetsExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -765,7 +783,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = PulsarWidgetsExtension/PulsarWidgetsExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 8Q8WHNEQP8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;

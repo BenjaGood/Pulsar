@@ -1,0 +1,10 @@
+// Shared Oura OAuth build settings.
+// Copy Oura.local.xcconfig.example to Oura.local.xcconfig and fill in local values.
+
+OURA_CLIENT_ID =
+OURA_OAUTH_REDIRECT_URI = aetherial-pulsar:/$()/oura/oauth/callback
+OURA_OAUTH_SCOPES = email personal daily heartrate workout tag session spo2
+OURA_BACKEND_BASE_URL =
+OURA_MOCK_MODE = NO
+
+#include? "Oura.local.xcconfig"

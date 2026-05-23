@@ -19,7 +19,7 @@ struct PulsarMainMetricsWidgetView: View {
                 }
             } else {
                 PulsarWidgetEmptyStateView(
-                    icon: "heart.text.square.fill",
+                    usesBrandMark: true,
                     title: "Pulsar Metrics",
                     message: entry.snapshot.emptyMessage
                 )
@@ -49,7 +49,7 @@ struct PulsarStressWidgetView: View {
                 }
             } else {
                 PulsarWidgetEmptyStateView(
-                    icon: "waveform.path.ecg",
+                    systemIcon: "waveform.path.ecg",
                     title: "Stress",
                     message: entry.snapshot.emptyMessage
                 )
@@ -542,16 +542,26 @@ private struct StatusPill: View {
 }
 
 private struct PulsarWidgetEmptyStateView: View {
-    let icon: String
+    var systemIcon: String?
+    var usesBrandMark = false
     let title: String
     let message: String
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 22, weight: .semibold, design: .rounded))
-                .foregroundStyle(WidgetTextPalette.primary(colorScheme))
+            if usesBrandMark {
+                Image(brandMarkAssetName)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: 18, height: 28)
+                    .accessibilityHidden(true)
+            } else if let systemIcon {
+                Image(systemName: systemIcon)
+                    .font(.system(size: 22, weight: .semibold, design: .rounded))
+                    .foregroundStyle(WidgetTextPalette.primary(colorScheme))
+            }
 
             Text(title)
                 .font(.system(size: 18, weight: .bold, design: .rounded))
@@ -565,6 +575,10 @@ private struct PulsarWidgetEmptyStateView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var brandMarkAssetName: String {
+        colorScheme == .dark ? "PulsarLogoDark" : "PulsarLogo"
     }
 }
 
@@ -701,11 +715,20 @@ private struct WidgetHeader: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            Text(title)
-                .font(.system(size: 15, weight: .bold, design: .rounded))
-                .foregroundStyle(WidgetTextPalette.primary(colorScheme))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+            HStack(spacing: 6) {
+                Image(brandMarkAssetName)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: 11, height: 18)
+                    .accessibilityHidden(true)
+
+                Text(title)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(WidgetTextPalette.primary(colorScheme))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
 
             Spacer(minLength: 0)
 
@@ -716,6 +739,10 @@ private struct WidgetHeader: View {
                     .lineLimit(1)
             }
         }
+    }
+
+    private var brandMarkAssetName: String {
+        colorScheme == .dark ? "PulsarLogoDark" : "PulsarLogo"
     }
 }
 

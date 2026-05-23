@@ -20,13 +20,13 @@ final class ProfileStore: ObservableObject {
 
     init(
         defaults: UserDefaults = .standard,
-        alarmScheduler: AlarmScheduler? = .shared,
-        watchSyncStore: PulsarWatchConnectivitySyncStore? = .shared,
+        alarmScheduler: AlarmScheduler? = nil,
+        watchSyncStore: PulsarWatchConnectivitySyncStore? = nil,
         sideEffectsEnabled: Bool = true
     ) {
         self.defaults = defaults
-        self.alarmScheduler = alarmScheduler
-        self.watchSyncStore = watchSyncStore
+        self.alarmScheduler = alarmScheduler ?? .shared
+        self.watchSyncStore = watchSyncStore ?? .shared
         self.sideEffectsEnabled = sideEffectsEnabled
         if let data = defaults.data(forKey: storageKey), let decoded = try? decoder.decode(UserProfile.self, from: data) {
             self.profile = decoded

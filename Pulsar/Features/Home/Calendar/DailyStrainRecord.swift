@@ -407,6 +407,8 @@ private extension PulsarSyncSourceDevice {
             return "iPhone"
         case .appleWatch:
             return "Apple Watch"
+        case .ouraRing:
+            return "Oura Ring"
         }
     }
 }

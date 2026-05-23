@@ -15,6 +15,7 @@ struct PulsarRunSetupView: View {
     @State private var options = PulsarRunOptions.default
     @State private var countdown: Int?
     @State private var isShowingHistory = false
+    @State private var watchFallbackPrompt: PulsarWatchRecorderFallbackPrompt?
 
     var body: some View {
         ZStack {
@@ -42,12 +43,26 @@ struct PulsarRunSetupView: View {
         }
         .onAppear {
             coordinator.refreshAvailability()
-            options.prefersWatchRecorder = coordinator.preferredSource == .appleWatch
+            if coordinator.isWatchAvailable {
+                options.prefersWatchRecorder = coordinator.preferredSource == .appleWatch
+            }
         }
         .sheet(isPresented: $isShowingHistory) {
             PulsarRunHistoryView(coordinator: coordinator, workoutKind: workoutKind)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+        .alert(item: $watchFallbackPrompt) { prompt in
+            Alert(
+                title: Text(prompt.title),
+                message: Text(prompt.message),
+                primaryButton: .default(Text("Try Again")) {
+                    retryAppleWatchStart()
+                },
+                secondaryButton: .default(Text("Use iPhone")) {
+                    startUsingIPhone()
+                }
+            )
         }
     }
 
@@ -83,17 +98,17 @@ struct PulsarRunSetupView: View {
                 ZStack {
                     Circle()
                         .fill(sourceTint.opacity(0.16))
-                    Image(systemName: coordinator.preferredSource == .appleWatch ? "applewatch.radiowaves.left.and.right" : "iphone.gen3.radiowaves.left.and.right")
+                    Image(systemName: options.prefersWatchRecorder ? "applewatch.radiowaves.left.and.right" : "iphone.gen3.radiowaves.left.and.right")
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(sourceTint)
                 }
                 .frame(width: 50, height: 50)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(coordinator.preferredSource == .appleWatch ? "Watch-first recording" : "iPhone recording")
+                    Text(sourceTitle)
                         .font(.headline.weight(.bold))
                         .foregroundStyle(primaryText)
-                    Text(coordinator.preferredSource == .appleWatch ? "Pulsar will launch Apple Watch and mirror live stats back here." : "No paired Watch recorder was found. Pulsar will record GPS from iPhone.")
+                    Text(sourceSubtitle)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
@@ -144,7 +159,6 @@ struct PulsarRunSetupView: View {
                     Label("Prefer Apple Watch", systemImage: "applewatch")
                         .font(.headline.weight(.semibold))
                 }
-                .disabled(!coordinator.isWatchAvailable)
             }
             .tint(workoutKind.accentColor)
             .foregroundStyle(primaryText)
@@ -231,6 +245,14 @@ struct PulsarRunSetupView: View {
     }
 
     private func beginCountdownAndStart() async {
+        if options.prefersWatchRecorder {
+            let availability = await coordinator.watchRecorderAvailability(for: workoutKind)
+            guard availability.canStartOnWatch else {
+                watchFallbackPrompt = availability.fallbackPrompt(workoutName: workoutKind.displayName)
+                return
+            }
+        }
+
         await coordinator.requestPermissions(for: workoutKind)
         guard coordinator.authorizationMessage == nil else { return }
 
@@ -245,11 +267,56 @@ struct PulsarRunSetupView: View {
         withAnimation(.easeOut(duration: 0.18)) {
             countdown = nil
         }
-        await coordinator.startOutdoorWorkout(workoutKind, options: options)
+        let result = await coordinator.startOutdoorWorkout(workoutKind, options: options)
+        if case .needsFallback(let prompt) = result {
+            watchFallbackPrompt = prompt
+        }
+    }
+
+    private func retryAppleWatchStart() {
+        Task { @MainActor in
+            options.prefersWatchRecorder = true
+            await beginCountdownAndStart()
+        }
+    }
+
+    private func startUsingIPhone() {
+        Task { @MainActor in
+            options.prefersWatchRecorder = false
+            await coordinator.requestPermissions(for: workoutKind)
+            guard coordinator.authorizationMessage == nil else { return }
+            let result = await coordinator.startOutdoorWorkout(
+                workoutKind,
+                options: options,
+                startMode: .iPhoneOnly
+            )
+            if case .needsFallback(let prompt) = result {
+                watchFallbackPrompt = prompt
+            }
+        }
     }
 
     private var sourceTint: Color {
-        coordinator.preferredSource == .appleWatch ? workoutKind.accentColor : .cyan
+        if options.prefersWatchRecorder {
+            return coordinator.isWatchAvailable ? workoutKind.accentColor : .orange
+        }
+        return .cyan
+    }
+
+    private var sourceTitle: String {
+        if options.prefersWatchRecorder {
+            return coordinator.isWatchAvailable ? "Watch-first recording" : "Apple Watch not connected"
+        }
+        return "iPhone recording"
+    }
+
+    private var sourceSubtitle: String {
+        if options.prefersWatchRecorder {
+            return coordinator.isWatchAvailable
+                ? "Pulsar will launch Apple Watch and mirror live stats back here."
+                : "Open Pulsar on Apple Watch to connect, or use iPhone."
+        }
+        return "Pulsar will record GPS from iPhone."
     }
 
     private var primaryText: Color {

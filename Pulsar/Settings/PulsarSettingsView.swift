@@ -8,6 +8,7 @@ import SwiftUI
 struct PulsarSettingsView: View {
     @ObservedObject var store: ProfileStore
     var onProfileUpdated: (() -> Void)? = nil
+    var onHealthAuthorizationUpdated: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var healthKitStore = HealthKitSettingsStore()
@@ -49,7 +50,7 @@ struct PulsarSettingsView: View {
                             SettingsNavigationRow(title: "Data Sources", subtitle: "HealthKit sample types Pulsar can read", symbol: "list.bullet.rectangle", tint: .teal)
                         }
                         SettingsDivider()
-                        NavigationLink { HealthPermissionsView(healthKitStore: healthKitStore) } label: {
+                        NavigationLink { HealthPermissionsView(healthKitStore: healthKitStore, onAuthorizationUpdated: onHealthAuthorizationUpdated) } label: {
                             SettingsNavigationRow(title: "Health Permissions", subtitle: "Connect Pulsar to Apple Health", symbol: "heart.text.square.fill", tint: .pink, badge: healthKitStore.permissionState.title)
                         }
                         SettingsDivider()

@@ -1,1 +1,20 @@
+# macOS
+.DS_Store
+
+# Xcode user state
 xcuserdata/
+*.xcuserstate
+
+# Local build output and reports
+build/
+DerivedData/
+*.xcresult
+*.dSYM/
+
+# SwiftPM/Xcode workspace local state
+.swiftpm/
+Package.resolved
+
+# Local OAuth/developer credentials
+Config/Oura.local.xcconfig
+Backend/OuraOAuthServer/.env

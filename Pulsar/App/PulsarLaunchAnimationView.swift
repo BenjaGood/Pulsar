@@ -36,42 +36,67 @@ struct PulsarLaunchAnimationView: View {
     @State private var hasStarted = false
     @State private var logoOpacity = 0.0
     @State private var logoScale = 0.96
-    @State private var revealProgress: CGFloat = 0
+    @State private var wordmarkProgress: CGFloat = 0
     @State private var containerOpacity = 1.0
 
-    private static let markAspectRatio: CGFloat = 846.0 / 720.0
-    private static let tailAspectRatio: CGFloat = 3381.0 / 720.0
+    private static let markAspectRatio: CGFloat = 628.0 / 1024.0
+    private static let leftAspectRatio: CGFloat = 1538.0 / 1024.0
+    private static let rightAspectRatio: CGFloat = 1133.0 / 1024.0
+    private static let leftSpacingRatio: CGFloat = 0.104
+    private static let rightSpacingRatio: CGFloat = 0.136
 
     var body: some View {
         GeometryReader { proxy in
             let markHeight = preferredMarkHeight(in: proxy.size)
             let markWidth = markHeight * Self.markAspectRatio
-            let tailWidth = markHeight * Self.tailAspectRatio
+            let leftWidth = markHeight * Self.leftAspectRatio
+            let rightWidth = markHeight * Self.rightAspectRatio
+            let leftSpacing = markHeight * Self.leftSpacingRatio
+            let rightSpacing = markHeight * Self.rightSpacingRatio
+            let totalWidth = leftWidth + leftSpacing + markWidth + rightSpacing + rightWidth
+            let finalMarkOffset = (leftWidth + leftSpacing - rightWidth - rightSpacing) / 2
+            let progress = max(0, min(wordmarkProgress, 1))
+            let entryTravel = min(proxy.size.width * 0.14, max(18, markHeight * 0.74))
 
             ZStack {
                 background
 
-                HStack(alignment: .center, spacing: 0) {
+                ZStack {
+                    Image(leftAssetName)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .id(leftAssetName)
+                        .frame(width: leftWidth, height: markHeight)
+                        .scaleEffect(0.985 + 0.015 * progress, anchor: .trailing)
+                        .offset(
+                            x: finalMarkOffset * progress - markWidth / 2 - leftSpacing - leftWidth / 2 - entryTravel * (1 - progress)
+                        )
+                        .blur(radius: (1 - progress) * 3.5)
+                        .opacity(Double(progress))
+
                     Image(logoAssetName)
                         .resizable()
                         .interpolation(.high)
                         .scaledToFit()
                         .id(logoAssetName)
                         .frame(width: markWidth, height: markHeight)
+                        .offset(x: finalMarkOffset * progress)
 
-                    Image(tailAssetName)
+                    Image(rightAssetName)
                         .resizable()
                         .interpolation(.high)
                         .scaledToFit()
-                        .id(tailAssetName)
-                        .frame(width: tailWidth, height: markHeight, alignment: .leading)
-                        .mask(alignment: .leading) {
-                            Rectangle()
-                                .frame(width: max(0, tailWidth * revealProgress))
-                        }
+                        .id(rightAssetName)
+                        .frame(width: rightWidth, height: markHeight)
+                        .scaleEffect(0.985 + 0.015 * progress, anchor: .leading)
+                        .offset(
+                            x: finalMarkOffset * progress + markWidth / 2 + rightSpacing + rightWidth / 2 + entryTravel * (1 - progress)
+                        )
+                        .blur(radius: (1 - progress) * 3.5)
+                        .opacity(Double(progress))
                 }
-                .frame(width: markWidth + tailWidth, height: markHeight)
-                .offset(x: (tailWidth / 2) * (1 - revealProgress))
+                .frame(width: totalWidth, height: markHeight)
                 .scaleEffect(logoScale)
                 .opacity(logoOpacity * containerOpacity)
                 .accessibilityLabel("Pulsar")
@@ -81,37 +106,27 @@ struct PulsarLaunchAnimationView: View {
     }
 
     private var logoAssetName: String {
-        colorScheme == .dark ? "PulsarLogoDark" : "PulsarLogoLight"
+        colorScheme == .dark ? "PulsarLogoDark" : "PulsarLogo"
     }
 
-    private var tailAssetName: String {
-        colorScheme == .dark ? "PulsarWordmarkTailDark" : "PulsarWordmarkTailLight"
+    private var leftAssetName: String {
+        colorScheme == .dark ? "PulsarWordmarkLeftDark" : "PulsarWordmarkLeft"
+    }
+
+    private var rightAssetName: String {
+        colorScheme == .dark ? "PulsarWordmarkRightDark" : "PulsarWordmarkRight"
     }
 
     private var background: some View {
-        ZStack {
-            Color(uiColor: colorScheme == .dark ? .black : .systemBackground)
-
-            RadialGradient(
-                colors: [
-                    Color.red.opacity(colorScheme == .dark ? 0.12 : 0.08),
-                    Color.clear
-                ],
-                center: .center,
-                startRadius: 8,
-                endRadius: 320
-            )
-            .scaleEffect(1 + revealProgress * 0.12)
-            .opacity(logoOpacity)
-        }
-        .ignoresSafeArea()
+        Color(uiColor: colorScheme == .dark ? .black : .systemBackground)
+            .ignoresSafeArea()
     }
 
     private func preferredMarkHeight(in size: CGSize) -> CGFloat {
-        let totalAspect = Self.markAspectRatio + Self.tailAspectRatio
-        let widthBound = min(size.width * 0.86, 560)
+        let totalAspect = Self.leftAspectRatio + Self.leftSpacingRatio + Self.markAspectRatio + Self.rightSpacingRatio + Self.rightAspectRatio
+        let widthBound = min(size.width * 0.86, 620)
         let heightBound = size.height * 0.14
-        return max(42, min(widthBound / totalAspect, heightBound))
+        return max(42, min(widthBound / totalAspect, heightBound, 132))
     }
 
     private func playIfNeeded() async {
@@ -121,7 +136,7 @@ struct PulsarLaunchAnimationView: View {
         if reduceMotion {
             logoOpacity = 1
             logoScale = 1
-            revealProgress = 1
+            wordmarkProgress = 1
             try? await Task.sleep(for: .milliseconds(650))
             containerOpacity = 0
             onCompletion()
@@ -135,11 +150,11 @@ struct PulsarLaunchAnimationView: View {
 
         try? await Task.sleep(for: .milliseconds(460))
 
-        withAnimation(.smooth(duration: 0.92)) {
-            revealProgress = 1
+        withAnimation(.smooth(duration: 0.82)) {
+            wordmarkProgress = 1
         }
 
-        try? await Task.sleep(for: .milliseconds(1_120))
+        try? await Task.sleep(for: .milliseconds(1_060))
 
         withAnimation(.easeInOut(duration: 0.34)) {
             containerOpacity = 0

@@ -1,0 +1,16 @@
+// Local Oura OAuth settings for development.
+// Copy this file to Config/Oura.local.xcconfig. The local file is git-ignored.
+// Do not add OURA_CLIENT_SECRET here; it belongs only on the backend.
+
+OURA_CLIENT_ID = your_oura_client_id
+OURA_OAUTH_REDIRECT_URI = aetherial-pulsar:/$()/oura/oauth/callback
+OURA_OAUTH_SCOPES = email personal daily heartrate workout tag session spo2
+
+// Hosted private Oura token backend.
+OURA_BACKEND_BASE_URL = https:/$()/www.aetherial.tech/api
+
+// Optional local backend for development before the hosted API is configured.
+// OURA_BACKEND_BASE_URL = http:/$()/127.0.0.1:8787
+// OURA_BACKEND_BASE_URL[sdk=iphoneos*] = http:/$()/<MAC_LOCAL_IP>:8787
+
+OURA_MOCK_MODE = NO

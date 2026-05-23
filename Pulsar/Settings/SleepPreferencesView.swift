@@ -18,12 +18,12 @@ struct SleepPreferencesView: View {
     init(
         store: ProfileStore,
         onSave: (() -> Void)? = nil,
-        alarmScheduler: AlarmScheduler = .shared,
+        alarmScheduler: AlarmScheduler? = nil,
         calendar: Calendar = .current
     ) {
         self.store = store
         self.onSave = onSave
-        self.alarmScheduler = alarmScheduler
+        self.alarmScheduler = alarmScheduler ?? .shared
         self.calendar = calendar
         _draft = State(initialValue: store.profile)
     }

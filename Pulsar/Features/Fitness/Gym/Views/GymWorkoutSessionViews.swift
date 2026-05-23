@@ -100,24 +100,24 @@ struct GymWorkoutSessionView: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
-            Button {
+            PulsarWorkoutToolbarIconButton(
+                systemImage: "music.note",
+                accessibilityLabel: "Now Playing",
+                size: 36,
+                font: .caption.weight(.black),
+                foregroundStyle: .white.opacity(0.84)
+            ) {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 openNowPlaying()
-            } label: {
-                Image(systemName: "music.note")
-                    .font(.caption.weight(.black))
-                    .foregroundStyle(.white.opacity(0.84))
-                    .frame(width: 36, height: 36)
-                    .background(.white.opacity(0.08), in: Circle())
-                    .overlay {
-                        Circle()
-                            .stroke(.white.opacity(0.11), lineWidth: 1)
-                    }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Now Playing")
 
-            Button {
+            PulsarWorkoutToolbarIconButton(
+                systemImage: onMinimize == nil ? "xmark" : "chevron.down",
+                accessibilityLabel: onMinimize == nil ? "Close workout" : "Minimize workout",
+                size: 36,
+                font: .caption.weight(.black),
+                foregroundStyle: .white.opacity(0.78)
+            ) {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 if let onMinimize {
                     onMinimize()
@@ -126,19 +126,7 @@ struct GymWorkoutSessionView: View {
                         await viewModel.finishWorkout()
                     }
                 }
-            } label: {
-                Image(systemName: onMinimize == nil ? "xmark" : "chevron.down")
-                    .font(.caption.weight(.black))
-                    .foregroundStyle(.white.opacity(0.78))
-                    .frame(width: 36, height: 36)
-                    .background(.white.opacity(0.08), in: Circle())
-                    .overlay {
-                        Circle()
-                            .stroke(.white.opacity(0.11), lineWidth: 1)
-                }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(onMinimize == nil ? "Close workout" : "Minimize workout")
 
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 7) {

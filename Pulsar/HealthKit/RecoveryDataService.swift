@@ -90,14 +90,18 @@ struct RecoveryDataService: RecoverySummaryProviding {
     }
 
     private func sharedRecoveryMetric(biometrics: DailyBiometrics, baselineDays: [DailyBiometrics], sleep: SleepSummary, strain: StrainSummary, computedAt: Date) -> PulsarRecoverySyncMetric? {
-        PulsarSharedMetricCalculator.makeRecoveryMetric(
+        let wristTemperatureDeviation = baselineRelativeTemperatureDeviation(
+            current: biometrics.wristTemperatureDeviationCelsius,
+            baselineSamples: baselineDays.compactMap(\.wristTemperatureDeviationCelsius)
+        )
+        return PulsarSharedMetricCalculator.makeRecoveryMetric(
             today: PulsarSharedBiometricsDay(
                 date: biometrics.date,
                 hrvSDNN: biometrics.hrvSDNNMilliseconds,
                 restingHeartRate: biometrics.restingHeartRateBPM,
                 respiratoryRate: biometrics.respiratoryRate,
                 oxygenSaturation: biometrics.oxygenSaturation,
-                wristTemperatureDeviation: biometrics.wristTemperatureDeviationCelsius,
+                wristTemperatureDeviation: wristTemperatureDeviation,
                 sleepPerformance: sleep.sleepPerformance > 0 ? sleep.sleepPerformance : nil,
                 strainScore: strain.score > 0 ? Double(strain.score) : nil,
                 sourceNames: Array(biometrics.provenance.values.map(\.displayName))
@@ -109,7 +113,7 @@ struct RecoveryDataService: RecoverySummaryProviding {
                     restingHeartRate: day.restingHeartRateBPM,
                     respiratoryRate: day.respiratoryRate,
                     oxygenSaturation: day.oxygenSaturation,
-                    wristTemperatureDeviation: day.wristTemperatureDeviationCelsius,
+                    wristTemperatureDeviation: nil,
                     sleepPerformance: nil,
                     strainScore: nil,
                     sourceNames: Array(day.provenance.values.map(\.displayName))
@@ -117,6 +121,14 @@ struct RecoveryDataService: RecoverySummaryProviding {
             },
             computedAt: computedAt
         )
+    }
+
+    private func baselineRelativeTemperatureDeviation(current: Double?, baselineSamples: [Double]) -> Double? {
+        guard let current, current.isFinite else { return nil }
+        let cleaned = baselineSamples.filter(\.isFinite)
+        guard cleaned.count >= 5 else { return nil }
+        let baseline = cleaned.reduce(0, +) / Double(cleaned.count)
+        return current - baseline
     }
 }
 

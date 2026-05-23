@@ -172,15 +172,24 @@ actor HealthKitGateway {
         var results: [WorkoutLoadInput] = []
         for workout in workouts {
             let heartRateSamples = await fetchHeartRateSamples(start: workout.startDate, end: workout.endDate)
+            let gymMetadata = pulsarGymMetadata(for: workout)
+            let pulsarMetadata = pulsarWorkoutMetadata(for: workout)
+            let workoutProvenance = provenance(for: workout)
+            await recordAppleWatchHealthKitSourceIfNeeded(
+                workout: workout,
+                pulsarMetadata: pulsarMetadata,
+                provenance: workoutProvenance,
+                reason: "healthKitWorkoutLoad"
+            )
             results.append(
                 WorkoutLoadInput(
-                    type: workout.workoutActivityType.displayName,
+                    type: gymMetadata?.categoryName ?? workout.workoutActivityType.displayName,
                     start: workout.startDate,
                     end: workout.endDate,
                     heartRateSamples: heartRateSamples,
-                    activeEnergyKilocalories: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
+                    activeEnergyKilocalories: Self.activeEnergyKilocalories(for: workout),
                     distanceMeters: workout.totalDistance?.doubleValue(for: .meter()),
-                    provenance: provenance(for: workout)
+                    provenance: workoutProvenance
                 )
             )
         }
@@ -196,10 +205,18 @@ actor HealthKitGateway {
             let heartRates = heartRateSamples.map(\.bpm).filter { $0 > 0 }
             let gymMetadata = pulsarGymMetadata(for: workout)
             let pulsarMetadata = pulsarWorkoutMetadata(for: workout)
-            let category = gymMetadata == nil ? fitnessCategory(for: workout.workoutActivityType) : .gym
-            let workoutType = gymMetadata?.categoryName ?? workout.workoutActivityType.fitnessDisplayName
-            let displayName = gymMetadata?.displayName ?? workout.workoutActivityType.fitnessDisplayName
+            let metadataOutdoorKind = pulsarMetadata.workoutType.flatMap(PulsarOutdoorWorkoutKind.init(rawValue:))
+            let displayActivityType = metadataOutdoorKind?.healthKitActivityType ?? workout.workoutActivityType
+            let category = gymMetadata == nil ? fitnessCategory(for: displayActivityType) : .gym
+            let workoutType = gymMetadata?.categoryName ?? metadataOutdoorKind?.displayName ?? workout.workoutActivityType.fitnessDisplayName
+            let displayName = gymMetadata?.displayName ?? metadataOutdoorKind?.displayName ?? workout.workoutActivityType.fitnessDisplayName
             let provenance = provenance(for: workout)
+            await recordAppleWatchHealthKitSourceIfNeeded(
+                workout: workout,
+                pulsarMetadata: pulsarMetadata,
+                provenance: provenance,
+                reason: "healthKitActivityLogMetadata"
+            )
             PulsarSyncDebugLogger.log("HealthKit Activity Log metadata received session=\(pulsarMetadata.sessionId?.uuidString ?? "none") type=\(pulsarMetadata.workoutType ?? workout.workoutActivityType.fitnessDisplayName) startedFrom=\(pulsarMetadata.startedFrom?.rawValue ?? "unknown") hkType=\(workout.workoutActivityType.rawValue) source=\(provenance.displayName)")
 
             activities.append(
@@ -213,7 +230,7 @@ actor HealthKitGateway {
                     startDate: workout.startDate,
                     endDate: workout.endDate,
                     duration: workout.duration,
-                    calories: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
+                    calories: Self.activeEnergyKilocalories(for: workout),
                     distanceMeters: workout.totalDistance?.doubleValue(for: .meter()),
                     averageHeartRate: heartRates.isEmpty ? nil : heartRates.reduce(0, +) / Double(heartRates.count),
                     maxHeartRate: heartRates.max(),
@@ -250,7 +267,7 @@ actor HealthKitGateway {
                     workoutType: workout.workoutActivityType.displayName,
                     startDate: workout.startDate,
                     endDate: workout.endDate,
-                    activeEnergyKilocalories: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
+                    activeEnergyKilocalories: Self.activeEnergyKilocalories(for: workout),
                     averageHeartRate: heartRates.isEmpty ? nil : heartRates.reduce(0, +) / Double(heartRates.count),
                     maxHeartRate: heartRates.max(),
                     sourceName: provenance(for: workout).displayName
@@ -286,7 +303,7 @@ actor HealthKitGateway {
             }
             observerQueries.append(query)
             store.execute(query)
-            store.enableBackgroundDelivery(for: type, frequency: .immediate) { _, _ in }
+            try? await store.enableBackgroundDelivery(for: type, frequency: .immediate)
         }
     }
 
@@ -413,6 +430,36 @@ actor HealthKitGateway {
         )
     }
 
+    private func recordAppleWatchHealthKitSourceIfNeeded(
+        workout: HKWorkout,
+        pulsarMetadata: (sessionId: UUID?, workoutType: String?, startedFrom: PulsarWorkoutStartedFrom?, isPulsarWorkout: Bool),
+        provenance: SourceProvenance,
+        reason: String
+    ) async {
+        let sourceText = [
+            provenance.sourceName,
+            provenance.sourceBundleIdentifier,
+            provenance.productType,
+            provenance.deviceName,
+            provenance.deviceModel,
+            workout.sourceRevision.source.name,
+            workout.sourceRevision.source.bundleIdentifier
+        ]
+        .compactMap { $0 }
+        .joined(separator: " ")
+
+        let isAppleWatchSource = pulsarMetadata.startedFrom?.isAppleWatchRecorder == true ||
+            sourceText.localizedCaseInsensitiveContains("watch")
+        guard isAppleWatchSource else { return }
+
+        await MainActor.run {
+            PulsarWatchConnectivitySyncStore.shared.recordAppleWatchSeen(
+                reason: reason,
+                payloadKind: "healthKitWorkoutMetadata"
+            )
+        }
+    }
+
     nonisolated private func mapSleepStage(_ value: Int) -> SleepStage {
         switch value {
         case HKCategoryValueSleepAnalysis.awake.rawValue: return .awake
@@ -499,6 +546,13 @@ actor HealthKitGateway {
             brandName?.localizedCaseInsensitiveCompare(PulsarWorkoutMetadata.brandName) == .orderedSame
 
         return (sessionId, workoutType, startedFrom, isPulsarWorkout)
+    }
+
+    nonisolated private static func activeEnergyKilocalories(for workout: HKWorkout) -> Double? {
+        guard let activeEnergyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) else { return nil }
+        return workout.statistics(for: activeEnergyType)?
+            .sumQuantity()?
+            .doubleValue(for: .kilocalorie())
     }
 
     nonisolated private func fitnessCategory(for activityType: HKWorkoutActivityType) -> WeeklyActivityCategory {

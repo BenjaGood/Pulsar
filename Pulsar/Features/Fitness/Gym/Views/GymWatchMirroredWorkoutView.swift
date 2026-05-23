@@ -57,39 +57,27 @@ struct GymWatchMirroredWorkoutView: View {
 
     private func header(_ state: ActiveGymWorkoutState) -> some View {
         HStack(alignment: .top, spacing: 14) {
-            Button {
+            PulsarWorkoutToolbarIconButton(
+                systemImage: "music.note",
+                accessibilityLabel: "Now Playing",
+                size: 36,
+                font: .caption.weight(.black),
+                foregroundStyle: .white.opacity(0.84)
+            ) {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 openNowPlaying()
-            } label: {
-                Image(systemName: "music.note")
-                    .font(.caption.weight(.black))
-                    .foregroundStyle(.white.opacity(0.84))
-                    .frame(width: 36, height: 36)
-                    .background(.white.opacity(0.08), in: Circle())
-                    .overlay {
-                        Circle()
-                            .stroke(.white.opacity(0.11), lineWidth: 1)
-                    }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Now Playing")
 
-            Button {
+            PulsarWorkoutToolbarIconButton(
+                systemImage: "chevron.down",
+                accessibilityLabel: "Dismiss workout mirror",
+                size: 36,
+                font: .caption.weight(.black),
+                foregroundStyle: .white.opacity(0.78)
+            ) {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 onDismiss()
-            } label: {
-                Image(systemName: "chevron.down")
-                    .font(.caption.weight(.black))
-                    .foregroundStyle(.white.opacity(0.78))
-                    .frame(width: 36, height: 36)
-                    .background(.white.opacity(0.08), in: Circle())
-                    .overlay {
-                        Circle()
-                            .stroke(.white.opacity(0.11), lineWidth: 1)
-                    }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss workout mirror")
 
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 7) {

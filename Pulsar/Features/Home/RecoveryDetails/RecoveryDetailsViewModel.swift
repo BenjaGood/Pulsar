@@ -61,7 +61,7 @@ final class RecoveryDetailsViewModel: ObservableObject {
     var strainText: String { summary.strainScore.map { "\(Int($0.rounded()))" } ?? "Not enough data" }
     var respiratoryRateText: String { summary.respiratoryRate.map { String(format: "%.1f/min", $0) } ?? "Not enough data" }
     var oxygenText: String { summary.oxygenSaturation.map { "\(Int(($0 * 100).rounded()))%" } ?? "Not enough data" }
-    var wristTemperatureText: String { summary.wristTemperatureDeviation.map { String(format: "%+.1f C", $0) } ?? "Not enough data" }
+    var wristTemperatureText: String { summary.wristTemperatureDeviation.map { String(format: "%+.1f °C vs baseline", $0) } ?? "Not enough data" }
     var sampleCountText: String { summary.analyzedSampleCount > 0 ? "\(summary.analyzedSampleCount) samples" : "No samples" }
     var lastUpdatedText: String { summary.lastUpdated.map { "Updated \($0.formatted(.relative(presentation: .named)))" } ?? "Not updated" }
     var baselineText: String { summary.baselineWindowDays > 0 ? "\(summary.baselineWindowDays)-day window" : "Not available" }
@@ -95,7 +95,7 @@ final class RecoveryDetailsViewModel: ObservableObject {
         ]
         if summary.respiratoryRate != nil { tiles.append(RecoveryMetricTileModel(title: "Respiration", value: respiratoryRateText, subtitle: "Breaths per minute", symbol: "lungs.fill")) }
         if summary.oxygenSaturation != nil { tiles.append(RecoveryMetricTileModel(title: "Oxygen", value: oxygenText, subtitle: "Latest sample", symbol: "drop.fill")) }
-        if summary.wristTemperatureDeviation != nil { tiles.append(RecoveryMetricTileModel(title: "Wrist Temp", value: wristTemperatureText, subtitle: "Latest sample", symbol: "thermometer.medium")) }
+        if summary.wristTemperatureDeviation != nil { tiles.append(RecoveryMetricTileModel(title: "Temp trend", value: wristTemperatureText, subtitle: "Nighttime vs baseline", symbol: "thermometer.medium")) }
         return tiles
     }
 

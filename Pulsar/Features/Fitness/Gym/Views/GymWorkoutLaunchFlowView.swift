@@ -3,6 +3,7 @@
 //  Pulsar
 //
 
+import HealthKit
 import SwiftUI
 import UIKit
 
@@ -13,6 +14,7 @@ struct GymWorkoutLaunchFlowView: View {
         case savedRoutines
         case routineBuilder(PulsarRoutine?)
         case workoutSession(PulsarRoutine)
+        case watchWorkoutSession(UUID)
     }
 
     private enum BuilderReturnTarget {
@@ -25,8 +27,13 @@ struct GymWorkoutLaunchFlowView: View {
     @StateObject private var routineStore = PulsarRoutineStore()
     @StateObject private var historyStore = PulsarGymWorkoutHistoryStore()
     @StateObject private var gymSettingsStore = GymSettingsStore()
+    @ObservedObject private var watchSyncStore = PulsarWatchConnectivitySyncStore.shared
     @State private var step: Step = .intro
     @State private var builderReturnTarget: BuilderReturnTarget = .choice
+    @State private var watchFallbackPrompt: PulsarWatchRecorderFallbackPrompt?
+    @State private var pendingWatchFallbackRoutine: PulsarRoutine?
+
+    private let healthStore = HKHealthStore()
 
     var appUnitPreference: UnitPreference = .metric
 
@@ -77,7 +84,7 @@ struct GymWorkoutLaunchFlowView: View {
                     GymWorkoutSessionView(
                         viewModel: viewModel,
                         onMinimize: {
-                            activeWorkoutManager.minimizeGymWorkout()
+                            activeWorkoutManager.minimizeGymWorkout(sessionID: viewModel.session.id)
                             dismiss()
                         },
                         onFinish: {
@@ -98,12 +105,31 @@ struct GymWorkoutLaunchFlowView: View {
                     }
                     .transition(.opacity.combined(with: .scale(scale: 0.99)))
                 }
+
+            case .watchWorkoutSession(_):
+                GymWatchMirroredWorkoutView(syncStore: watchSyncStore) {
+                    activeWorkoutManager.minimizeWatchGymWorkout(sessionID: watchSyncStore.activeGymState?.sessionId)
+                    dismiss()
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.99)))
             }
         }
         .background(GymGlassBackground().ignoresSafeArea())
         .environment(\.colorScheme, .dark)
         .preferredColorScheme(.dark)
         .animation(.smooth(duration: 0.36), value: step)
+        .alert(item: $watchFallbackPrompt) { prompt in
+            Alert(
+                title: Text(prompt.title),
+                message: Text(prompt.message),
+                primaryButton: .default(Text("Try Again")) {
+                    retryWatchGymStart()
+                },
+                secondaryButton: .default(Text("Use iPhone")) {
+                    startPendingGymWorkoutOnIPhone()
+                }
+            )
+        }
     }
 
     private func showRoutineChoice() {
@@ -139,10 +165,49 @@ struct GymWorkoutLaunchFlowView: View {
 
     private func startEmptyWorkout() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        step = .workoutSession(.emptyGymWorkout())
+        let routine = PulsarRoutine.emptyGymWorkout()
+        Task { await beginGymWorkout(routine) }
     }
 
     private func startWorkout(from routine: PulsarRoutine) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        Task { await beginGymWorkout(routine) }
+    }
+
+    private func beginGymWorkout(_ routine: PulsarRoutine, forceIPhone: Bool = false) async {
+        if !forceIPhone {
+            let workoutKind = PulsarGymWorkoutKind.inferred(
+                routineName: routine.name,
+                exerciseCount: routine.exercises.count
+            )
+            let availability = await watchSyncStore.waitForReachableWatchRecorder(
+                reason: "iPhoneGymStart.\(workoutKind.rawValue)"
+            )
+            if availability.canStartOnWatch {
+                do {
+                    try await startGymWorkoutOnWatch(routine, workoutKind: workoutKind, availability: availability)
+                    return
+                } catch {
+                    pendingWatchFallbackRoutine = routine
+                    watchFallbackPrompt = availability.fallbackPrompt(
+                        workoutName: workoutKind.displayName,
+                        reason: .watchLaunchFailed,
+                        errorMessage: error.localizedDescription
+                    )
+                    return
+                }
+            } else {
+                pendingWatchFallbackRoutine = routine
+                watchFallbackPrompt = availability.fallbackPrompt(workoutName: workoutKind.displayName)
+                PulsarSyncDebugLogger.log("Gym recorder selected=iPhoneFallbackPrompt type=\(workoutKind.rawValue) reason=\(availability.fallbackReason?.logValue ?? "unknown") rawInstalled=\(availability.rawIsWatchAppInstalled) rawReachable=\(availability.rawIsReachable) lastWatchSeenAt=\(availability.lastWatchSeenAt?.description ?? "none") derivedInstalled=\(availability.isWatchAppInstalled) derivedReachable=\(availability.derivedReachabilityDescription)")
+                return
+            }
+        }
+
+        startGymWorkoutOnIPhone(routine)
+    }
+
+    private func startGymWorkoutOnIPhone(_ routine: PulsarRoutine) {
         activeWorkoutManager.startGymWorkout(
             routine: routine,
             workoutWeightUnit: gymSettingsStore.resolvedWeightUnit(appUnits: appUnitPreference),
@@ -150,6 +215,150 @@ struct GymWorkoutLaunchFlowView: View {
         )
         step = .workoutSession(routine)
     }
+
+    private func startGymWorkoutOnWatch(
+        _ routine: PulsarRoutine,
+        workoutKind: PulsarGymWorkoutKind,
+        availability: PulsarWatchRecorderAvailabilitySnapshot
+    ) async throws {
+        let sessionId = UUID()
+        let now = Date()
+        let session = PulsarGymWorkoutSession(id: sessionId, routine: routine, startedAt: now)
+        let state = activeGymState(
+            from: session,
+            startedFrom: .iPhoneRequestedWatchStart,
+            healthKitStatusMessage: watchStartStatusMessage(for: availability)
+        )
+
+        watchSyncStore.storeActiveGymState(state, broadcast: true, reason: "iPhoneRequestedWatchGymStart")
+        PulsarSyncDebugLogger.log("Gym start selectedType=\(workoutKind.rawValue) hkType=\(Self.strengthConfiguration.activityType.rawValue) session=\(sessionId.uuidString) startedFrom=\(PulsarWorkoutStartedFrom.iPhoneRequestedWatchStart.rawValue) selectedRecorder=AppleWatch activation=\(availability.activationStateDescription) paired=\(availability.isPaired) rawInstalled=\(availability.rawIsWatchAppInstalled) rawReachable=\(availability.rawIsReachable) lastWatchSeenAt=\(availability.lastWatchSeenAt?.description ?? "none") derivedInstalled=\(availability.isWatchAppInstalled) derivedReachable=\(availability.derivedReachabilityDescription)")
+
+        do {
+            try await healthStore.startWatchApp(toHandle: Self.strengthConfiguration)
+        } catch {
+            if shouldKeepQueuedWatchStart(for: availability) {
+                PulsarSyncDebugLogger.log("Gym Watch start queued after launch failure type=\(workoutKind.rawValue) session=\(sessionId.uuidString) rawReachable=\(availability.rawIsReachable) derivedReachable=\(availability.derivedReachabilityDescription) error=\(error.localizedDescription)")
+            } else {
+                watchSyncStore.clearActiveGymState(reason: "iPhoneGymWatchLaunchFailed", broadcastEndedState: false)
+                throw error
+            }
+        }
+
+        activeWorkoutManager.reconcileActiveWorkoutPresentation(
+            route: .watchGym,
+            sessionID: sessionId,
+            phase: "starting",
+            reason: "iPhoneRequestedWatchGymStart"
+        )
+        step = .watchWorkoutSession(sessionId)
+    }
+
+    private func watchStartStatusMessage(for availability: PulsarWatchRecorderAvailabilitySnapshot) -> String {
+        availability.rawIsReachable ? "Opening on Apple Watch..." : "Waiting for Apple Watch..."
+    }
+
+    private func shouldKeepQueuedWatchStart(for availability: PulsarWatchRecorderAvailabilitySnapshot) -> Bool {
+        availability.isPaired &&
+            availability.isWatchAppInstalled &&
+            availability.hasRecentWatchHeartbeat &&
+            !availability.rawIsReachable
+    }
+
+    private func retryWatchGymStart() {
+        guard let routine = pendingWatchFallbackRoutine else { return }
+        Task { await beginGymWorkout(routine) }
+    }
+
+    private func startPendingGymWorkoutOnIPhone() {
+        guard let routine = pendingWatchFallbackRoutine else { return }
+        pendingWatchFallbackRoutine = nil
+        Task { await beginGymWorkout(routine, forceIPhone: true) }
+    }
+
+    private func activeGymState(
+        from session: PulsarGymWorkoutSession,
+        startedFrom: PulsarWorkoutStartedFrom,
+        healthKitStatusMessage: String?
+    ) -> ActiveGymWorkoutState {
+        let exercises = session.exercises
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .map { activeExerciseState($0, supersetGroups: session.supersetGroups) }
+        let totalSets = exercises.reduce(0) { $0 + $1.sets.count }
+
+        return ActiveGymWorkoutState(
+            sessionId: session.id,
+            routineId: session.routineId,
+            routineName: session.routineName,
+            routineEmoji: session.routineEmoji,
+            workoutKind: session.workoutKind,
+            startedFrom: startedFrom,
+            startedAt: session.startedAt,
+            elapsedSeconds: 0,
+            currentExerciseIndex: 0,
+            currentSetIndex: 0,
+            totalExercises: exercises.count,
+            totalSets: totalSets,
+            completedSets: 0,
+            currentHeartRate: nil,
+            averageHeartRate: nil,
+            maxHeartRate: nil,
+            activeEnergyKilocalories: nil,
+            restRemainingSeconds: nil,
+            restTotalSeconds: nil,
+            isHealthKitEnabled: true,
+            healthKitStatusMessage: healthKitStatusMessage,
+            isFinished: false,
+            updatedAt: Date(),
+            exercises: exercises
+        )
+    }
+
+    private func activeExerciseState(
+        _ exercise: PulsarGymWorkoutExerciseSession,
+        supersetGroups: [PulsarSupersetGroup]
+    ) -> ActiveGymWorkoutExerciseState {
+        let group = exercise.supersetGroupId.flatMap { groupId in
+            supersetGroups.first { $0.id == groupId }
+        }
+        return ActiveGymWorkoutExerciseState(
+            id: exercise.id,
+            exerciseId: exercise.exerciseId,
+            exerciseName: exercise.exerciseName,
+            muscleGroup: exercise.primaryMuscleGroup.displayName,
+            equipment: exercise.equipment,
+            plannedSets: exercise.plannedSets,
+            plannedReps: exercise.plannedReps,
+            plannedWeight: exercise.plannedWeight,
+            weightUnit: exercise.weightUnit.displayName,
+            plannedRestSeconds: exercise.plannedRestSeconds,
+            orderIndex: exercise.orderIndex,
+            notes: exercise.notes,
+            supersetGroupId: exercise.supersetGroupId,
+            supersetOrder: exercise.supersetOrder,
+            supersetType: group?.type.rawValue,
+            supersetRestSeconds: exercise.supersetRestSeconds ?? group?.restTimeSeconds,
+            supersetSharedSetCount: group?.sharedSetCount,
+            sets: exercise.sets.map { set in
+                ActiveGymWorkoutSetState(
+                    id: set.id,
+                    setNumber: set.setNumber,
+                    targetReps: set.targetReps,
+                    targetWeight: set.targetWeight,
+                    completedReps: set.completedReps,
+                    completedWeight: set.completedWeight,
+                    isCompleted: set.isCompleted,
+                    completedAt: set.completedAt
+                )
+            }
+        )
+    }
+
+    private static let strengthConfiguration: HKWorkoutConfiguration = {
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = .traditionalStrengthTraining
+        configuration.locationType = .indoor
+        return configuration
+    }()
 }
 
 struct GymRoutineChoiceView: View {

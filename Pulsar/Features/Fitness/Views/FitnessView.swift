@@ -8,7 +8,6 @@ import SwiftUI
 struct FitnessView: View {
     @EnvironmentObject private var runCoordinator: PulsarRunCoordinator
     @EnvironmentObject private var activeWorkoutManager: PulsarActiveWorkoutManager
-    @EnvironmentObject private var bottomChromeState: PulsarBottomChromeState
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var profileStore: ProfileStore
     @StateObject private var weekViewModel = FitnessWeekViewModel()
@@ -20,7 +19,6 @@ struct FitnessView: View {
     @State private var isActivityLogExpanded = false
     @State private var selectedPersonalizedWorkout: PersonalizedWorkoutKind?
     @State private var selectedOutdoorWorkoutKind: PulsarOutdoorWorkoutKind?
-    @State private var isShowingWatchGymMirror = false
 
     @MainActor
     init(profileStore: ProfileStore) {
@@ -29,9 +27,11 @@ struct FitnessView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .bottomTrailing) {
+            ZStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
+                        FitnessPageTitleHeader()
+
                         FitnessWeekHeaderView(
                             week: weekViewModel.selectedWeek,
                             canMoveToNextWeek: weekViewModel.canMoveToNextWeek,
@@ -83,12 +83,11 @@ struct FitnessView: View {
                         )
                     }
                     .padding(.horizontal, 18)
-                    .padding(.top, 10)
+                    .padding(.top, 34)
                     .padding(.bottom, 34)
                 }
-                .pulsarBottomChromeScrollTracking()
-                .background(FitnessWeeklyBackground())
-                .premiumScrollHeaderBlur(height: 56)
+                .safeAreaPadding(.bottom, 16)
+                .scrollContentBackground(.hidden)
                 .refreshable {
                     await weekViewModel.refresh()
                     await progressViewModel.refresh(
@@ -98,16 +97,23 @@ struct FitnessView: View {
                     )
                 }
 
-                FitnessFloatingAddButton {
-                    withAnimation(.spring(response: 0.44, dampingFraction: 0.82)) {
-                        isShowingWorkoutPicker = true
-                    }
-                }
-                .padding(.trailing, 18)
-                .padding(.bottom, bottomChromeState.floatingControlBottomPadding)
-                .zIndex(10)
             }
-            .toolbar(.hidden, for: .navigationBar)
+            .background(FitnessWeeklyBackground())
+            .navigationTitle("")
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                        withAnimation(.spring(response: 0.44, dampingFraction: 0.82)) {
+                            isShowingWorkoutPicker = true
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Add workout")
+                }
+            }
             .task {
                 weekViewModel.startWeekRolloverMonitoring()
                 watchSyncStore.pruneStaleActiveWorkoutState(reason: "fitnessTask")
@@ -148,15 +154,6 @@ struct FitnessView: View {
                 isActivityLogExpanded = false
                 Task {
                     await progressViewModel.selectWeek(weekViewModel.selectedWeek, displayUnit: resolvedGymWeightUnit)
-                }
-            }
-            .onReceive(watchSyncStore.$activeGymState) { state in
-                guard selectedPersonalizedWorkout == nil, selectedOutdoorWorkoutKind == nil else { return }
-                guard activeWorkoutManager.gymSessionViewModel == nil else { return }
-                if let state, watchSyncStore.isRoutableActiveGymState(state) {
-                    isShowingWatchGymMirror = true
-                } else if state == nil || state?.isFinished == true || state?.staleRouteReason() != nil {
-                    isShowingWatchGymMirror = false
                 }
             }
             .sheet(isPresented: $isShowingWeekHistory) {
@@ -216,25 +213,16 @@ struct FitnessView: View {
                     coordinator: runCoordinator,
                     workoutKind: workoutKind,
                     onMinimize: {
-                        activeWorkoutManager.minimizeRunWorkout(runCoordinator.snapshot.workoutKind)
+                        activeWorkoutManager.minimizeRunWorkout(
+                            runCoordinator.snapshot.workoutKind,
+                            sessionID: runCoordinator.ensureActiveWorkoutSessionID(reason: "fitnessIntroMinimize")
+                        )
                     }
                 )
             }
-            .fullScreenCover(isPresented: $isShowingWatchGymMirror, onDismiss: {
-                Task {
-                    await weekViewModel.refresh()
-                    await progressViewModel.refresh(
-                        displayUnit: resolvedGymWeightUnit,
-                        selectedWeek: weekViewModel.selectedWeek,
-                        force: true
-                    )
-                }
-            }) {
-                GymWatchMirroredWorkoutView(syncStore: watchSyncStore) {
-                    isShowingWatchGymMirror = false
-                }
-            }
         }
+        .background(FitnessWeeklyBackground())
+        .toolbarBackground(.hidden, for: .navigationBar)
     }
 
     private var resolvedGymWeightUnit: PulsarWeightUnit {
@@ -242,9 +230,77 @@ struct FitnessView: View {
     }
 }
 
+private struct FitnessPageTitleHeader: View {
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            FitnessRunnerGlyph()
+                .frame(width: 32, height: 28)
+                .alignmentGuide(.firstTextBaseline) { dimensions in
+                    dimensions[VerticalAlignment.center] + 7
+                }
+                .accessibilityHidden(true)
+
+            Text("Fitness")
+                .font(.largeTitle.weight(.bold))
+                .foregroundStyle(.primary)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Fitness")
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+private struct FitnessRunnerGlyph: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isStriding = false
+
+    @ViewBuilder
+    var body: some View {
+        if reduceMotion {
+            runnerSymbol
+        } else {
+            runnerSymbol
+                .rotationEffect(.degrees(isStriding ? -4 : 3), anchor: .bottom)
+                .offset(y: isStriding ? -1.6 : 0.9)
+                .scaleEffect(
+                    x: isStriding ? 1.015 : 0.985,
+                    y: isStriding ? 0.985 : 1.015,
+                    anchor: .bottom
+                )
+                .symbolEffect(.bounce.up.byLayer, options: .speed(1.28).repeating, isActive: true)
+                .animation(
+                    .easeInOut(duration: 0.38).repeatForever(autoreverses: true),
+                    value: isStriding
+                )
+                .onAppear {
+                    startRunningAnimation()
+                }
+                .onChange(of: reduceMotion) { _, isReduced in
+                    if isReduced {
+                        isStriding = false
+                    } else {
+                        startRunningAnimation()
+                }
+            }
+        }
+    }
+
+    private func startRunningAnimation() {
+        guard !reduceMotion else { return }
+        isStriding = true
+    }
+
+    private var runnerSymbol: some View {
+        Image(systemName: "figure.run")
+            .font(.system(size: 27, weight: .semibold))
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(.primary)
+            .frame(width: 32, height: 28)
+    }
+}
+
 #Preview {
     FitnessView(profileStore: ProfileStore(sideEffectsEnabled: false))
         .environmentObject(PulsarRunCoordinator())
         .environmentObject(PulsarActiveWorkoutManager())
-        .environmentObject(PulsarBottomChromeState())
 }

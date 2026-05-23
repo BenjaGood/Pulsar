@@ -10,24 +10,26 @@ struct PulsarRunExperienceView: View {
     var workoutKind: PulsarOutdoorWorkoutKind = .running
     var onMinimize: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
+    @State private var displayedSummary: PulsarRunSummary?
+    @State private var pendingSummaryRevealTask: Task<Void, Never>?
 
     var body: some View {
         ZStack {
-            if let summary = coordinator.summary {
+            if let summary = displayedSummary {
                 PulsarRunSummaryView(summary: summary) {
                     coordinator.resetAfterSummary()
                     dismiss()
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
-            } else if coordinator.snapshot.phase == .running ||
-                        coordinator.snapshot.phase == .paused ||
-                        coordinator.snapshot.phase == .finishing ||
-                        coordinator.snapshot.phase == .connectingToWatch {
-                PulsarLiveRunView(coordinator: coordinator, workoutKind: workoutKind) {
+            } else if shouldShowLiveRun {
+                PulsarLiveRunView(
+                    coordinator: coordinator,
+                    workoutKind: workoutKind,
+                    isPreparingForRemoval: isSummaryRevealPending
+                ) {
                     onMinimize?()
                     dismiss()
                 }
-                .transition(.opacity)
             } else {
                 PulsarRunSetupView(coordinator: coordinator, workoutKind: workoutKind) {
                     dismiss()
@@ -36,7 +38,64 @@ struct PulsarRunExperienceView: View {
             }
         }
         .animation(.smooth(duration: 0.28), value: coordinator.snapshot.phase)
-        .animation(.smooth(duration: 0.28), value: coordinator.summary != nil)
+        .animation(.smooth(duration: 0.28), value: displayedSummary?.id)
+        .onAppear {
+            scheduleSummaryRevealIfNeeded()
+        }
+        .onChange(of: coordinator.summary?.id) { _, _ in
+            scheduleSummaryRevealIfNeeded()
+        }
+        .onDisappear {
+            pendingSummaryRevealTask?.cancel()
+        }
+        .alert(item: $coordinator.liveWatchFallbackPrompt) { prompt in
+            Alert(
+                title: Text(prompt.title),
+                message: Text(prompt.message),
+                primaryButton: .default(Text("Try Again")) {
+                    Task { await coordinator.retryLiveWatchStart() }
+                },
+                secondaryButton: .default(Text("Use iPhone")) {
+                    Task { await coordinator.startIPhoneFallbackFromLiveWatchPrompt() }
+                }
+            )
+        }
+    }
+
+    private var isSummaryRevealPending: Bool {
+        coordinator.summary != nil && displayedSummary == nil
+    }
+
+    private var shouldShowLiveRun: Bool {
+        if isSummaryRevealPending { return true }
+
+        switch coordinator.snapshot.phase {
+        case .running, .paused, .finishing, .connectingToWatch:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func scheduleSummaryRevealIfNeeded() {
+        pendingSummaryRevealTask?.cancel()
+
+        guard let summary = coordinator.summary else {
+            if displayedSummary != nil {
+                displayedSummary = nil
+            }
+            return
+        }
+
+        if displayedSummary?.id == summary.id { return }
+
+        pendingSummaryRevealTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled, coordinator.summary?.id == summary.id else { return }
+            withTransaction(Transaction(animation: .smooth(duration: 0.22))) {
+                displayedSummary = summary
+            }
+        }
     }
 }
 

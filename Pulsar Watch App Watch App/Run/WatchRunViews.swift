@@ -265,13 +265,24 @@ struct WatchLiveRunView: View {
     }
 
     private var secondaryMetricTitle: String {
-        runManager.snapshot.workoutKind.isOutdoorDistanceWorkout ? "Pace" : "State"
+        runManager.snapshot.workoutKind.isOutdoorDistanceWorkout
+            ? PulsarRunFormatters.paceOrSpeedTitle(for: runManager.snapshot.workoutKind)
+            : "State"
     }
 
     private var secondaryMetricValue: String {
         runManager.snapshot.workoutKind.isOutdoorDistanceWorkout
-            ? PulsarRunFormatters.pace(runManager.snapshot.currentPaceSecondsPerKilometer).replacingOccurrences(of: " /km", with: "")
+            ? PulsarRunFormatters.paceOrSpeed(
+                workoutKind: runManager.snapshot.workoutKind,
+                paceSecondsPerKilometer: runManager.snapshot.currentPaceSecondsPerKilometer,
+                speedMetersPerSecond: currentSpeedMetersPerSecond
+            ).replacingOccurrences(of: " /km", with: "")
             : (runManager.snapshot.phase == .paused ? "Paused" : "Live")
+    }
+
+    private var currentSpeedMetersPerSecond: Double? {
+        guard runManager.snapshot.workoutKind == .cycling else { return nil }
+        return runManager.snapshot.currentPaceSecondsPerKilometer.map { 1_000 / $0 }
     }
 
     private var controlsPage: some View {

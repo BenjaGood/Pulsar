@@ -24,8 +24,12 @@ struct PulsarRunHistoryView: View {
                     )
                 } else {
                     ForEach(runs) { run in
-                        RunHistoryRow(run: run)
-                            .listRowBackground(Color.clear)
+                        NavigationLink {
+                            PulsarRunSummaryView(summary: run)
+                        } label: {
+                            RunHistoryRow(run: run)
+                        }
+                        .listRowBackground(Color.clear)
                     }
                 }
             }
@@ -57,7 +61,7 @@ private struct RunHistoryRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(run.startedAt.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
                     .font(.headline.weight(.bold))
-                Text("\(PulsarRunFormatters.distance(run.distanceMeters)) · \(PulsarRunFormatters.duration(run.movingTime)) · \(PulsarRunFormatters.pace(run.averagePaceSecondsPerKilometer))")
+                Text("\(PulsarRunFormatters.distance(run.distanceMeters)) · \(PulsarRunFormatters.duration(run.movingTime)) · \(PulsarRunFormatters.paceOrSpeed(workoutKind: run.workoutKind, paceSecondsPerKilometer: run.averagePaceSecondsPerKilometer, speedMetersPerSecond: run.averageSpeedMetersPerSecond))")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }

@@ -21,12 +21,6 @@ extension View {
         }
     }
 
-    func pulsarTabBarAppearance() -> some View {
-        self
-            .toolbarBackground(.visible, for: .tabBar)
-            .toolbarBackground(.ultraThinMaterial, for: .tabBar)
-    }
-
     func premiumScrollHeaderBlur(
         height: CGFloat = 56,
         fadeStart: CGFloat = 8,
