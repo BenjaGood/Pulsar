@@ -122,6 +122,74 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
         await startWorkoutIfNeeded(configuration: Self.strengthConfiguration)
     }
 
+    func recoverActiveWorkoutSession(_ session: HKWorkoutSession) {
+        guard workoutSession == nil else {
+            PulsarSyncDebugLogger.log("Watch Gym recovery skipped because an active HealthKit session is already attached session=\(activeSessionId?.uuidString ?? "none")")
+            return
+        }
+
+        let configuration = session.workoutConfiguration
+        let builder = session.associatedWorkoutBuilder()
+        builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+        session.delegate = self
+        builder.delegate = self
+
+        workoutSession = session
+        workoutBuilder = builder
+
+        let recoveredState = syncStore.activeGymState.flatMap { state -> ActiveGymWorkoutState? in
+            guard syncStore.isRoutableActiveGymState(state),
+                  !state.isFinished else { return nil }
+            return state
+        }
+        if let recoveredState {
+            activeSessionId = recoveredState.sessionId
+            startedAt = session.startDate ?? recoveredState.startedAt
+        } else {
+            let sessionId = UUID()
+            let start = session.startDate ?? Date()
+            activeSessionId = sessionId
+            startedAt = start
+            syncStore.storeActiveGymState(
+                ActiveGymWorkoutState(
+                    sessionId: sessionId,
+                    routineId: sessionId,
+                    routineName: "Recovered Workout",
+                    routineEmoji: "🏋️",
+                    workoutKind: .freeWorkout,
+                    startedFrom: .appleWatch,
+                    startedAt: start,
+                    elapsedSeconds: max(0, Int(Date().timeIntervalSince(start))),
+                    currentExerciseIndex: 0,
+                    currentSetIndex: 0,
+                    totalExercises: 0,
+                    totalSets: 0,
+                    completedSets: 0,
+                    currentHeartRate: nil,
+                    averageHeartRate: nil,
+                    maxHeartRate: nil,
+                    activeEnergyKilocalories: nil,
+                    restRemainingSeconds: nil,
+                    restTotalSeconds: nil,
+                    isHealthKitEnabled: true,
+                    healthKitStatusMessage: nil,
+                    isFinished: false,
+                    updatedAt: Date(),
+                    exercises: []
+                ),
+                broadcast: true,
+                reason: "watchGymRecovered"
+            )
+        }
+
+        startTicking()
+        startStateTicking()
+        applyHealthStatusToActiveState(isEnabled: true)
+        sendMetricsIfNeeded(force: true)
+        message = nil
+        PulsarSyncDebugLogger.log("Watch Gym recovered active HealthKit workout session=\(activeSessionId?.uuidString ?? "none") state=\(session.state.rawValue)")
+    }
+
     func startRoutineFromWatch(_ routine: WatchGymRoutinePlan) async {
         if let activeState = syncStore.activeGymState,
            syncStore.isRoutableActiveGymState(activeState) {
@@ -268,7 +336,7 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
             session.startActivity(with: start)
             try await builder.beginCollection(at: start)
             addMetadata(to: builder, startedFrom: syncStore.activeGymState?.startedFrom ?? .appleWatch)
-            try? await session.startMirroringToCompanionDevice()
+            PulsarSyncDebugLogger.log("Watch Gym HealthKit mirroring deferred; gym state sync is handled by WatchConnectivity session=\(activeSessionId?.uuidString ?? "none")")
             startTicking()
             startStateTicking()
             applyHealthStatusToActiveState(isEnabled: true)

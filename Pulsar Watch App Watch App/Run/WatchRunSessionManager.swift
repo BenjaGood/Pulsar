@@ -125,6 +125,68 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
         message = nil
     }
 
+    func recoverActiveWorkoutSession(_ session: HKWorkoutSession) {
+        guard workoutSession == nil else {
+            PulsarSyncDebugLogger.log("Watch run recovery skipped because an active session is already attached session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none")")
+            return
+        }
+
+        let configuration = session.workoutConfiguration
+        let workoutKind = PulsarOutdoorWorkoutKind(activityType: configuration.activityType)
+        let builder = session.associatedWorkoutBuilder()
+        builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+        session.delegate = self
+        builder.delegate = self
+
+        workoutSession = session
+        workoutBuilder = builder
+        routeBuilder = workoutKind.isOutdoorDistanceWorkout ? HKWorkoutRouteBuilder(healthStore: healthStore, device: nil) : nil
+
+        let recoveredState = syncStore.activeWorkoutState.flatMap { state -> PulsarActiveWorkoutSyncState? in
+            guard state.kind.outdoorWorkoutKind == workoutKind,
+                  state.phase.isLive,
+                  !state.isEnded else { return nil }
+            return state
+        }
+        let startedFrom = recoveredState?.startedFrom ?? .appleWatch
+        let recoveredStart = session.startDate ?? recoveredState?.startedAt ?? Date()
+        let sessionId = recoveredState?.sessionId ?? snapshot.pulsarWorkoutSessionId ?? UUID()
+        let recoveredPhase = Self.runPhase(for: session.state)
+
+        cleanupRuntime(keepsWorkoutObjects: true)
+        activeWorkoutKind = workoutKind
+        activeWorkoutStartedFrom = startedFrom
+        startDate = recoveredStart
+        snapshot = .empty
+        snapshot.pulsarWorkoutSessionId = sessionId
+        snapshot.source = .appleWatch
+        snapshot.workoutKind = workoutKind
+        snapshot.startedAt = recoveredStart
+        snapshot.phase = recoveredPhase
+        snapshot.elapsedTime = max(0, Date().timeIntervalSince(recoveredStart))
+        if let recoveredState {
+            snapshot.currentHeartRate = recoveredState.currentHeartRate
+            snapshot.averageHeartRate = recoveredState.averageHeartRate
+            snapshot.maxHeartRate = recoveredState.maxHeartRate
+            snapshot.activeEnergyKilocalories = recoveredState.activeEnergyKilocalories
+            applySyncedRunMetrics(from: recoveredState, reason: "watchRunRecovery")
+        }
+        if recoveredPhase == .paused {
+            pauseBeganAt = Date()
+        }
+
+        startLocationUpdates()
+        startTicking()
+        sendMetricsIfNeeded(force: true)
+        publishActiveWorkoutState(
+            phase: recoveredPhase == .paused ? .paused : .active,
+            updatedFrom: .appleWatch,
+            reason: "watchRunRecovered"
+        )
+        message = nil
+        PulsarSyncDebugLogger.log("Watch run recovered active HealthKit workout session=\(sessionId.uuidString) type=\(workoutKind.rawValue) state=\(Self.describe(session.state))")
+    }
+
     func reconcileActiveWorkoutSyncState(_ state: PulsarActiveWorkoutSyncState) {
         guard let workoutKind = state.kind.outdoorWorkoutKind else { return }
         guard state.lastUpdatedFrom != .appleWatch || snapshot.pulsarWorkoutSessionId != state.sessionId else { return }
@@ -664,6 +726,7 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
         guard !isFinishing else { return }
         isFinishing = true
         cleanupRuntime(keepsWorkoutObjects: true)
+        isFinishing = true
         let end = Date()
         snapshot.endedAt = end
         updateTimeMetrics(date: end)
@@ -846,6 +909,19 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
             "ended"
         @unknown default:
             "unknown(\(state.rawValue))"
+        }
+    }
+
+    private static func runPhase(for state: HKWorkoutSessionState) -> PulsarRunPhase {
+        switch state {
+        case .paused:
+            .paused
+        case .ended, .stopped:
+            .finishing
+        case .notStarted, .prepared, .running:
+            .running
+        @unknown default:
+            .running
         }
     }
 

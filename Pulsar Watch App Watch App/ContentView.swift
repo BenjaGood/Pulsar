@@ -10,7 +10,7 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            WatchHomeView()
+            WatchHomeView(isLaunchComplete: !isShowingLaunch)
                 .opacity(isShowingLaunch ? 0 : 1)
                 .animation(.easeOut(duration: 0.28), value: isShowingLaunch)
 
@@ -29,6 +29,8 @@ struct ContentView: View {
 }
 
 struct WatchHomeView: View {
+    let isLaunchComplete: Bool
+
     @StateObject private var store = WatchHealthKitStore()
     @StateObject private var syncStore = PulsarWatchConnectivitySyncStore.shared
     @EnvironmentObject private var runManager: WatchRunSessionManager
@@ -127,13 +129,14 @@ struct WatchHomeView: View {
                 WatchWorkoutPickerView()
                     .environmentObject(runManager)
             }
-            .task {
+            .task(id: isLaunchComplete) {
+                guard isLaunchComplete else { return }
                 store.viewAppeared()
                 await store.refreshForAppActivation()
             }
             .refreshable { await store.load(reason: "manualRefresh", showsBanner: true) }
             .onChange(of: scenePhase) { _, newPhase in
-                guard newPhase == .active else { return }
+                guard isLaunchComplete, newPhase == .active else { return }
                 Task { await store.refreshForAppActivation() }
             }
         }

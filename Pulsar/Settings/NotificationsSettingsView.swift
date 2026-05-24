@@ -67,6 +67,15 @@ struct NotificationsSettingsView: View {
                     .disabled(!store.preferences.intelligentNotificationsEnabled)
                     SettingsDivider()
                     ToggleSettingsRow(
+                        title: "Daily Rewind",
+                        subtitle: "A calm 8 PM reflection prompt for Mindfulness",
+                        symbol: "arrow.counterclockwise.circle.fill",
+                        tint: .teal,
+                        isOn: preferenceBinding(\.dailyRewindRemindersEnabled)
+                    )
+                    .disabled(!store.preferences.intelligentNotificationsEnabled)
+                    SettingsDivider()
+                    ToggleSettingsRow(
                         title: "Sleep Summary",
                         subtitle: "A morning sleep summary when enough sleep data is available",
                         symbol: "bed.double.fill",

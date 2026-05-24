@@ -6,37 +6,33 @@
 import SwiftUI
 
 struct InsightsView: View {
+    @ObservedObject private var homeViewModel: HomeViewModel
+    @ObservedObject private var mindfulnessStore: PulsarMindfulnessStore
+    @ObservedObject private var mindfulnessRouter: PulsarMindfulnessRouter
+
+    init(
+        homeViewModel: HomeViewModel,
+        mindfulnessStore: PulsarMindfulnessStore,
+        mindfulnessRouter: PulsarMindfulnessRouter
+    ) {
+        self.homeViewModel = homeViewModel
+        self.mindfulnessStore = mindfulnessStore
+        self.mindfulnessRouter = mindfulnessRouter
+    }
+
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    PlaceholderMetricCard(
-                        title: "Breathing",
-                        value: "+7%",
-                        subtitle: "Mindful minutes trend placeholder",
-                        symbol: "figure.mind.and.body"
-                    )
-                    PlaceholderMetricCard(
-                        title: "Consistency",
-                        value: "82",
-                        subtitle: "Reflection rhythm placeholder",
-                        symbol: "sparkles"
-                    )
-                }
-                .padding(.horizontal, 18)
-                .padding(.top, 12)
-                .padding(.bottom, 28)
-            }
-            .safeAreaPadding(.bottom, 16)
-            .scrollContentBackground(.hidden)
-            .navigationTitle("Mindfulness")
-            .toolbarTitleDisplayMode(.large)
-        }
-        .background(PulsarSectionBackground())
-        .toolbarBackground(.hidden, for: .navigationBar)
+        MindfulnessView(
+            homeViewModel: homeViewModel,
+            store: mindfulnessStore,
+            router: mindfulnessRouter
+        )
     }
 }
 
 #Preview {
-    InsightsView()
+    InsightsView(
+        homeViewModel: HomeViewModel(),
+        mindfulnessStore: PulsarMindfulnessStore(),
+        mindfulnessRouter: PulsarMindfulnessRouter()
+    )
 }

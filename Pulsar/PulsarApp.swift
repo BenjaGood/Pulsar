@@ -6,9 +6,12 @@
 //
 
 import SwiftUI
+import UIKit
 
 @main
 struct PulsarApp: App {
+    @UIApplicationDelegateAdaptor(PulsarAppDelegate.self) private var appDelegate
+
     init() {
         AppLifecycleStore().registerFirstLaunchIfNeeded()
         PulsarBackgroundRefreshCoordinator.register()
