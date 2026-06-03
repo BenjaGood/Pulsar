@@ -18,6 +18,7 @@ extension OuraSyncServicing {
 
 final class OuraSyncService: OuraSyncServicing {
     private static let recentSyncWindow: TimeInterval = 6 * 60 * 60
+    private static let automaticSyncReuseWindow: TimeInterval = 10 * 60
     private static let retryBaseDelay: TimeInterval = 45
     private static let retryMaximumDelay: TimeInterval = 5 * 60
 
@@ -27,6 +28,28 @@ final class OuraSyncService: OuraSyncServicing {
     private let mapper: OuraDataMapper
     private var nextAllowedAutomaticSyncAt: Date?
     private var consecutiveFailureCount = 0
+    private var recentSuccessfulSync: RecentSuccessfulSync?
+
+    private struct RecentSuccessfulSync {
+        var mapped: OuraMappedHealthData
+        var completedAt: Date
+        var windowStart: Date
+        var windowEnd: Date
+        var dateKey: String
+        var scopeKey: String
+        var calendarIdentifier: Calendar.Identifier
+        var timeZoneIdentifier: String
+
+        func covers(window: (start: Date, end: Date), dateKey: String, scopeKey: String, calendar: Calendar, now: Date) -> Bool {
+            now.timeIntervalSince(completedAt) <= OuraSyncService.automaticSyncReuseWindow &&
+                windowStart <= window.start &&
+                windowEnd >= window.end &&
+                self.dateKey == dateKey &&
+                self.scopeKey == scopeKey &&
+                calendarIdentifier == calendar.identifier &&
+                timeZoneIdentifier == calendar.timeZone.identifier
+        }
+    }
 
     init(
         apiClient: OuraAPIClientProtocol,
@@ -65,6 +88,15 @@ final class OuraSyncService: OuraSyncServicing {
 
         let scopes = token.scopes.isEmpty ? authService.authorizationConfiguration.requestedScopes : token.scopes
         let now = Date()
+        let window = incrementalWindow(for: date, calendar: calendar, now: now)
+        let dateKey = OuraDateParser.dayString(for: date, calendar: calendar)
+        let scopeKey = scopes.map(\.rawValue).sorted().joined(separator: ",")
+        if reason != "manualRefresh",
+           let recentSuccessfulSync,
+           recentSuccessfulSync.covers(window: window, dateKey: dateKey, scopeKey: scopeKey, calendar: calendar, now: now) {
+            PulsarOuraLogger.log("Incremental sync reused recent payload start=\(OuraDateParser.dayString(for: recentSuccessfulSync.windowStart, calendar: calendar)) end=\(OuraDateParser.dayString(for: recentSuccessfulSync.windowEnd, calendar: calendar)) reason=\(reason)")
+            return recentSuccessfulSync.mapped
+        }
         if reason != "manualRefresh",
            let nextAllowedAutomaticSyncAt,
            now < nextAllowedAutomaticSyncAt {
@@ -73,7 +105,6 @@ final class OuraSyncService: OuraSyncServicing {
             PulsarOuraLogger.log("Incremental sync deferred reason=\(reason) retryIn=\(delay)s")
             throw OuraAPIError.transport(message)
         }
-        let window = incrementalWindow(for: date, calendar: calendar, now: now)
         PulsarOuraLogger.log("Incremental sync started start=\(OuraDateParser.dayString(for: window.start, calendar: calendar)) end=\(OuraDateParser.dayString(for: window.end, calendar: calendar)) reason=\(reason) lastSyncAt=\(connectionStore.lastSyncAt?.description ?? "nil") scopes=\(scopes.map(\.rawValue).sorted().joined(separator: ","))")
 
         do {
@@ -102,6 +133,16 @@ final class OuraSyncService: OuraSyncServicing {
             consecutiveFailureCount = 0
             nextAllowedAutomaticSyncAt = nil
             connectionStore.markSynced(at: mapped.mappedAt)
+            recentSuccessfulSync = RecentSuccessfulSync(
+                mapped: mapped,
+                completedAt: mapped.mappedAt,
+                windowStart: window.start,
+                windowEnd: window.end,
+                dateKey: dateKey,
+                scopeKey: scopeKey,
+                calendarIdentifier: calendar.identifier,
+                timeZoneIdentifier: calendar.timeZone.identifier
+            )
             PulsarOuraLogger.log("Incremental sync finished updatedMetrics=\(updatedMetricsDescription(mapped)) samples=\(mapped.samples.count)")
             PulsarOuraLogger.log("Oura sync completed payload=\(mapped.payload != nil) samples=\(mapped.samples.count)")
             return mapped

@@ -30,11 +30,6 @@ struct RecoveryDetailsView: View {
             withAnimation(.smooth(duration: 0.45)) { contentVisible = true }
             await viewModel.loadIfNeeded()
         }
-        .safeAreaInset(edge: .top) {
-            PulsarSyncStatusPill()
-                .padding(.horizontal, 18)
-                .padding(.top, 6)
-        }
     }
 
     @ViewBuilder
@@ -82,19 +77,19 @@ private struct RecoveryDetailsHeader: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Recovery")
-                    .font(.largeTitle.weight(.bold))
+                    .pulsarTextStyle(.screenTitle)
                 Text(viewModel.dateSubtitle)
-                    .font(.callout.weight(.medium))
+                    .pulsarTextStyle(.screenSubtitle)
                     .foregroundStyle(.secondary)
             }
             HStack(alignment: .lastTextBaseline) {
                 Text(viewModel.scoreText)
-                    .font(.system(size: 58, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
+                    .pulsarMonospacedMetric(.heroMetric)
+                    .fontWidth(.expanded)
                     .minimumScaleFactor(0.72)
                 Spacer(minLength: 12)
                 Text(viewModel.statusText)
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.metricLabel)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(recoveryColor(viewModel.summary.status).opacity(0.14), in: Capsule())
@@ -115,15 +110,15 @@ private struct RecoveryBalanceCard: View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Recovery Balance")
-                    .font(.title3.weight(.semibold))
+                    .pulsarTextStyle(.sectionTitle)
                 Text(subtitle)
-                    .font(.caption)
+                    .pulsarTextStyle(.caption)
                     .foregroundStyle(.secondary)
             }
             RecoveryBalanceGraphView(summary: summary)
                 .frame(height: 230)
             Text("Wellness observations only. Pulsar does not diagnose medical conditions.")
-                .font(.caption2)
+                .pulsarTextStyle(.caption)
                 .foregroundStyle(.tertiary)
         }
         .padding(18)
@@ -149,10 +144,9 @@ struct RecoveryBalanceGraphView: View {
                 }
                 VStack(spacing: 4) {
                     Text(summary.score > 0 ? "\(summary.score)" : "--")
-                        .font(.system(size: 42, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
+                        .pulsarMonospacedMetric(.heroMetric)
                     Text(summary.status.label)
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.metricLabel)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
@@ -169,9 +163,9 @@ struct RecoveryBalanceGraphView: View {
                             .frame(width: 8, height: 8)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(component.title)
-                                .font(.caption.weight(.semibold))
+                                .pulsarTextStyle(.metricLabel)
                             Text(component.valueText)
-                                .font(.caption2)
+                                .pulsarTextStyle(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
@@ -193,9 +187,9 @@ private struct RecoveryTrendCard: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("7-Day Trend")
-                    .font(.title3.weight(.semibold))
+                    .pulsarTextStyle(.sectionTitle)
                 Text("Based on available HealthKit data")
-                    .font(.caption)
+                    .pulsarTextStyle(.caption)
                     .foregroundStyle(.secondary)
             }
             RecoveryTrendGraphView(points: points)
@@ -314,16 +308,15 @@ private struct RecoveryMetricTile: View {
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.blue)
             Text(metric.title)
-                .font(.caption.weight(.medium))
+                .pulsarTextStyle(.metricLabel)
                 .foregroundStyle(.secondary)
             Text(metric.value)
-                .font(.headline.weight(.semibold))
-                .monospacedDigit()
+                .pulsarMonospacedMetric(.cardTitle)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
             if let subtitle = metric.subtitle {
                 Text(subtitle)
-                    .font(.caption2)
+                    .pulsarTextStyle(.caption)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
@@ -340,25 +333,24 @@ private struct RecoveryComponentsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Components")
-                .font(.title3.weight(.semibold))
+                .pulsarTextStyle(.sectionTitle)
             VStack(spacing: 10) {
                 ForEach(components) { component in
                     VStack(alignment: .leading, spacing: 7) {
                         HStack {
                             Text(component.title)
-                                .font(.headline.weight(.semibold))
+                                .pulsarTextStyle(.cardTitle)
                             Spacer()
                             Text(component.status.label)
-                                .font(.caption.weight(.semibold))
+                                .pulsarTextStyle(.metricLabel)
                                 .foregroundStyle(componentColor(component.status))
                         }
                         Text(component.valueText)
-                            .font(.subheadline)
+                            .pulsarMonospacedMetric(.appBodyEmphasis)
                             .foregroundStyle(.secondary)
-                            .monospacedDigit()
                         if let detail = component.detail {
                             Text(detail)
-                                .font(.caption)
+                                .pulsarTextStyle(.caption)
                                 .foregroundStyle(.tertiary)
                         }
                     }
@@ -378,14 +370,14 @@ private struct RecoveryInsightsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Insights")
-                .font(.title3.weight(.semibold))
+                .pulsarTextStyle(.sectionTitle)
             ForEach(insights) { insight in
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "heart.text.square")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.blue)
                     Text(insight.text)
-                        .font(.callout)
+                        .pulsarTextStyle(.appBody)
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -412,7 +404,7 @@ private struct RecoveryDataQualitySection: View {
             .padding(.top, 8)
         } label: {
             Text("Data Quality")
-                .font(.headline)
+                .pulsarTextStyle(.cardTitle)
         }
         .padding(16)
         .pulsarLiquidGlass(cornerRadius: 24)
@@ -427,6 +419,7 @@ private struct RecoveryDataQualitySection: View {
                 .multilineTextAlignment(.trailing)
         }
         .font(.footnote)
+        .pulsarTextStyle(.caption)
     }
 }
 
@@ -435,7 +428,7 @@ private struct RecoveryDetailsLoadingView: View {
         VStack(spacing: 14) {
             ProgressView()
             Text("Loading recovery details")
-                .font(.headline)
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, minHeight: 280)
@@ -454,9 +447,9 @@ private struct RecoveryDetailsStateView: View {
                 .font(.system(size: 34, weight: .semibold))
                 .foregroundStyle(.blue)
             Text(title)
-                .font(.title3.weight(.semibold))
+                .pulsarTextStyle(.sectionTitle)
             Text(message)
-                .font(.callout)
+                .pulsarTextStyle(.appBody)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }

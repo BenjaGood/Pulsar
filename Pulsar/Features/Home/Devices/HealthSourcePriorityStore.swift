@@ -266,6 +266,9 @@ enum HealthSourcePriorityResolver {
         if source == .manual {
             return true
         }
+        if source == .airPodsPro3 {
+            return false
+        }
         guard let snapshot = snapshots[source],
               snapshot.connectionState.canProvideData,
               !snapshot.supportedMetrics.isDisjoint(with: category.metrics) else {

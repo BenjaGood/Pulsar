@@ -19,6 +19,10 @@ struct MeasurementDeviceIconView: View {
                 appleWatchIcon
             case .ouraRing:
                 ringIcon
+            case .airPodsPro3:
+                Image(systemName: "airpodspro")
+                    .font(.system(size: size * 0.74, weight: .semibold))
+                    .foregroundStyle(resolvedTint)
             }
         }
         .frame(width: size, height: size)
@@ -280,7 +284,7 @@ struct MeasurementSourceSheet: View {
     }
 
     private var footerNote: some View {
-        Text("Pulsar uses your current source for sleep, recovery, strain, stress, and workout metrics. Auto fallback only uses another source when you allow it.")
+        Text("Pulsar uses your current source for sleep, recovery, strain, stress, steps, and daily metrics. AirPods Pro 3 are never used there; they are only an emergency workout heart-rate backup through HealthKit.")
             .font(.caption.weight(.medium))
             .foregroundStyle(secondaryText)
             .fixedSize(horizontal: false, vertical: true)
@@ -295,6 +299,11 @@ struct MeasurementSourceSheet: View {
 
     private func handlePrimaryAction(for device: MeasurementDevice) async {
         focusedDeviceType = device.type
+
+        if device.type == .airPodsPro3 {
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            return
+        }
 
         if device.type == .ouraRing {
             switch device.connectionStatus {
@@ -334,6 +343,8 @@ struct MeasurementSourceSheet: View {
             await onSyncAppleHealthKit()
         case .ouraRing:
             await manager.syncOuraNow()
+        case .airPodsPro3:
+            break
         }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
@@ -639,6 +650,8 @@ private struct MeasurementActiveDeviceHero: View {
             return colorScheme == .dark ? Color(red: 0.72, green: 0.86, blue: 1.0) : Color(red: 0.08, green: 0.34, blue: 0.58)
         case .ouraRing:
             return colorScheme == .dark ? Color(red: 0.72, green: 0.78, blue: 0.90) : Color(red: 0.18, green: 0.24, blue: 0.34)
+        case .airPodsPro3:
+            return colorScheme == .dark ? .white.opacity(0.88) : Color(red: 0.45, green: 0.50, blue: 0.58)
         }
     }
 
@@ -758,8 +771,8 @@ private struct MeasurementDeviceSourceCard: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if device.type == .ouraRing {
-                    Text(ouraCardCaption)
+                if device.type == .ouraRing || device.type == .airPodsPro3 {
+                    Text(device.type == .airPodsPro3 ? airPodsCardCaption : ouraCardCaption)
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(statusTint)
                         .lineLimit(1)
@@ -801,7 +814,14 @@ private struct MeasurementDeviceSourceCard: View {
         if device.type == .ouraRing {
             return "Sleep · Recovery · HRV · Temp · Activity"
         }
+        if device.type == .airPodsPro3 {
+            return "Workout HR backup · no daily tracking"
+        }
         return device.supportedMetrics.prefix(4).map(\.label).joined(separator: " • ")
+    }
+
+    private var airPodsCardCaption: String {
+        "Emergency fallback only"
     }
 
     private var ouraCardCaption: String {
@@ -831,6 +851,8 @@ private struct MeasurementDeviceSourceCard: View {
             return colorScheme == .dark ? Color(red: 0.72, green: 0.86, blue: 1.0) : Color(red: 0.08, green: 0.34, blue: 0.58)
         case .ouraRing:
             return colorScheme == .dark ? Color(red: 0.72, green: 0.78, blue: 0.90) : Color(red: 0.18, green: 0.24, blue: 0.34)
+        case .airPodsPro3:
+            return colorScheme == .dark ? .white.opacity(0.88) : Color(red: 0.45, green: 0.50, blue: 0.58)
         }
     }
 
@@ -1037,6 +1059,8 @@ private extension HealthSourceID {
             return "Apple Watch / HealthKit"
         case .ouraRing:
             return "Oura Ring"
+        case .airPodsPro3:
+            return "AirPods Pro 3"
         case .iPhone:
             return "iPhone Sensors"
         case .manual:
@@ -1050,6 +1074,8 @@ private extension HealthSourceID {
             return "HK"
         case .ouraRing:
             return "Oura"
+        case .airPodsPro3:
+            return "AirPods"
         case .iPhone:
             return "iPhone"
         case .manual:
@@ -1403,10 +1429,15 @@ private struct MeasurementDeviceDetailPanel: View {
             case .available, .disconnected:
                 return "Sign in with Oura to sync sleep, recovery, HRV, temperature trends, and activity."
             }
+        case .airPodsPro3:
+            return "AirPods Pro 3 heart rate is available only during workouts. It is recommended as a backup source if your Apple Watch or Garmin runs out of battery or loses connection."
         }
     }
 
     private var detailTitle: String {
+        if device.type == .airPodsPro3 {
+            return "Emergency workout backup"
+        }
         if device.type == .ouraRing, device.connectionStatus != .connected {
             return "Connect your Oura Ring"
         }
@@ -1419,6 +1450,8 @@ private struct MeasurementDeviceDetailPanel: View {
             return "Apple Watch data is prioritized for sleep, recovery, strain, stress, and workout metrics when it is the active source."
         case .ouraRing:
             return "Pulsar reads Oura cloud data after the ring syncs to Oura. This is not direct Bluetooth or live ring streaming."
+        case .airPodsPro3:
+            return "Pulsar never uses AirPods Pro 3 for daily tracking, recovery, stress scoring, strain, steps, sleep, HRV, or always-on monitoring. Heart-rate data is consumed only through Apple-supported HealthKit workout flows; Pulsar does not pair with AirPods or read sensors directly."
         }
     }
 
@@ -1433,6 +1466,8 @@ private struct MeasurementDeviceDetailPanel: View {
             return colorScheme == .dark ? Color(red: 0.72, green: 0.86, blue: 1.0) : Color(red: 0.08, green: 0.34, blue: 0.58)
         case .ouraRing:
             return colorScheme == .dark ? Color(red: 0.72, green: 0.78, blue: 0.90) : Color(red: 0.18, green: 0.24, blue: 0.34)
+        case .airPodsPro3:
+            return colorScheme == .dark ? .white.opacity(0.88) : Color(red: 0.45, green: 0.50, blue: 0.58)
         }
     }
 
@@ -1758,6 +1793,10 @@ private struct DeviceProductImageView: View {
             AppleWatchDeviceIllustrationView(tint: tint)
         case .ouraRing:
             OuraRingDeviceIllustrationView(tint: tint)
+        case .airPodsPro3:
+            Image(systemName: "airpodspro")
+                .font(.system(size: 96, weight: .semibold))
+                .foregroundStyle(tint)
         }
     }
 
@@ -1823,17 +1862,26 @@ private struct DeviceProductImageView: View {
             return 0.92
         case (.ouraRing, .detail):
             return 0.93
+        case (.airPodsPro3, .hero):
+            return 0.92
+        case (.airPodsPro3, .card):
+            return 0.94
+        case (.airPodsPro3, .detail):
+            return 0.96
         }
     }
 
     private var glowWidthMultiplier: CGFloat {
         switch mode {
         case .hero:
-            return deviceType == .appleWatch ? 0.72 : 0.62
+            if deviceType == .appleWatch { return 0.72 }
+            return deviceType == .airPodsPro3 ? 0.68 : 0.62
         case .card:
-            return deviceType == .appleWatch ? 0.70 : 0.60
+            if deviceType == .appleWatch { return 0.70 }
+            return deviceType == .airPodsPro3 ? 0.66 : 0.60
         case .detail:
-            return deviceType == .appleWatch ? 0.76 : 0.64
+            if deviceType == .appleWatch { return 0.76 }
+            return deviceType == .airPodsPro3 ? 0.70 : 0.64
         }
     }
 
@@ -1854,6 +1902,8 @@ private struct DeviceProductImageView: View {
             return colorScheme == .dark ? Color(red: 0.72, green: 0.86, blue: 1.0) : Color(red: 0.08, green: 0.34, blue: 0.58)
         case .ouraRing:
             return colorScheme == .dark ? Color(red: 0.72, green: 0.78, blue: 0.90) : Color(red: 0.18, green: 0.24, blue: 0.34)
+        case .airPodsPro3:
+            return colorScheme == .dark ? .white.opacity(0.86) : Color(red: 0.52, green: 0.56, blue: 0.63)
         }
     }
 }

@@ -8,9 +8,11 @@ import UIKit
 
 struct GymWatchMirroredWorkoutView: View {
     @ObservedObject var syncStore: PulsarWatchConnectivitySyncStore
-    var onDismiss: () -> Void
+    var onMinimize: () -> Void
+    var onSummaryDone: () -> Void
     @State private var finishedSummary: PulsarGymWorkoutSummary?
     @State private var lastMirroredState: ActiveGymWorkoutState?
+    @State private var isRequestingFinish = false
 
     private var state: ActiveGymWorkoutState? {
         guard let state = syncStore.activeGymState,
@@ -41,7 +43,7 @@ struct GymWatchMirroredWorkoutView: View {
                 }
             } else if let finishedSummary {
                 GymWorkoutSummaryOverlay(summary: finishedSummary) {
-                    onDismiss()
+                    onSummaryDone()
                 }
             } else {
                 completedState
@@ -52,8 +54,13 @@ struct GymWatchMirroredWorkoutView: View {
                 presentFinishedSummary(from: activeGymState)
                 return
             }
+            if syncStore.activeGymState == nil,
+               let finishedState = syncStore.lastFinishedGymState {
+                presentFinishedSummary(from: finishedState)
+                return
+            }
             guard let state else {
-                onDismiss()
+                onMinimize()
                 return
             }
             lastMirroredState = state
@@ -66,7 +73,12 @@ struct GymWatchMirroredWorkoutView: View {
                 } else if syncStore.isRoutableActiveGymState(newState) {
                     lastMirroredState = newState
                 }
-            } else if finishedSummary == nil, let lastMirroredState {
+            } else if finishedSummary == nil,
+                      let finishedState = syncStore.lastFinishedGymState {
+                presentFinishedSummary(from: finishedState)
+            } else if finishedSummary == nil,
+                      let lastMirroredState,
+                      lastMirroredState.isFinished {
                 presentFinishedSummary(from: lastMirroredState)
             }
         }
@@ -93,7 +105,7 @@ struct GymWatchMirroredWorkoutView: View {
                 foregroundStyle: .white.opacity(0.78)
             ) {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                onDismiss()
+                onMinimize()
             }
 
             VStack(alignment: .leading, spacing: 7) {
@@ -192,19 +204,37 @@ struct GymWatchMirroredWorkoutView: View {
                         .foregroundStyle(.white.opacity(0.58))
                 }
 
-                HStack(spacing: 10) {
-                    GymWatchMirrorSetMetric(title: "Set", value: state.currentSet.map { "\($0.setNumber)" } ?? "--")
-                    GymWatchMirrorSetMetric(title: "Reps", value: state.currentSet.map { "\($0.targetReps)" } ?? "--")
-                    GymWatchMirrorSetMetric(
-                        title: "Load",
-                        value: state.currentSet.map { PulsarGymFormatters.weight($0.targetWeight, unit: state.currentExercise?.weightUnit ?? "kg") } ?? "--"
-                    )
+                if let exercise = state.currentExercise, let set = state.currentSet {
+                    HStack(spacing: 10) {
+                        GymWatchMirrorSetMetric(title: "Set", value: "\(set.setNumber)")
+                        GymWatchMirrorSetEditor(
+                            set: set,
+                            weightUnit: exercise.weightUnit,
+                            onUpdate: { reps, weight in
+                                updateCurrentSetValues(state: state, exercise: exercise, set: set, reps: reps, weight: weight)
+                            }
+                        )
+                    }
+                } else {
+                    HStack(spacing: 10) {
+                        GymWatchMirrorSetMetric(title: "Set", value: "--")
+                        GymWatchMirrorSetMetric(title: "Reps", value: "--")
+                        GymWatchMirrorSetMetric(title: "Load", value: "--")
+                    }
                 }
 
                 Button {
                     guard let exercise = state.currentExercise, let set = state.currentSet else { return }
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    syncStore.sendGymAction(.completeSet(sessionId: state.sessionId, exerciseId: exercise.id, setId: set.id))
+                    syncStore.sendGymAction(
+                        .completeSet(
+                            sessionId: state.sessionId,
+                            exerciseId: exercise.id,
+                            setId: set.id,
+                            reps: set.completedReps ?? set.targetReps,
+                            weight: set.completedWeight ?? set.targetWeight
+                        )
+                    )
                 } label: {
                     Label("Complete Set", systemImage: "checkmark.circle.fill")
                         .font(.headline.weight(.black))
@@ -258,22 +288,30 @@ struct GymWatchMirroredWorkoutView: View {
 
     private func bottomControls(_ state: ActiveGymWorkoutState) -> some View {
         Button {
+            guard !isRequestingFinish else { return }
             UINotificationFeedbackGenerator().notificationOccurred(.success)
-            presentFinishedSummary(from: state)
+            isRequestingFinish = true
             syncStore.sendGymAction(.finishWorkout(sessionId: state.sessionId))
         } label: {
-            Text("Finish Workout")
-                .font(.headline.weight(.black))
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 15)
-                .background(.white.opacity(0.11), in: Capsule(style: .continuous))
-                .overlay {
-                    Capsule(style: .continuous)
-                        .stroke(.white.opacity(0.14), lineWidth: 1)
+            HStack(spacing: 10) {
+                if isRequestingFinish {
+                    ProgressView()
+                        .tint(.white)
                 }
+                Text(isRequestingFinish ? "Finishing workout..." : "Finish Workout")
+                    .font(.headline.weight(.black))
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 15)
+            .background(.white.opacity(0.11), in: Capsule(style: .continuous))
+            .overlay {
+                Capsule(style: .continuous)
+                    .stroke(.white.opacity(0.14), lineWidth: 1)
+            }
         }
         .buttonStyle(.plain)
+        .disabled(isRequestingFinish)
     }
 
     private var completedState: some View {
@@ -285,7 +323,7 @@ struct GymWatchMirroredWorkoutView: View {
                 .font(.title3.weight(.black))
                 .foregroundStyle(.white)
             Button("Done") {
-                onDismiss()
+                onSummaryDone()
             }
             .buttonStyle(.borderedProminent)
         }
@@ -316,7 +354,47 @@ struct GymWatchMirroredWorkoutView: View {
         finishedState.updatedAt = endedAt
         finishedState.elapsedSeconds = max(state.elapsedSeconds, Int(endedAt.timeIntervalSince(state.startedAt)))
         lastMirroredState = finishedState
+        isRequestingFinish = false
         finishedSummary = PulsarGymWorkoutSummary(activeGymState: finishedState)
+    }
+
+    private func updateCurrentSetValues(
+        state: ActiveGymWorkoutState,
+        exercise: ActiveGymWorkoutExerciseState,
+        set: ActiveGymWorkoutSetState,
+        reps: Int? = nil,
+        weight: Double? = nil
+    ) {
+        var nextState = state
+        if let exerciseIndex = nextState.exercises.firstIndex(where: { $0.id == exercise.id }),
+           let setIndex = nextState.exercises[exerciseIndex].sets.firstIndex(where: { $0.id == set.id }) {
+            if let reps {
+                let nextReps = max(1, reps)
+                nextState.exercises[exerciseIndex].sets[setIndex].targetReps = nextReps
+                if nextState.exercises[exerciseIndex].sets[setIndex].isCompleted {
+                    nextState.exercises[exerciseIndex].sets[setIndex].completedReps = nextReps
+                }
+            }
+            if let weight {
+                let nextWeight = max(0, weight)
+                nextState.exercises[exerciseIndex].sets[setIndex].targetWeight = nextWeight
+                if nextState.exercises[exerciseIndex].sets[setIndex].isCompleted {
+                    nextState.exercises[exerciseIndex].sets[setIndex].completedWeight = nextWeight
+                }
+            }
+            nextState.updatedAt = Date()
+            syncStore.storeActiveGymState(nextState, broadcast: false, reason: "gymMirrorSetAdjusted")
+        }
+
+        syncStore.sendGymAction(
+            .updateSetValues(
+                sessionId: state.sessionId,
+                exerciseId: exercise.id,
+                setId: set.id,
+                reps: reps,
+                weight: weight
+            )
+        )
     }
 }
 
@@ -397,6 +475,87 @@ private struct GymWatchMirrorSetMetric: View {
     }
 }
 
+private struct GymWatchMirrorSetEditor: View {
+    var set: ActiveGymWorkoutSetState
+    var weightUnit: String
+    var onUpdate: (Int?, Double?) -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            GymWatchMirrorSetStepper(
+                title: "Reps",
+                value: "\(displayReps)",
+                onMinus: { onUpdate(max(1, displayReps - 1), nil) },
+                onPlus: { onUpdate(min(200, displayReps + 1), nil) }
+            )
+
+            GymWatchMirrorSetStepper(
+                title: "Load",
+                value: PulsarGymFormatters.weight(displayWeight, unit: weightUnit),
+                onMinus: { onUpdate(nil, max(0, displayWeight - weightStep)) },
+                onPlus: { onUpdate(nil, displayWeight + weightStep) }
+            )
+        }
+        .disabled(set.isCompleted)
+    }
+
+    private var displayReps: Int {
+        self.set.completedReps ?? self.set.targetReps
+    }
+
+    private var displayWeight: Double {
+        self.set.completedWeight ?? self.set.targetWeight
+    }
+
+    private var weightStep: Double {
+        weightUnit.lowercased().contains("lb") ? 5 : 2.5
+    }
+}
+
+private struct GymWatchMirrorSetStepper: View {
+    var title: String
+    var value: String
+    var onMinus: () -> Void
+    var onPlus: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(value)
+                    .font(.subheadline.weight(.black))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                Text(title)
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(.white.opacity(0.50))
+            }
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 6) {
+                Button(action: onMinus) {
+                    Image(systemName: "minus")
+                        .font(.caption.weight(.black))
+                        .frame(width: 28, height: 28)
+                        .background(.white.opacity(0.08), in: Circle())
+                }
+
+                Button(action: onPlus) {
+                    Image(systemName: "plus")
+                        .font(.caption.weight(.black))
+                        .frame(width: 28, height: 28)
+                        .background(.white.opacity(0.11), in: Circle())
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
 #Preview {
-    GymWatchMirroredWorkoutView(syncStore: .shared) {}
+    GymWatchMirroredWorkoutView(syncStore: .shared, onMinimize: {}, onSummaryDone: {})
 }

@@ -105,11 +105,16 @@ final class RoutineBuilderViewModel: ObservableObject {
         if isSelected(exercise) {
             removeExercise(exercise)
         } else {
-            routineExercises.append(
-                PulsarRoutineExercise(exercise: exercise, order: routineExercises.count, weightUnit: defaultWeightUnit)
-            )
-            normalizeOrder()
+            addExercise(exercise)
         }
+    }
+
+    func addExercise(_ exercise: PulsarExercise) {
+        guard !isSelected(exercise) else { return }
+        routineExercises.append(
+            PulsarRoutineExercise(exercise: exercise, order: routineExercises.count, weightUnit: defaultWeightUnit)
+        )
+        normalizeOrder()
     }
 
     func removeExercise(_ exercise: PulsarExercise) {

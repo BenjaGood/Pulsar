@@ -26,6 +26,14 @@ struct PulsarLiveRunView: View {
 
             VStack(spacing: 12) {
                 topBar
+                if let message = coordinator.heartRateSourceBanner {
+                    HeartRateSourceChangeBanner(message: message)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                if let coaching = coordinator.adaptiveWorkoutCoaching {
+                    AdaptiveRunCoachingBanner(coaching: coaching)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 Spacer()
                 metricsDeck
                 controls
@@ -45,6 +53,8 @@ struct PulsarLiveRunView: View {
             }
             Button("Keep \(activeWorkoutKind.displayName)", role: .cancel) {}
         }
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: coordinator.heartRateSourceBanner)
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: coordinator.adaptiveWorkoutCoaching?.id)
     }
 
     private var liveMap: some View {
@@ -199,9 +209,13 @@ struct PulsarLiveRunView: View {
         case .paused:
             coordinator.snapshot.source == .appleWatch ? "Paused on Apple Watch" : "Paused on iPhone"
         case .finishing:
-            "Saving workout"
+            coordinator.snapshot.statusMessage ?? "Finishing workout..."
         default:
-            coordinator.snapshot.source == .appleWatch ? "Apple Watch recording" : "iPhone recording"
+            if let heartRateSourceMessage = coordinator.heartRateSourceStatus?.message {
+                heartRateSourceMessage
+            } else {
+                coordinator.snapshot.source == .appleWatch ? "Apple Watch recording" : "iPhone recording"
+            }
         }
     }
 
@@ -296,6 +310,64 @@ struct PulsarLiveRunView: View {
         let urls = ["music://nowplaying", "music://"].compactMap(URL.init(string:))
         guard let url = urls.first else { return }
         UIApplication.shared.open(url)
+    }
+}
+
+private struct HeartRateSourceChangeBanner: View {
+    var message: String
+
+    var body: some View {
+        Label(message, systemImage: "heart.text.square.fill")
+            .font(.caption.weight(.black))
+            .foregroundStyle(.primary)
+            .lineLimit(2)
+            .minimumScaleFactor(0.82)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .pulsarLiquidGlass(cornerRadius: 18)
+    }
+}
+
+private struct AdaptiveRunCoachingBanner: View {
+    var coaching: AdaptiveWorkoutCoaching
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(coaching.title)
+                    .font(.caption.weight(.black))
+                Text(coaching.message)
+                    .font(.caption.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } icon: {
+            Image(systemName: symbol)
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(tint.opacity(0.28), lineWidth: 1)
+        }
+    }
+
+    private var tint: Color {
+        switch coaching.severity {
+        case .informational: .cyan
+        case .caution, .protective: .orange
+        }
+    }
+
+    private var symbol: String {
+        switch coaching.severity {
+        case .informational: "sparkles"
+        case .caution: "heart.text.square.fill"
+        case .protective: "shield.lefthalf.filled"
+        }
     }
 }
 

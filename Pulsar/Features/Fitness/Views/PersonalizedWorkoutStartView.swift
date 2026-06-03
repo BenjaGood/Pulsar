@@ -12,7 +12,9 @@ struct PersonalizedWorkoutStartView: View {
         case continueAutomatically
     }
 
-    let workout: PersonalizedWorkoutKind
+    private let workoutTitle: String
+    private let workoutSubtitle: String
+    private let workoutTint: Color
     let completionBehavior: CompletionBehavior
     let onIntroCompleted: (() -> Void)?
     let onStart: (() -> Void)?
@@ -21,11 +23,12 @@ struct PersonalizedWorkoutStartView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var hapticsManager = HeartbeatHapticsManager()
     @State private var hasStartedIntro = false
-    @State private var backgroundOpacity = 0.0
-    @State private var logoScale = 0.85
-    @State private var drawProgress: CGFloat = 0
-    @State private var spikeGlow = false
-    @State private var titleOpacity = 0.0
+    @State private var backgroundOpacity = 1.0
+    @State private var drawProgress: CGFloat = 0.62
+    @State private var lineGlow = 0.0
+    @State private var lineOpacity = 0.64
+    @State private var titleOpacity = 0.92
+    @State private var contentOffset: CGFloat = 8
     @State private var showsStartButton = false
 
     init(
@@ -35,7 +38,47 @@ struct PersonalizedWorkoutStartView: View {
         onStart: (() -> Void)? = nil,
         onCancel: (() -> Void)? = nil
     ) {
-        self.workout = workout
+        self.init(
+            title: workout.title,
+            subtitle: "Personalized Training",
+            tint: workout.accent.color,
+            completionBehavior: completionBehavior,
+            onIntroCompleted: onIntroCompleted,
+            onStart: onStart,
+            onCancel: onCancel
+        )
+    }
+
+    init(
+        workoutKind: PulsarOutdoorWorkoutKind,
+        completionBehavior: CompletionBehavior = .showStartButton,
+        onIntroCompleted: (() -> Void)? = nil,
+        onStart: (() -> Void)? = nil,
+        onCancel: (() -> Void)? = nil
+    ) {
+        self.init(
+            title: workoutKind.displayName,
+            subtitle: "Personalized Training",
+            tint: workoutKind.startAnimationTint,
+            completionBehavior: completionBehavior,
+            onIntroCompleted: onIntroCompleted,
+            onStart: onStart,
+            onCancel: onCancel
+        )
+    }
+
+    private init(
+        title: String,
+        subtitle: String,
+        tint: Color,
+        completionBehavior: CompletionBehavior,
+        onIntroCompleted: (() -> Void)?,
+        onStart: (() -> Void)?,
+        onCancel: (() -> Void)?
+    ) {
+        self.workoutTitle = title
+        self.workoutSubtitle = subtitle
+        self.workoutTint = tint
         self.completionBehavior = completionBehavior
         self.onIntroCompleted = onIntroCompleted
         self.onStart = onStart
@@ -43,44 +86,76 @@ struct PersonalizedWorkoutStartView: View {
     }
 
     var body: some View {
-        ZStack {
-            HeartbeatIntroBackground(opacity: backgroundOpacity)
+        GeometryReader { proxy in
+            ZStack {
+                WorkoutStartAmbientBackground(tint: workoutTint, opacity: backgroundOpacity, rhythmGlow: lineGlow)
 
-            VStack(spacing: 28) {
-                Spacer(minLength: 34)
+                VStack(spacing: 0) {
+                    Spacer(minLength: max(106, proxy.size.height * 0.18))
 
-                ECGHeartbeatView(drawProgress: drawProgress, spikeGlow: spikeGlow)
-                    .scaleEffect(logoScale)
-                    .opacity(backgroundOpacity)
+                    VStack(spacing: 24) {
+                        WorkoutStartPulseLineView(drawProgress: drawProgress, glowAmount: lineGlow, tint: workoutTint)
+                            .frame(maxWidth: 470)
+                            .frame(height: 132)
+                            .opacity(lineOpacity)
+                            .mask(
+                                LinearGradient(
+                                    colors: [.clear, .black, .black, .clear],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
 
-                VStack(spacing: 7) {
-                    Text(workout.title)
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        workoutTitleStack
+                            .opacity(titleOpacity)
+                            .offset(y: contentOffset)
+                    }
 
-                    Text("Personalized Training")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.70))
+                    Spacer(minLength: showsStartButton ? 34 : 92)
+
+                    if showsStartButton {
+                        startButton
+                            .frame(maxWidth: 340)
+                            .transition(.move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.94)))
+                    }
                 }
-                .opacity(titleOpacity)
-
-                Spacer(minLength: 22)
-
-                if showsStartButton {
-                    startButton
-                        .transition(.move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.94)))
-                }
+                .padding(.horizontal, 28)
+                .padding(.bottom, max(34, proxy.safeAreaInsets.bottom + 18))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 32)
-
-            cancelButton
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(.leading, 20)
-                .padding(.top, 18)
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .overlay(alignment: .topLeading) {
+                cancelButton
+                    .padding(.leading, max(18, proxy.safeAreaInsets.leading + 18))
+                    .padding(.top, max(16, proxy.safeAreaInsets.top + 10))
+            }
         }
         .task {
             await runIntroIfNeeded()
+        }
+    }
+
+    private var workoutTitleStack: some View {
+        VStack(spacing: 13) {
+            Text(workoutTitle)
+                .pulsarTextStyle(.workoutHero)
+                .fontWidth(.expanded)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [.white, .white.opacity(0.92), workoutTint.opacity(0.78)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.76)
+                .shadow(color: .white.opacity(0.12), radius: 10, y: 2)
+                .shadow(color: workoutTint.opacity(0.28), radius: 28, y: 14)
+
+            Text(workoutSubtitle)
+                .pulsarTextStyle(.workoutSubtitle)
+                .foregroundStyle(.white.opacity(0.60))
         }
     }
 
@@ -119,29 +194,39 @@ struct PersonalizedWorkoutStartView: View {
         } label: {
             HStack(spacing: 10) {
                 Text("Start Workout")
-                    .font(.headline.weight(.bold))
+                    .pulsarTextStyle(.buttonTitle)
                 Image(systemName: "arrow.right")
-                    .font(.headline.weight(.bold))
+                    .font(.headline.weight(.semibold))
             }
-            .foregroundStyle(Color(red: 0.36, green: 0.02, blue: 0.04))
+            .foregroundStyle(.white.opacity(0.94))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 17)
             .background(
                 LinearGradient(
                     colors: [
-                        Color.white.opacity(0.98),
-                        Color(red: 1.0, green: 0.82, blue: 0.78)
+                        .white.opacity(0.20),
+                        workoutTint.opacity(0.30),
+                        .white.opacity(0.10)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 ),
                 in: Capsule(style: .continuous)
             )
+            .background(.ultraThinMaterial, in: Capsule(style: .continuous))
             .overlay {
                 Capsule(style: .continuous)
-                    .stroke(.white.opacity(0.72), lineWidth: 1)
+                    .stroke(
+                        LinearGradient(
+                            colors: [.white.opacity(0.48), workoutTint.opacity(0.34), .white.opacity(0.12)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
             }
-            .shadow(color: Color(red: 1.0, green: 0.20, blue: 0.22).opacity(0.32), radius: 22, y: 10)
+            .shadow(color: workoutTint.opacity(0.26), radius: 24, y: 12)
+            .shadow(color: .black.opacity(0.26), radius: 20, y: 12)
         }
         .buttonStyle(WorkoutStartButtonStyle())
         .accessibilityHint("Begins the selected personalized workout")
@@ -152,101 +237,95 @@ struct PersonalizedWorkoutStartView: View {
         hasStartedIntro = true
         hapticsManager.prepare()
 
-        withAnimation(.easeOut(duration: 0.42)) {
-            backgroundOpacity = 1
+        try? await Task.sleep(nanoseconds: 80_000_000)
+        guard !Task.isCancelled else { return }
+
+        withAnimation(.smooth(duration: 0.68)) {
+            lineOpacity = 1
             titleOpacity = 1
+            contentOffset = 0
         }
 
-        withAnimation(.spring(response: 0.72, dampingFraction: 0.74)) {
-            logoScale = 1
-        }
+        try? await Task.sleep(nanoseconds: 120_000_000)
+        guard !Task.isCancelled else { return }
 
-        try? await Task.sleep(nanoseconds: 220_000_000)
-
-        withAnimation(.easeInOut(duration: 1.08)) {
+        withAnimation(.timingCurve(0.18, 0.92, 0.18, 1.0, duration: 1.08)) {
             drawProgress = 1
         }
 
-        try? await Task.sleep(nanoseconds: 540_000_000)
+        try? await Task.sleep(nanoseconds: 620_000_000)
+        guard !Task.isCancelled else { return }
 
         hapticsManager.playHeartbeat()
 
-        withAnimation(.spring(response: 0.20, dampingFraction: 0.52)) {
-            spikeGlow = true
-            logoScale = 1.035
+        withAnimation(.easeOut(duration: 0.18)) {
+            lineGlow = 1
         }
 
-        try? await Task.sleep(nanoseconds: 210_000_000)
+        try? await Task.sleep(nanoseconds: 170_000_000)
+        guard !Task.isCancelled else { return }
 
-        withAnimation(.easeOut(duration: 0.32)) {
-            spikeGlow = false
-            logoScale = 1
+        withAnimation(.easeOut(duration: 0.22)) {
+            lineGlow = 0.28
+        }
+
+        try? await Task.sleep(nanoseconds: 170_000_000)
+        guard !Task.isCancelled else { return }
+
+        hapticsManager.playHeartbeat()
+
+        withAnimation(.easeOut(duration: 0.16)) {
+            lineGlow = 0.86
+        }
+
+        try? await Task.sleep(nanoseconds: 220_000_000)
+        guard !Task.isCancelled else { return }
+
+        withAnimation(.easeOut(duration: 0.46)) {
+            lineGlow = 0.08
         }
 
         switch completionBehavior {
         case .showStartButton:
-            try? await Task.sleep(nanoseconds: 390_000_000)
+            try? await Task.sleep(nanoseconds: 300_000_000)
             guard !Task.isCancelled else { return }
             withAnimation(.spring(response: 0.52, dampingFraction: 0.82)) {
                 showsStartButton = true
             }
         case .continueAutomatically:
-            try? await Task.sleep(nanoseconds: 520_000_000)
+            try? await Task.sleep(nanoseconds: 440_000_000)
             guard !Task.isCancelled else { return }
             onIntroCompleted?()
         }
     }
 }
 
-private struct HeartbeatIntroBackground: View {
-    var opacity: Double
-
-    var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.42, green: 0.02, blue: 0.05),
-                    Color(red: 0.18, green: 0.01, blue: 0.03),
-                    Color(red: 0.04, green: 0.00, blue: 0.01)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
-            RadialGradient(
-                colors: [
-                    Color(red: 1.0, green: 0.16, blue: 0.18).opacity(0.42),
-                    .clear
-                ],
-                center: .topTrailing,
-                startRadius: 20,
-                endRadius: 360
-            )
-
-            RadialGradient(
-                colors: [
-                    Color(red: 1.0, green: 0.40, blue: 0.28).opacity(0.24),
-                    .clear
-                ],
-                center: .bottomLeading,
-                startRadius: 8,
-                endRadius: 330
-            )
-
-            VStack(spacing: 18) {
-                ForEach(0..<9, id: \.self) { index in
-                    Capsule(style: .continuous)
-                        .fill(.white.opacity(index.isMultiple(of: 2) ? 0.035 : 0.020))
-                        .frame(height: 1)
-                        .offset(x: index.isMultiple(of: 2) ? -34 : 42)
-                }
-            }
-            .rotationEffect(.degrees(-9))
-            .blendMode(.screen)
+private extension PulsarOutdoorWorkoutKind {
+    var startAnimationTint: Color {
+        switch self {
+        case .running:
+            WorkoutAccent.velocity.color
+        case .walking:
+            WorkoutAccent.balance.color
+        case .hiking:
+            WorkoutAccent.terrain.color
+        case .cycling, .rowing, .elliptical, .stairClimber:
+            WorkoutAccent.endurance.color
+        case .hiit, .boxing:
+            WorkoutAccent.fire.color
+        case .strength:
+            WorkoutAccent.power.color
+        case .yoga, .stretching, .cooldown:
+            WorkoutAccent.restore.color
+        case .pilates, .core, .mobility:
+            WorkoutAccent.balance.color
+        case .swimming:
+            WorkoutAccent.water.color
+        case .dance:
+            WorkoutAccent.rhythm.color
+        case .other:
+            WorkoutAccent.focus.color
         }
-        .opacity(opacity)
-        .ignoresSafeArea()
-        .background(Color(red: 0.04, green: 0.00, blue: 0.01).ignoresSafeArea())
     }
 }
 

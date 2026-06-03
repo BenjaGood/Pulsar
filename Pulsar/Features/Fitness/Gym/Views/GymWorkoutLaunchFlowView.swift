@@ -107,10 +107,22 @@ struct GymWorkoutLaunchFlowView: View {
                 }
 
             case .watchWorkoutSession(_):
-                GymWatchMirroredWorkoutView(syncStore: watchSyncStore) {
-                    activeWorkoutManager.minimizeWatchGymWorkout(sessionID: watchSyncStore.activeGymState?.sessionId)
-                    dismiss()
-                }
+                GymWatchMirroredWorkoutView(
+                    syncStore: watchSyncStore,
+                    onMinimize: {
+                        activeWorkoutManager.minimizeWatchGymWorkout(sessionID: watchSyncStore.activeGymState?.sessionId ?? watchSyncStore.lastFinishedGymState?.sessionId)
+                        dismiss()
+                    },
+                    onSummaryDone: {
+                        activeWorkoutManager.clearWatchGymWorkout(
+                            sessionID: watchSyncStore.lastFinishedGymState?.sessionId ?? watchSyncStore.activeGymState?.sessionId ?? activeWorkoutManager.activeWorkout?.sessionID,
+                            phase: "finished",
+                            source: "watchGymLaunchSummaryDone",
+                            reason: "summaryDismissed"
+                        )
+                        dismiss()
+                    }
+                )
                 .transition(.opacity.combined(with: .scale(scale: 0.99)))
             }
         }
@@ -391,15 +403,15 @@ struct GymRoutineChoiceView: View {
                 }
 
                 Text("Choose your gym session")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .pulsarTextStyle(.screenTitle)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text("Start from a saved plan, build a new routine, or jump into open gym tracking.")
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.screenSubtitle)
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(.white.opacity(0.68))
+                    .foregroundStyle(.white.opacity(0.62))
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 14)
@@ -434,7 +446,7 @@ struct GymRoutineChoiceView: View {
                     onCancel()
                 } label: {
                     Text("Cancel")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.buttonTitle)
                         .foregroundStyle(.white.opacity(0.72))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
@@ -542,11 +554,11 @@ private struct GymSavedRoutinesView: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 Text("My Routines")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .pulsarTextStyle(.screenTitle)
                     .foregroundStyle(.white)
 
                 Text("Saved lifting plans, ready when you are.")
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.screenSubtitle)
                     .foregroundStyle(.white.opacity(0.62))
             }
 
@@ -576,10 +588,10 @@ private struct GymSavedRoutinesView: View {
 
             VStack(spacing: 6) {
                 Text("No saved routines yet")
-                    .font(.title3.weight(.bold))
+                    .pulsarTextStyle(.sectionTitle)
                     .foregroundStyle(.white)
                 Text("Create your first routine and Pulsar will keep the plan here for faster gym starts.")
-                    .font(.subheadline.weight(.medium))
+                    .pulsarTextStyle(.screenSubtitle)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.white.opacity(0.62))
                     .fixedSize(horizontal: false, vertical: true)
@@ -590,7 +602,7 @@ private struct GymSavedRoutinesView: View {
                     Image(systemName: "sparkles")
                     Text("Create your first routine")
                 }
-                .font(.headline.weight(.bold))
+                .pulsarTextStyle(.buttonTitle)
                 .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
@@ -643,12 +655,12 @@ private struct GymSavedRoutineCard: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(routine.name)
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(.white)
                         .lineLimit(2)
 
                     Text(routineSubtitle)
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.caption)
                         .foregroundStyle(.white.opacity(0.58))
                         .lineLimit(2)
                 }
@@ -784,13 +796,13 @@ private struct GymChoiceActionButton: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.buttonTitle)
                         .foregroundStyle(titleColor)
                         .lineLimit(1)
                         .minimumScaleFactor(0.84)
 
                     Text(subtitle)
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.caption)
                         .foregroundStyle(subtitleColor)
                         .lineLimit(2)
                 }

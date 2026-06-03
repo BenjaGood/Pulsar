@@ -219,6 +219,7 @@ struct ActiveGymWorkoutSetState: Codable, Hashable, Identifiable {
 struct ActiveGymWorkoutAction: Codable, Hashable {
     enum Kind: String, Codable, Hashable {
         case completeSet
+        case updateSetValues
         case skipRestTimer
         case finishWorkout
         case requestState
@@ -229,6 +230,7 @@ struct ActiveGymWorkoutAction: Codable, Hashable {
     }
 
     var kind: Kind
+    var actionId: UUID? = nil
     var sessionId: UUID?
     var routineId: UUID? = nil
     var exerciseId: UUID?
@@ -239,9 +241,47 @@ struct ActiveGymWorkoutAction: Codable, Hashable {
     var maxHeartRate: Double? = nil
     var activeEnergyKilocalories: Double? = nil
     var healthKitWorkoutUUID: UUID? = nil
+    var setReps: Int? = nil
+    var setWeight: Double? = nil
 
-    static func completeSet(sessionId: UUID, exerciseId: UUID, setId: UUID) -> ActiveGymWorkoutAction {
-        ActiveGymWorkoutAction(kind: .completeSet, sessionId: sessionId, exerciseId: exerciseId, setId: setId, sentAt: Date())
+    var shouldQueueOverWatchConnectivity: Bool {
+        switch kind {
+        case .completeSet, .updateSetValues, .skipRestTimer:
+            return false
+        case .requestState,
+             .metricsUpdated,
+             .finishWorkout,
+             .requestSavedRoutines,
+             .startFreeWorkoutFromWatch,
+             .startSavedRoutineFromWatch:
+            return true
+        }
+    }
+
+    static func completeSet(
+        sessionId: UUID,
+        exerciseId: UUID,
+        setId: UUID,
+        reps: Int? = nil,
+        weight: Double? = nil
+    ) -> ActiveGymWorkoutAction {
+        var action = ActiveGymWorkoutAction(kind: .completeSet, sessionId: sessionId, exerciseId: exerciseId, setId: setId, sentAt: Date())
+        action.setReps = reps
+        action.setWeight = weight
+        return action
+    }
+
+    static func updateSetValues(
+        sessionId: UUID,
+        exerciseId: UUID,
+        setId: UUID,
+        reps: Int? = nil,
+        weight: Double? = nil
+    ) -> ActiveGymWorkoutAction {
+        var action = ActiveGymWorkoutAction(kind: .updateSetValues, sessionId: sessionId, exerciseId: exerciseId, setId: setId, sentAt: Date())
+        action.setReps = reps
+        action.setWeight = weight
+        return action
     }
 
     static func skipRestTimer(sessionId: UUID) -> ActiveGymWorkoutAction {

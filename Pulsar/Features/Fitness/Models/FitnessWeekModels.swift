@@ -55,6 +55,7 @@ struct WeeklyActivity: Identifiable, Hashable {
     var metadata: [FitnessWorkoutMetadataItem] = []
     var completedSets: Int? = nil
     var totalSets: Int? = nil
+    var gymSetSummaries: [PulsarGymCompletedExerciseSummary] = []
     var mainMuscleGroups: [String] = []
     var muscleLoadByMatrixGroup: [MuscleMatrixGroup: Double] = [:]
     var muscleExercisesByMatrixGroup: [MuscleMatrixGroup: [String]] = [:]

@@ -15,6 +15,7 @@ enum HealthSourceDisplayCopy {
 enum HealthSourceID: String, CaseIterable, Hashable, Identifiable, Codable {
     case appleWatch
     case ouraRing
+    case airPodsPro3
     case iPhone
     case manual
 
@@ -26,6 +27,8 @@ enum HealthSourceID: String, CaseIterable, Hashable, Identifiable, Codable {
             return "Apple Watch"
         case .ouraRing:
             return "Oura Ring"
+        case .airPodsPro3:
+            return "AirPods Pro 3"
         case .iPhone:
             return "iPhone"
         case .manual:
@@ -159,6 +162,7 @@ struct ActiveSourceSelector {
         let snapshotsByID = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.sourceID, $0) })
 
         if case .manual(let manualSource) = mode,
+           manualSource != .airPodsPro3,
            let snapshot = snapshotsByID[manualSource],
            snapshot.supportedMetrics.contains(metric),
            snapshot.connectionState.canProvideData {
@@ -189,6 +193,7 @@ struct ActiveSourceSelector {
         now: Date
     ) -> Bool {
         guard snapshot.supportedMetrics.contains(metric),
+              snapshot.sourceID != .airPodsPro3,
               snapshot.connectionState.canProvideData else {
             return false
         }

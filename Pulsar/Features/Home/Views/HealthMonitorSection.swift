@@ -489,6 +489,8 @@ private extension HealthSourceID {
             return "Apple Watch / HealthKit"
         case .ouraRing:
             return "Oura Ring"
+        case .airPodsPro3:
+            return "AirPods Pro 3 workout backup"
         case .iPhone:
             return "iPhone Sensors"
         case .manual:

@@ -91,11 +91,11 @@ struct WorkoutPickerSheet: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Choose training")
-                    .font(.title2.weight(.bold))
+                    .pulsarTextStyle(.sectionTitle)
                     .foregroundStyle(primaryText)
 
                 Text("Quick-start a personalized workout or explore more movement modes.")
-                    .font(.subheadline.weight(.medium))
+                    .pulsarTextStyle(.screenSubtitle)
                     .foregroundStyle(secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -119,7 +119,7 @@ struct WorkoutPickerSheet: View {
     private func workoutSection(title: String, workouts: [WorkoutOption]) -> some View {
         VStack(alignment: .leading, spacing: 11) {
             Text(title)
-                .font(.headline.weight(.bold))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(primaryText)
 
             LazyVGrid(columns: columns, spacing: 10) {

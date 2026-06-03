@@ -21,7 +21,7 @@ struct FitnessWeekHeaderView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center) {
                 Text("Weekly training rhythm")
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.screenSubtitle)
                     .foregroundStyle(secondaryText)
 
                 Spacer(minLength: 12)
@@ -29,7 +29,7 @@ struct FitnessWeekHeaderView: View {
                 if !week.isCurrentWeek {
                     Button(action: onCurrent) {
                         Text("Current Week")
-                            .font(.caption.weight(.bold))
+                            .pulsarTextStyle(.metricLabel)
                             .foregroundStyle(.green)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
@@ -46,12 +46,11 @@ struct FitnessWeekHeaderView: View {
             HStack(alignment: .bottom, spacing: 14) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Week \(week.weekNumber)")
-                        .font(.system(size: 42, weight: .bold, design: .rounded))
-                        .monospacedDigit()
+                        .pulsarMonospacedMetric(.heroMetric)
                         .foregroundStyle(primaryText)
 
                     Text(FitnessWeekFormatters.dateRange(for: week))
-                        .font(.headline.weight(.semibold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(secondaryText)
                 }
 
@@ -70,7 +69,7 @@ struct FitnessWeekHeaderView: View {
                     .shadow(color: (week.hasWorkout ? Color.green : .clear).opacity(0.55), radius: 7)
 
                 Text(week.hasWorkout ? "Workout logged this week" : "No workout logged yet")
-                    .font(.footnote.weight(.semibold))
+                    .pulsarTextStyle(.caption)
                     .foregroundStyle(week.hasWorkout ? Color.green.opacity(0.92) : secondaryText)
 
                 Spacer()
@@ -95,7 +94,7 @@ struct FitnessWeekHeaderView: View {
     private func weekArrow(systemName: String, action: @escaping () -> Void, isEnabled: Bool) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.headline.weight(.bold))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(isEnabled ? primaryText : secondaryText.opacity(0.45))
                 .frame(width: 40, height: 40)
                 .background(arrowBackground(isEnabled: isEnabled), in: Circle())
@@ -171,11 +170,11 @@ struct FitnessWeekSelectorView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Week Focus")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(primaryText)
 
                     Text("Tap a week or browse history")
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.caption)
                         .foregroundStyle(secondaryText)
                 }
 
@@ -184,9 +183,9 @@ struct FitnessWeekSelectorView: View {
                 Button(action: onShowHistory) {
                     HStack(spacing: 7) {
                         Image(systemName: "calendar")
-                            .font(.caption.weight(.bold))
+                            .pulsarTextStyle(.caption)
                         Text("View all")
-                            .font(.caption.weight(.bold))
+                            .pulsarTextStyle(.metricLabel)
                     }
                     .foregroundStyle(primaryText)
                     .padding(.horizontal, 12)
@@ -247,7 +246,7 @@ private struct FitnessWeekCard: View {
                     Spacer()
                     if week.isCurrentWeek {
                         Text("Current")
-                            .font(.caption2.weight(.bold))
+                            .pulsarTextStyle(.caption)
                             .foregroundStyle(.green)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 4)
@@ -257,12 +256,11 @@ private struct FitnessWeekCard: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Week \(week.weekNumber)")
-                        .font(.headline.weight(.bold))
-                        .monospacedDigit()
+                        .pulsarMonospacedMetric(.cardTitle)
                         .foregroundStyle(primaryText)
 
                     Text(FitnessWeekFormatters.compactDateRange(for: week))
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.caption)
                         .foregroundStyle(secondaryText)
                         .lineLimit(1)
                 }
@@ -337,11 +335,11 @@ struct FitnessActivityLogSection: View {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Activity Log")
-                        .font(.title2.weight(.bold))
+                        .pulsarTextStyle(.sectionTitle)
                         .foregroundStyle(primaryText)
 
                     Text(summaryText)
-                        .font(.subheadline.weight(.medium))
+                        .pulsarTextStyle(.screenSubtitle)
                         .foregroundStyle(secondaryText)
                 }
 
@@ -566,6 +564,7 @@ struct FitnessWorkoutDetailView: View {
                 header
                 routeSection
                 metricGrid
+                gymSetsSection
                 splitsSection
                 trainingSection
                 metadataSection
@@ -585,7 +584,7 @@ struct FitnessWorkoutDetailView: View {
                 } label: {
                     Image(systemName: "square.and.arrow.up")
                 }
-                .accessibilityLabel("Share workout summary")
+                .accessibilityLabel(activity.shareActionTitle)
             }
         }
         .sheet(item: $renderedShareImage) { renderedImage in
@@ -640,7 +639,7 @@ struct FitnessWorkoutDetailView: View {
                         .foregroundStyle(primaryText)
                         .padding(.horizontal, 4)
 
-                    Map {
+                    Map(initialPosition: routeMapPosition) {
                         MapPolyline(coordinates: routeCoordinates)
                             .stroke(activity.category.accent, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
 
@@ -678,6 +677,48 @@ struct FitnessWorkoutDetailView: View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
             ForEach(detailMetrics) { metric in
                 FitnessWorkoutDetailMetricTile(metric: metric)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var gymSetsSection: some View {
+        if !activity.gymSetSummaries.isEmpty {
+            FitnessGlassCard(cornerRadius: 30) {
+                VStack(alignment: .leading, spacing: 14) {
+                    Label("Completed Sets", systemImage: "list.bullet.rectangle.fill")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(primaryText)
+
+                    VStack(spacing: 12) {
+                        ForEach(activity.gymSetSummaries) { exercise in
+                            VStack(alignment: .leading, spacing: 9) {
+                                Text(exercise.exerciseName)
+                                    .font(.subheadline.weight(.black))
+                                    .foregroundStyle(primaryText)
+                                    .lineLimit(2)
+
+                                FlowLayout(spacing: 8, rowSpacing: 8) {
+                                    ForEach(exercise.sets) { set in
+                                        HStack(spacing: 6) {
+                                            Text("Set \(set.setNumber)")
+                                                .foregroundStyle(secondaryText)
+                                            Text("\(set.reps)x")
+                                                .foregroundStyle(primaryText)
+                                            Text("\(set.weight.formattedGymDecimal) \(exercise.weightUnit.displayName)")
+                                                .foregroundStyle(primaryText)
+                                        }
+                                        .font(.caption.weight(.black).monospacedDigit())
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 8)
+                                        .background(activity.category.accent.opacity(colorScheme == .dark ? 0.16 : 0.10), in: Capsule(style: .continuous))
+                                    }
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
             }
         }
     }
@@ -782,7 +823,7 @@ struct FitnessWorkoutDetailView: View {
         Button {
             renderShareImage()
         } label: {
-            Label("Share Summary", systemImage: "square.and.arrow.up")
+            Label(activity.shareActionTitle, systemImage: "square.and.arrow.up")
                 .font(.headline.weight(.bold))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
@@ -878,6 +919,17 @@ struct FitnessWorkoutDetailView: View {
         activity.route.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
     }
 
+    private var routeMapPosition: MapCameraPosition {
+        let route = GPSWorkoutRoute(runCoordinates: activity.route)
+        guard let bounds = route.bounds else { return .automatic }
+        return .region(
+            MKCoordinateRegion(
+                center: bounds.center,
+                span: MKCoordinateSpan(latitudeDelta: bounds.latitudeDelta, longitudeDelta: bounds.longitudeDelta)
+            )
+        )
+    }
+
     private var primaryText: Color {
         colorScheme == .dark ? .white.opacity(0.97) : Color(red: 0.07, green: 0.10, blue: 0.14)
     }
@@ -967,7 +1019,7 @@ private struct FitnessWorkoutHistoryShareCard: View {
             )
 
             if routePoints.count > 1 {
-                FitnessRouteMiniLine(points: routePoints, tint: .white.opacity(0.24))
+                PulsarShareRouteLine(points: routePoints, accent: activity.category.accent, lineWidth: 11)
                     .padding(94)
             } else {
                 Image(systemName: activity.category.symbolName)
@@ -978,14 +1030,15 @@ private struct FitnessWorkoutHistoryShareCard: View {
             VStack(alignment: .leading) {
                 HStack {
                     Image("PulsarLogo")
+                        .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
                         .frame(width: 46, height: 46)
                     Text("Pulsar")
-                        .font(.system(size: 28, weight: .black, design: .rounded))
+                        .font(.system(size: 28, weight: .bold, design: .default))
                     Spacer()
-                    Text(activity.startDate.formatted(.dateTime.month(.abbreviated).day()))
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                    Text(activity.startDate.formatted(.dateTime.day().month(.abbreviated).year()))
+                        .font(.system(size: 20, weight: .semibold, design: .serif))
                 }
                 .foregroundStyle(.white)
 
@@ -993,11 +1046,12 @@ private struct FitnessWorkoutHistoryShareCard: View {
 
                 VStack(alignment: .leading, spacing: 18) {
                     Label(activity.workoutType.uppercased(), systemImage: activity.category.symbolName)
-                        .font(.system(size: 19, weight: .black, design: .rounded))
+                        .font(.system(size: 17, weight: .bold, design: .default))
                         .foregroundStyle(.white.opacity(0.76))
+                        .tracking(4)
 
                     Text(activity.displayName)
-                        .font(.system(size: 42, weight: .black, design: .rounded))
+                        .font(.system(size: 44, weight: .semibold, design: .serif))
                         .foregroundStyle(.white)
                         .lineLimit(2)
                         .minimumScaleFactor(0.62)
@@ -1006,19 +1060,19 @@ private struct FitnessWorkoutHistoryShareCard: View {
                         ForEach(shareMetrics) { metric in
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(metric.value)
-                                    .font(.system(size: 32, weight: .black, design: .rounded))
+                                    .font(.system(size: 32, weight: .bold, design: .default))
                                     .foregroundStyle(.white)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.70)
                                 Text(metric.title)
-                                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                                    .font(.system(size: 15, weight: .semibold, design: .default))
                                     .foregroundStyle(.white.opacity(0.68))
                             }
                         }
                     }
 
                     Label("\(activity.startDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())) - \(activity.effectiveSourceDeviceName)", systemImage: "sparkles")
-                        .font(.system(size: 19, weight: .bold, design: .rounded))
+                        .font(.system(size: 18, weight: .semibold, design: .default))
                         .foregroundStyle(.white.opacity(0.82))
                         .lineLimit(2)
                         .minimumScaleFactor(0.72)
@@ -1041,6 +1095,9 @@ private struct FitnessWorkoutHistoryShareCard: View {
         ]
         if let distance = activity.distanceMeters, distance > 0 {
             metrics.append(FitnessWorkoutShareMetric(title: "Distance", value: FitnessWeekFormatters.distance(distance)))
+            if let paceMetric = activity.sharePaceMetric {
+                metrics.append(paceMetric)
+            }
         }
         if let calories = activity.calories, calories > 0 {
             metrics.append(FitnessWorkoutShareMetric(title: "Calories", value: FitnessWeekFormatters.calories(calories)))
@@ -1059,15 +1116,7 @@ private struct FitnessWorkoutHistoryShareCard: View {
 
     private var routePoints: [CGPoint] {
         let route = GPSWorkoutRoute(runCoordinates: activity.route)
-        guard let bounds = route.bounds,
-              bounds.maximumLatitude > bounds.minimumLatitude,
-              bounds.maximumLongitude > bounds.minimumLongitude else { return [] }
-        return route.points.map { point in
-            CGPoint(
-                x: (point.longitude - bounds.minimumLongitude) / (bounds.maximumLongitude - bounds.minimumLongitude),
-                y: 1 - ((point.latitude - bounds.minimumLatitude) / (bounds.maximumLatitude - bounds.minimumLatitude))
-            )
-        }
+        return PulsarShareRouteProjection.normalizedPoints(from: route, inset: 0.09)
     }
 }
 
@@ -1075,6 +1124,52 @@ private struct FitnessWorkoutShareMetric: Identifiable {
     let id = UUID()
     var title: String
     var value: String
+}
+
+private extension WeeklyActivity {
+    var shareActionTitle: String {
+        category.isRouteTraining ? "Share Route" : "Share Summary"
+    }
+
+    var sharePaceMetric: FitnessWorkoutShareMetric? {
+        guard let distance = distanceMeters,
+              distance > 10,
+              duration > 0 else { return nil }
+        let kind = shareOutdoorKind
+        let pace = duration / (distance / 1_000)
+        let speed = distance / duration
+        return FitnessWorkoutShareMetric(
+            title: PulsarRunFormatters.paceOrSpeedTitle(for: kind, average: true),
+            value: PulsarRunFormatters.paceOrSpeed(
+                workoutKind: kind,
+                paceSecondsPerKilometer: pace,
+                speedMetersPerSecond: speed
+            )
+        )
+    }
+
+    var shareOutdoorKind: PulsarOutdoorWorkoutKind {
+        if let kind = PulsarOutdoorWorkoutKind(workoutTypeRawValue: workoutType) {
+            return kind
+        }
+        if let kind = PulsarOutdoorWorkoutKind(workoutTypeRawValue: displayName) {
+            return kind
+        }
+        switch category {
+        case .running: return .running
+        case .walking: return .walking
+        case .hiking: return .hiking
+        case .cycling: return .cycling
+        case .hiit: return .hiit
+        case .strength, .gym: return .strength
+        case .yoga: return .yoga
+        case .swimming: return .swimming
+        case .rowing: return .rowing
+        case .dance: return .dance
+        case .recovery: return .cooldown
+        case .other: return .other
+        }
+    }
 }
 
 private struct FitnessRouteMiniLine: View {
@@ -1152,6 +1247,12 @@ private enum FitnessWorkoutFallbackShareRenderer {
                     in: CGRect(x: 72, y: 610, width: size.width - 144, height: 60),
                     withAttributes: bodyAttributes
                 )
+                if let paceMetric = activity.sharePaceMetric {
+                    NSString(string: "\(paceMetric.title) \(paceMetric.value)").draw(
+                        in: CGRect(x: 72, y: 680, width: size.width - 144, height: 60),
+                        withAttributes: bodyAttributes
+                    )
+                }
             }
             NSString(string: "Pulsar").draw(
                 in: CGRect(x: 72, y: size.height - 150, width: size.width - 144, height: 60),
@@ -1485,7 +1586,7 @@ struct FitnessWeeklyBackground: View {
 struct FitnessSectionHeader<Trailing: View>: View {
     var title: String
     var subtitle: String
-    var titleFont: Font = .title2.weight(.bold)
+    var titleFont: Font = PulsarTypography.Role.sectionTitle.font
     @ViewBuilder var trailing: () -> Trailing
 
     @Environment(\.colorScheme) private var colorScheme
@@ -1493,7 +1594,7 @@ struct FitnessSectionHeader<Trailing: View>: View {
     init(
         title: String,
         subtitle: String,
-        titleFont: Font = .title2.weight(.bold),
+        titleFont: Font = PulsarTypography.Role.sectionTitle.font,
         @ViewBuilder trailing: @escaping () -> Trailing
     ) {
         self.title = title
@@ -1507,12 +1608,14 @@ struct FitnessSectionHeader<Trailing: View>: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(titleFont)
+                    .tracking(PulsarTypography.Role.sectionTitle.tracking)
+                    .lineSpacing(PulsarTypography.Role.sectionTitle.lineSpacing)
                     .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
 
                 Text(subtitle)
-                    .font(.subheadline.weight(.medium))
+                    .pulsarTextStyle(.screenSubtitle)
                     .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1528,7 +1631,7 @@ extension FitnessSectionHeader where Trailing == EmptyView {
     init(
         title: String,
         subtitle: String,
-        titleFont: Font = .title2.weight(.bold)
+        titleFont: Font = PulsarTypography.Role.sectionTitle.font
     ) {
         self.init(title: title, subtitle: subtitle, titleFont: titleFont) {
             EmptyView()

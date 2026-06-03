@@ -10,6 +10,7 @@ import Foundation
 enum MeasurementDeviceType: String, Codable, CaseIterable, Identifiable {
     case appleWatch
     case ouraRing
+    case airPodsPro3
 
     var id: String { rawValue }
 
@@ -19,6 +20,8 @@ enum MeasurementDeviceType: String, Codable, CaseIterable, Identifiable {
             return "Apple Watch"
         case .ouraRing:
             return "Oura Ring"
+        case .airPodsPro3:
+            return "AirPods Pro 3"
         }
     }
 
@@ -28,6 +31,8 @@ enum MeasurementDeviceType: String, Codable, CaseIterable, Identifiable {
             return "AppleWatchDevice"
         case .ouraRing:
             return "OuraRingDevice"
+        case .airPodsPro3:
+            return "AirPodsPro3Device"
         }
     }
 
@@ -37,6 +42,8 @@ enum MeasurementDeviceType: String, Codable, CaseIterable, Identifiable {
             return .appleWatch
         case .ouraRing:
             return .ouraRing
+        case .airPodsPro3:
+            return .airPodsPro3
         }
     }
 }
@@ -171,10 +178,14 @@ struct MeasurementDevice: Identifiable, Codable, Equatable {
     }
 
     var canBecomeActiveSource: Bool {
-        connectionStatus == .connected || connectionStatus == .available
+        guard type != .airPodsPro3 else { return false }
+        return connectionStatus == .connected || connectionStatus == .available
     }
 
     var primaryActionTitle: String {
+        if type == .airPodsPro3 {
+            return "Workout backup only"
+        }
         if type == .ouraRing {
             switch connectionStatus {
             case .connected, .available:
@@ -257,7 +268,7 @@ final class MeasurementSourceManager: ObservableObject {
         self.ouraConnectionFlowState = resolvedOuraAuthService.connectionStore.isConnected ? .connected : .idle
         if let stored = defaults.string(forKey: activeDeviceKey) {
             if let deviceType = MeasurementDeviceType(rawValue: stored) {
-                self.activeDeviceType = deviceType
+                self.activeDeviceType = deviceType == .airPodsPro3 ? .appleWatch : deviceType
             } else {
                 self.activeDeviceType = .appleWatch
             }
@@ -345,6 +356,14 @@ final class MeasurementSourceManager: ObservableObject {
                 connectionStore: ouraConnectionStore,
                 syncService: ouraSyncService
             ).snapshot(),
+            HealthSourceSnapshot(
+                sourceID: .airPodsPro3,
+                connectionState: .available,
+                syncState: .idle,
+                supportedMetrics: [],
+                lastSyncAt: nil,
+                batteryPercentage: nil
+            ),
             HealthSourceSnapshot(
                 sourceID: .iPhone,
                 connectionState: .available,
@@ -793,6 +812,7 @@ final class MeasurementSourceManager: ObservableObject {
                 }
             }
             ouraConnectionFlowState = .connected
+            PulsarBackgroundRefreshCoordinator.schedule(reason: "ouraConnected")
             if device(for: .ouraRing).canBecomeActiveSource {
                 focusedOuraAfterConnection()
             }
@@ -819,6 +839,7 @@ final class MeasurementSourceManager: ObservableObject {
                 _ = syncStore?.storeLocalPayload(payload, broadcast: true, reason: "OuraManualSync")
             }
             ouraConnectionFlowState = .connected
+            PulsarBackgroundRefreshCoordinator.schedule(reason: "ouraManualSync")
             ouraConnectionAlert = nil
             objectWillChange.send()
         } catch {
@@ -1020,6 +1041,9 @@ final class MeasurementSourceManager: ObservableObject {
     }
 
     func isPrimaryActionDisabled(for device: MeasurementDevice) -> Bool {
+        if device.type == .airPodsPro3 {
+            return true
+        }
         if device.type == .ouraRing {
             return ouraConnectionFlowState.isConnecting
         }
@@ -1068,6 +1092,16 @@ final class MeasurementSourceManager: ObservableObject {
                 isActiveSource: activeDeviceType == type,
                 supportedMetrics: [.sleep, .recovery, .readiness, .hrv, .restingHeartRate, .heartRate, .respiratoryRate, .oxygenSaturation, .activity, .workouts, .stress, .temperature, .cycle],
                 lastSyncAt: ouraConnectionStore.lastSyncAt
+            )
+        case .airPodsPro3:
+            return MeasurementDevice(
+                name: type.displayName,
+                type: type,
+                connectionStatus: .available,
+                batteryPercentage: nil,
+                isActiveSource: false,
+                supportedMetrics: [.heartRate],
+                lastSyncAt: nil
             )
         }
     }
@@ -1136,6 +1170,8 @@ private extension HealthSourceID {
             return "Apple Watch / HealthKit"
         case .ouraRing:
             return "Oura Ring"
+        case .airPodsPro3:
+            return "AirPods Pro 3 workout backup"
         case .iPhone:
             return "iPhone Sensors"
         case .manual:

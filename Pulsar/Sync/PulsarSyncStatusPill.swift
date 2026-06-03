@@ -21,6 +21,7 @@ struct PulsarSyncStatusPill: View {
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
             }
         }
+        .frame(maxWidth: .infinity, alignment: .center)
         .animation(.smooth(duration: 0.28), value: center.state)
     }
 
@@ -91,6 +92,7 @@ struct PulsarSyncStatusPill: View {
         .clipShape(Capsule(style: .continuous))
         .pulsarLiquidGlass(cornerRadius: 24)
         .shadow(color: mood.tint.opacity(0.16), radius: 18, y: 9)
+        .id(mood)
         .onAppear {
             shimmerOffset = -180
             pulse = false
@@ -107,10 +109,14 @@ struct PulsarSyncStatusPill: View {
                 }
             }
         }
+        .onDisappear {
+            shimmerOffset = -180
+            pulse = false
+        }
     }
 }
 
-private enum SyncPillMood: Equatable {
+private enum SyncPillMood: Hashable {
     case syncing
     case success
     case failure

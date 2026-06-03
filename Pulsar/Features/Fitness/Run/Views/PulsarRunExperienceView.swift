@@ -9,6 +9,7 @@ struct PulsarRunExperienceView: View {
     @ObservedObject var coordinator: PulsarRunCoordinator
     var workoutKind: PulsarOutdoorWorkoutKind = .running
     var onMinimize: (() -> Void)?
+    var onSummaryDone: ((PulsarRunSummary) -> Void)?
     @Environment(\.dismiss) private var dismiss
     @State private var displayedSummary: PulsarRunSummary?
     @State private var pendingSummaryRevealTask: Task<Void, Never>?
@@ -17,6 +18,7 @@ struct PulsarRunExperienceView: View {
         ZStack {
             if let summary = displayedSummary {
                 PulsarRunSummaryView(summary: summary) {
+                    onSummaryDone?(summary)
                     coordinator.resetAfterSummary()
                     dismiss()
                 }

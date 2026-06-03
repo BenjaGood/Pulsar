@@ -66,13 +66,13 @@ struct HomeFloatingHeader: View {
             Button(action: onDateTapped) {
                 HStack(spacing: 7) {
                     Text(title)
-                        .font(.system(size: 19, weight: .bold, design: .rounded))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(primaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.82)
 
                     Image(systemName: "chevron.down")
-                        .font(.caption.weight(.black))
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(secondaryText)
                         .padding(.top, 2)
                 }

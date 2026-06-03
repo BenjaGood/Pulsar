@@ -73,9 +73,10 @@ struct WatchHomeView: View {
         }
         .onChange(of: syncStore.activeWorkoutState) { _, state in
             guard let state,
-                  state.kind.outdoorWorkoutKind != nil,
-                  state.phase.isLive,
-                  syncStore.isRoutableActiveWorkoutState(state) else { return }
+                  state.kind.outdoorWorkoutKind != nil else { return }
+            let isCurrentEndingState = state.phase == .ending &&
+                runManager.snapshot.pulsarWorkoutSessionId == state.sessionId
+            guard (state.phase.isLive && syncStore.isRoutableActiveWorkoutState(state)) || isCurrentEndingState else { return }
             runManager.reconcileActiveWorkoutSyncState(state)
         }
     }
@@ -145,9 +146,9 @@ struct WatchHomeView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 1) {
             Text("Today")
-                .font(.title2.weight(.bold))
+                .pulsarTextStyle(.watchTitle)
             Text(store.snapshot.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
-                .font(.caption2.weight(.medium))
+                .pulsarTextStyle(.watchSubtitle)
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 2)
@@ -212,9 +213,9 @@ struct WatchHomeView: View {
         WatchGlassCard {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Apple Health", systemImage: "heart.text.square.fill")
-                    .font(.headline)
+                    .pulsarTextStyle(.watchTitle)
                 Text(store.message ?? "Connect Apple Health to view watch metrics.")
-                    .font(.caption)
+                    .pulsarTextStyle(.watchSubtitle)
                     .foregroundStyle(.secondary)
                 Button("Connect") {
                     Task { await store.requestAuthorization() }
@@ -299,7 +300,7 @@ private struct WatchSyncBanner: View {
             .frame(width: 22, height: 22)
 
             Text(compactMessage)
-                .font(.caption2.weight(.semibold))
+                .pulsarTextStyle(.watchLabel)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.9)
@@ -381,9 +382,9 @@ private struct WatchHomePreview: View {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Today")
-                        .font(.title2.weight(.bold))
+                        .pulsarTextStyle(.watchTitle)
                     Text(snapshot.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
-                        .font(.caption2.weight(.medium))
+                        .pulsarTextStyle(.watchSubtitle)
                         .foregroundStyle(.secondary)
                 }
                 if snapshot.alarm.isEnabled, snapshot.alarm.syncedAt != nil {

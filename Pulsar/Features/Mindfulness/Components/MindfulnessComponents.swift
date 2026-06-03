@@ -35,7 +35,7 @@ struct MindfulnessPageTitleHeader: View {
                 .accessibilityHidden(true)
 
             Text("Mindfulness")
-                .font(.largeTitle.weight(.bold))
+                .pulsarTextStyle(.screenTitle)
                 .foregroundStyle(.primary)
         }
         .accessibilityElement(children: .ignore)
@@ -66,9 +66,9 @@ struct MindfulnessTodayCard: View {
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Emotional Balance")
-                            .font(.title3.weight(.bold))
+                            .pulsarTextStyle(.sectionTitle)
                         Text(balanceCopy)
-                            .font(.subheadline)
+                            .pulsarTextStyle(.screenSubtitle)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -79,7 +79,7 @@ struct MindfulnessTodayCard: View {
                 HStack(spacing: 10) {
                     Button(action: onCheckIn) {
                         Label(dashboard.todayEntry == nil ? "Check in" : "Update", systemImage: "slider.horizontal.3")
-                            .font(.headline.weight(.bold))
+                            .pulsarTextStyle(.buttonTitle)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
                     }
@@ -208,9 +208,9 @@ struct MindfulnessMetricPill: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(value)
-                    .font(.subheadline.weight(.bold))
+                    .pulsarTextStyle(.appBodyEmphasis)
                 Text(title)
-                    .font(.caption2.weight(.semibold))
+                    .pulsarTextStyle(.metricLabel)
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
@@ -235,9 +235,9 @@ struct MindfulnessTrendCard: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Mood constellation")
-                            .font(.headline.weight(.bold))
+                            .pulsarTextStyle(.cardTitle)
                         Text("Seven-day signal")
-                            .font(.caption.weight(.semibold))
+                            .pulsarTextStyle(.caption)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -346,7 +346,7 @@ struct MindfulnessTemplateCard: View {
                         .background(template.category.accent.opacity(colorScheme == .dark ? 0.20 : 0.13), in: Circle())
                     Spacer(minLength: 0)
                     Text(template.durationText)
-                        .font(.caption.weight(.bold))
+                        .pulsarTextStyle(.metricLabel)
                         .foregroundStyle(template.category.accent)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 5)
@@ -355,14 +355,14 @@ struct MindfulnessTemplateCard: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(template.title)
-                        .font(.subheadline.weight(.bold))
+                        .pulsarTextStyle(.appBodyEmphasis)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     Text(template.category.title)
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.metricLabel)
                         .foregroundStyle(.secondary)
                     Text(template.subtitle)
-                        .font(.caption)
+                        .pulsarTextStyle(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -415,14 +415,14 @@ struct PulsarMindfulnessInsightCard: View {
 
                 VStack(alignment: .leading, spacing: 7) {
                     Text(insight.title)
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(insight.body)
-                        .font(.subheadline)
+                        .pulsarTextStyle(.screenSubtitle)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(insight.evidence)
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.metricLabel)
                         .foregroundStyle(.secondary)
                         .padding(.top, 2)
                 }

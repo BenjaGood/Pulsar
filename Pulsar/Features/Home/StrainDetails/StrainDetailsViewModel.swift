@@ -75,15 +75,17 @@ final class StrainDetailsViewModel: ObservableObject {
     private let date: Date
     private let recoveryScore: Int?
     private let recentStrainScores: [Int]
+    private let adaptivePlan: AdaptiveStrainPlan?
     private let calendar: Calendar
     private let canRequestHealthData: Bool
 
-    init(initialSummary: StrainSummary, profile: UserProfile, date: Date, recoveryScore: Int? = nil, recentStrainScores: [Int] = [], provider: StrainSummaryProviding, calendar: Calendar = .current, canRequestHealthData: Bool = true) {
+    init(initialSummary: StrainSummary, profile: UserProfile, date: Date, recoveryScore: Int? = nil, recentStrainScores: [Int] = [], adaptivePlan: AdaptiveStrainPlan? = nil, provider: StrainSummaryProviding, calendar: Calendar = .current, canRequestHealthData: Bool = true) {
         self.summary = initialSummary
         self.profile = profile
         self.date = calendar.startOfDay(for: date)
         self.recoveryScore = recoveryScore
         self.recentStrainScores = recentStrainScores
+        self.adaptivePlan = adaptivePlan
         self.provider = provider
         self.calendar = calendar
         self.canRequestHealthData = canRequestHealthData
@@ -93,15 +95,30 @@ final class StrainDetailsViewModel: ObservableObject {
     var hasCurrentStrainValue: Bool { Self.hasData(summary) }
     var scoreText: String { hasCurrentStrainValue ? "\(summary.score)" : "--" }
     var targetRange: PulsarSharedStrainTargetRange? {
-        PulsarSharedMetricCalculator.recommendedStrainTargetRange(
+        if let adaptivePlan {
+            return adaptivePlan.recommendedRange
+        }
+        return PulsarSharedMetricCalculator.recommendedStrainTargetRange(
             forRecoveryScore: recoveryScore,
             recentStrainScores: recentStrainScores
         )
     }
     var recommendedTarget: Int? { targetRange?.upperBound }
     var recommendedTargetText: String { targetRange?.displayText ?? "--" }
+    var adaptiveSafeLimitText: String { adaptivePlan?.safeUpperLimitText ?? "--" }
+    var adaptivePriorityText: String { adaptivePlan?.recoveryPriority.label ?? "Recovery-aware" }
+    var adaptiveZoneText: String { adaptivePlan?.optimalTrainingZone.label ?? "Adaptive target" }
+    var adaptiveHeadline: String {
+        adaptivePlan?.headline ?? "Strain adapts to recovery and recent load."
+    }
+    var adaptiveRationale: String {
+        adaptivePlan?.rationale ?? "Pulsar adjusts this range from recovery, recent strain, and available HealthKit signals."
+    }
     var targetProgressText: String {
         guard let targetRange, hasCurrentStrainValue else { return "Awaiting recovery target" }
+        if let adaptivePlan, adaptivePlan.isApproachingCeiling(currentStrain: summary.score) {
+            return "Near safe upper limit \(adaptivePlan.safeUpperLimit)"
+        }
         if summary.score > targetRange.upperBound { return "Above recommended range" }
         if summary.score >= targetRange.lowerBound { return "Within recommended range" }
         return "\(Int((Double(summary.score) / Double(max(1, targetRange.lowerBound)) * 100).rounded()))% of lower target"
@@ -191,7 +208,9 @@ final class StrainDetailsViewModel: ObservableObject {
     var metricTiles: [StrainMetricTileModel] {
         [
             StrainMetricTileModel(title: "Current Strain", value: scoreText, subtitle: accumulatedSubtitle, symbol: "bolt.heart.fill"),
-            StrainMetricTileModel(title: "Target Range", value: recommendedTargetText, subtitle: targetProgressText, symbol: "scope"),
+            StrainMetricTileModel(title: "Target Range", value: recommendedTargetText, subtitle: adaptiveZoneText, symbol: "scope"),
+            StrainMetricTileModel(title: "Safe Limit", value: adaptiveSafeLimitText, subtitle: targetProgressText, symbol: "shield.lefthalf.filled"),
+            StrainMetricTileModel(title: "Recovery Debt", value: adaptivePlan.map { "\($0.recoveryDebt.score)" } ?? "--", subtitle: adaptivePlan?.recoveryDebt.label, symbol: "waveform.path.ecg.rectangle"),
             StrainMetricTileModel(title: "Active Strain", value: activeStrainText, subtitle: "Workout contribution", symbol: "figure.run"),
             StrainMetricTileModel(title: "Passive Strain", value: passiveStrainText, subtitle: "Movement + elevated HR", symbol: "figure.walk.motion"),
             StrainMetricTileModel(title: "Workouts", value: workoutsText, subtitle: workoutsSubtitle, symbol: "figure.run"),
@@ -208,6 +227,13 @@ final class StrainDetailsViewModel: ObservableObject {
 
     var insights: [StrainInsight] {
         var values: [String] = []
+        if let adaptivePlan {
+            values.append(adaptivePlan.headline)
+            values.append(adaptivePlan.rationale)
+            if let recommendation = adaptivePlan.recommendations.first {
+                values.append("\(recommendation.title): \(recommendation.detail)")
+            }
+        }
         values.append(dateAwareCopy(PulsarSharedMetricCalculator.strainGuidance(
             currentStrain: hasCurrentStrainValue ? summary.score : nil,
             targetRange: targetRange,

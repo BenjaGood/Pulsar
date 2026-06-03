@@ -59,7 +59,7 @@ struct WatchMetricCardView: View {
 
             if showsSubtitle, !subtitle.isEmpty {
                 Text(subtitle)
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .pulsarTextStyle(.watchSubtitle)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
@@ -67,7 +67,7 @@ struct WatchMetricCardView: View {
                     .frame(maxWidth: .infinity)
             } else {
                 Text(title)
-                    .font(.system(size: 8.5, weight: .bold, design: .rounded))
+                    .pulsarTextStyle(.watchLabel)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.62)
@@ -130,12 +130,12 @@ struct WatchMetricCard: View {
                 WatchProgressRingView(score: Int(value), title: title, symbol: symbol, tint: tint, size: 52, targetScore: targetScore, targetRange: targetRange)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.watchLabel)
                         .foregroundStyle(.secondary)
                     Text(value)
-                        .font(.title2.weight(.bold).monospacedDigit())
+                        .pulsarMonospacedMetric(.watchValue)
                     Text(subtitle)
-                        .font(.caption2)
+                        .pulsarTextStyle(.watchSubtitle)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
@@ -158,12 +158,11 @@ struct WatchAlarmPill: View {
                 .font(.caption2.weight(.bold))
                 .foregroundStyle(.orange)
             Text(WatchFormatters.clockTime(alarm.timeMinutesFromMidnight))
-                .font(.caption.weight(.semibold))
+                .pulsarMonospacedMetric(.watchMetric)
                 .foregroundStyle(.primary)
-                .monospacedDigit()
             if alarm.usesWakeTime {
                 Text("Wake")
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .pulsarTextStyle(.watchLabel)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
@@ -230,14 +229,14 @@ struct WatchProgressRingView: View {
                     .foregroundStyle(tint)
                     .frame(height: showsTitle ? size * 0.18 : size * 0.16)
                 Text(WatchFormatters.score(score))
-                    .font(.system(size: size * (showsTitle ? 0.30 : 0.36), weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.system(size: size * (showsTitle ? 0.30 : 0.36), weight: .semibold))
+                    .monospacedDigit()
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.68)
                 if showsTitle {
                     Text(title.uppercased())
-                        .font(.system(size: size * 0.105, weight: .bold, design: .rounded))
-                        .tracking(0.35)
+                        .font(.system(size: size * 0.105, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.65)
@@ -451,10 +450,11 @@ struct WatchStressHaloGaugeView: View {
 
             VStack(spacing: 1) {
                 Text(WatchFormatters.score(stress.score))
-                    .font(.system(size: size * 0.24, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.system(size: size * 0.24, weight: .semibold))
+                    .monospacedDigit()
                     .lineLimit(1)
                 Text("Stress")
-                    .font(.system(size: size * 0.095, weight: .bold, design: .rounded))
+                    .font(.system(size: size * 0.095, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
         }
@@ -578,15 +578,15 @@ struct WatchStatPill: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(.caption2)
+                .pulsarTextStyle(.watchLabel)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(value)
-                    .font(.headline.weight(.semibold).monospacedDigit())
+                    .pulsarMonospacedMetric(.watchMetric)
                 if let unit {
                     Text(unit)
-                        .font(.caption2)
+                        .pulsarTextStyle(.watchLabel)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -603,7 +603,7 @@ struct WatchSectionTitle: View {
 
     var body: some View {
         Text(title.uppercased())
-            .font(.caption2.weight(.bold))
+            .pulsarTextStyle(.watchLabel)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 2)
@@ -622,9 +622,9 @@ struct WatchEmptyState: View {
                     .font(.title3)
                     .foregroundStyle(.secondary)
                 Text(title)
-                    .font(.headline)
+                    .pulsarTextStyle(.watchTitle)
                 Text(message)
-                    .font(.caption)
+                    .pulsarTextStyle(.watchSubtitle)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

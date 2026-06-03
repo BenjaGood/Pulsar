@@ -10,7 +10,9 @@ import BackgroundTasks
 
 enum PulsarBackgroundRefreshCoordinator {
     static let taskIdentifier = "aetherial.Pulsar.health-refresh"
-    private static let earliestRefreshDelay: TimeInterval = 15 * 60
+    private static var earliestRefreshDelay: TimeInterval {
+        ProcessInfo.processInfo.isLowPowerModeEnabled ? 30 * 60 : 15 * 60
+    }
 
     static func register() {
         let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: taskIdentifier, using: nil) { task in
@@ -20,6 +22,10 @@ enum PulsarBackgroundRefreshCoordinator {
     }
 
     static func schedule(reason: String = "scheduled") {
+        guard hasOuraConnection() else {
+            PulsarOuraLogger.log("BGAppRefresh schedule skipped reason=\(reason) because Oura is not connected")
+            return
+        }
         let request = BGAppRefreshTaskRequest(identifier: taskIdentifier)
         request.earliestBeginDate = Date().addingTimeInterval(earliestRefreshDelay)
         do {
@@ -28,6 +34,13 @@ enum PulsarBackgroundRefreshCoordinator {
         } catch {
             PulsarSyncDebugLogger.log("BGAppRefresh schedule failed reason=\(reason) error=\(error.localizedDescription)")
         }
+    }
+
+    private static func hasOuraConnection() -> Bool {
+        let configuration = OuraIntegrationConfiguration.load()
+        let tokenStore = OuraKeychainTokenStore()
+        let authService = OuraAuthService(configuration: configuration, tokenStorage: tokenStore)
+        return authService.connectionStore.storedToken != nil
     }
 
     private static func handle(_ task: BGTask) {

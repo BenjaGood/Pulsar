@@ -19,36 +19,38 @@ final class PulsarSyncBannerCenter: ObservableObject {
 
     func showSyncing(message: String = "Syncing health data…") {
         dismissTask?.cancel()
-        state = .syncing(message)
-        PulsarSyncDebugLogger.log("sync started")
+        dismissTask = nil
+        if setStateIfChanged(.syncing(message)) {
+            PulsarSyncDebugLogger.log("sync started")
+        }
     }
 
     func showFailure(message: String = "Unable to sync. Showing latest data.") {
         dismissTask?.cancel()
-        state = .failure(message)
-        PulsarSyncDebugLogger.log("sync failed: \(message)")
+        dismissTask = nil
+        if setStateIfChanged(.failure(message)) {
+            PulsarSyncDebugLogger.log("sync failed: \(message)")
+        }
         dismissTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 2_100_000_000)
             if !Task.isCancelled {
                 PulsarSyncDebugLogger.log("visible sync pill hidden")
-                withAnimation(.smooth(duration: 0.25)) {
-                    state = .hidden
-                }
+                hideWithAnimation()
             }
         }
     }
 
     func showSuccess(message: String = "Health data synced") {
         dismissTask?.cancel()
-        state = .success(message)
-        PulsarSyncDebugLogger.log("sync finished successfully")
+        dismissTask = nil
+        if setStateIfChanged(.success(message)) {
+            PulsarSyncDebugLogger.log("sync finished successfully")
+        }
         dismissTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_450_000_000)
             if !Task.isCancelled {
                 PulsarSyncDebugLogger.log("visible sync pill hidden")
-                withAnimation(.smooth(duration: 0.25)) {
-                    state = .hidden
-                }
+                hideWithAnimation()
             }
         }
     }
@@ -56,10 +58,24 @@ final class PulsarSyncBannerCenter: ObservableObject {
     func dismiss() {
         dismissTask?.cancel()
         dismissTask = nil
+        guard state != .hidden else { return }
         if state != .hidden {
             PulsarSyncDebugLogger.log("sync finished")
             PulsarSyncDebugLogger.log("visible sync pill hidden")
         }
+        hideWithAnimation()
+    }
+
+    @discardableResult
+    private func setStateIfChanged(_ newState: State) -> Bool {
+        guard state != newState else { return false }
+        withAnimation(.smooth(duration: 0.25)) {
+            state = newState
+        }
+        return true
+    }
+
+    private func hideWithAnimation() {
         withAnimation(.smooth(duration: 0.25)) {
             state = .hidden
         }

@@ -50,6 +50,14 @@ struct GymWorkoutSessionView: View {
 
             VStack(alignment: .leading, spacing: 16) {
                 header
+                if let message = viewModel.heartRateSourceBanner {
+                    GymHeartRateSourceBanner(message: message)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                if let coaching = viewModel.adaptiveWorkoutCoaching {
+                    AdaptiveGymCoachingBanner(coaching: coaching)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
 
                 GymWorkoutProgressCard(
                     completedSets: viewModel.completedSetsCount,
@@ -96,6 +104,8 @@ struct GymWorkoutSessionView: View {
         .animation(.spring(response: 0.34, dampingFraction: 0.84), value: viewModel.completedSetsCount)
         .animation(.spring(response: 0.34, dampingFraction: 0.84), value: viewModel.restCountdownSeconds)
         .animation(.spring(response: 0.34, dampingFraction: 0.84), value: viewModel.summary)
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: viewModel.heartRateSourceBanner)
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: viewModel.adaptiveWorkoutCoaching?.id)
     }
 
     private var header: some View {
@@ -275,6 +285,64 @@ struct GymWorkoutSessionView: View {
         let urls = ["music://nowplaying", "music://"].compactMap(URL.init(string:))
         guard let url = urls.first else { return }
         UIApplication.shared.open(url)
+    }
+}
+
+private struct GymHeartRateSourceBanner: View {
+    var message: String
+
+    var body: some View {
+        Label(message, systemImage: "heart.text.square.fill")
+            .font(.caption.weight(.black))
+            .foregroundStyle(.white.opacity(0.92))
+            .lineLimit(2)
+            .minimumScaleFactor(0.82)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .pulsarLiquidGlass(cornerRadius: 18)
+    }
+}
+
+private struct AdaptiveGymCoachingBanner: View {
+    var coaching: AdaptiveWorkoutCoaching
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(coaching.title)
+                    .font(.caption.weight(.black))
+                Text(coaching.message)
+                    .font(.caption.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } icon: {
+            Image(systemName: symbol)
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.13), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(tint.opacity(0.22), lineWidth: 1)
+        }
+    }
+
+    private var tint: Color {
+        switch coaching.severity {
+        case .informational: .cyan
+        case .caution, .protective: .orange
+        }
+    }
+
+    private var symbol: String {
+        switch coaching.severity {
+        case .informational: "sparkles"
+        case .caution: "heart.text.square.fill"
+        case .protective: "shield.lefthalf.filled"
+        }
     }
 }
 
@@ -979,11 +1047,7 @@ private struct GymSetEditorStepper: View {
             .buttonStyle(.plain)
         }
         .padding(14)
-        .background(.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(.white.opacity(0.10), lineWidth: 1)
-        }
+        .pulsarLiquidGlass(cornerRadius: 20)
     }
 }
 
@@ -1133,6 +1197,15 @@ struct GymWorkoutSummaryOverlay: View {
                             .font(.caption.weight(.black))
                             .foregroundStyle(.white.opacity(0.56))
 
+                        if let heartRateSource = summary.heartRateSourceSummaryText {
+                            Label(heartRateSource, systemImage: "heart.text.square.fill")
+                                .font(.caption.weight(.black))
+                                .foregroundStyle(.white.opacity(0.58))
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.82)
+                                .multilineTextAlignment(.center)
+                        }
+
                         if let startedAt = summary.startedAt {
                             Text(startedAt.formatted(.dateTime.weekday(.wide).month(.abbreviated).day().hour().minute()))
                                 .font(.caption.weight(.semibold))
@@ -1160,6 +1233,10 @@ struct GymWorkoutSummaryOverlay: View {
                         }
 
                         GymSummaryMetric(title: "Active Calories", value: summary.activeEnergyKilocalories.map { "\(Int($0.rounded())) kcal" } ?? "--")
+                    }
+
+                    if !summary.completedExerciseSummaries.isEmpty {
+                        GymSummaryCompletedSetsView(exercises: summary.completedExerciseSummaries)
                     }
 
                     VStack(spacing: 10) {
@@ -1211,6 +1288,60 @@ struct GymWorkoutSummaryOverlay: View {
         }
         .sheet(isPresented: $isShowingShareComposer) {
             PulsarWorkoutShareComposerView(gymSummary: summary)
+        }
+    }
+}
+
+private struct GymSummaryCompletedSetsView: View {
+    var exercises: [PulsarGymCompletedExerciseSummary]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Completed Sets", systemImage: "list.bullet.rectangle.fill")
+                .font(.headline.weight(.black))
+                .foregroundStyle(.white)
+
+            VStack(spacing: 10) {
+                ForEach(exercises) { exercise in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(exercise.exerciseName)
+                            .font(.subheadline.weight(.black))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+
+                        VStack(spacing: 6) {
+                            ForEach(exercise.sets) { set in
+                                HStack(spacing: 10) {
+                                    Text("Set \(set.setNumber)")
+                                        .font(.caption.weight(.black))
+                                        .foregroundStyle(.white.opacity(0.56))
+                                        .frame(width: 48, alignment: .leading)
+
+                                    Text("\(set.reps) reps")
+                                        .font(.caption.weight(.black))
+                                        .foregroundStyle(.white)
+
+                                    Spacer(minLength: 0)
+
+                                    Text("\(set.weight.formattedGymDecimal) \(exercise.weightUnit.displayName)")
+                                        .font(.caption.weight(.black).monospacedDigit())
+                                        .foregroundStyle(.white.opacity(0.82))
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(13)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(.white.opacity(0.08), lineWidth: 1)
         }
     }
 }

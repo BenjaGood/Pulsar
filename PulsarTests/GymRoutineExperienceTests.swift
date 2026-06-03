@@ -159,6 +159,66 @@ struct GymRoutineExperienceTests {
         #expect(viewModel.session.exercises[1].sets.count == 2)
     }
 
+    @Test func editedSetValuesSaveAsActualsAndSummaryBreakdown() throws {
+        let defaults = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: defaultsSuiteName(defaults)) }
+
+        let exercise = Self.makeExercise()
+        let routineExercise = PulsarRoutineExercise(
+            exercise: exercise,
+            order: 0,
+            plannedSets: 1,
+            plannedReps: 10,
+            plannedWeight: 60,
+            weightUnit: .pounds,
+            plannedRestSeconds: 0
+        )
+        let routine = PulsarRoutine(name: "Push Day", emoji: "💪", exercises: [routineExercise])
+        let historyStore = PulsarGymWorkoutHistoryStore(defaults: defaults)
+        let viewModel = GymWorkoutSessionViewModel(routine: routine, historyStore: historyStore)
+        let sessionExercise = try #require(viewModel.session.exercises.first)
+        let set = try #require(sessionExercise.sets.first)
+
+        viewModel.updateSetValues(exerciseID: sessionExercise.id, setID: set.id, reps: 7, weight: 72.5)
+        #expect(viewModel.toggleSet(exerciseID: sessionExercise.id, setID: set.id) == .completed)
+
+        let saved = historyStore.save(viewModel.session)
+        let savedSet = try #require(saved.exercises.first?.sets.first)
+        let summary = PulsarGymWorkoutSummary(session: saved)
+        let exerciseSummary = try #require(summary.completedExerciseSummaries.first)
+        let setSummary = try #require(exerciseSummary.sets.first)
+
+        #expect(savedSet.completedReps == 7)
+        #expect(savedSet.completedWeight == 72.5)
+        #expect(summary.totalVolume == 507.5)
+        #expect(setSummary.reps == 7)
+        #expect(setSummary.weight == 72.5)
+        #expect(exerciseSummary.weightUnit == .pounds)
+    }
+
+    @Test func gymSetActionCodecPreservesEditedActualValues() throws {
+        let sessionId = UUID()
+        let exerciseId = UUID()
+        let setId = UUID()
+        let action = ActiveGymWorkoutAction.completeSet(
+            sessionId: sessionId,
+            exerciseId: exerciseId,
+            setId: setId,
+            reps: 7,
+            weight: 72.5
+        )
+
+        let data = try #require(ActiveGymWorkoutCodec.encodeAction(action))
+        let decoded = try #require(ActiveGymWorkoutCodec.decodeAction(data))
+
+        #expect(decoded.kind == .completeSet)
+        #expect(decoded.sessionId == sessionId)
+        #expect(decoded.exerciseId == exerciseId)
+        #expect(decoded.setId == setId)
+        #expect(decoded.setReps == 7)
+        #expect(decoded.setWeight == 72.5)
+    }
+
     @Test func gymWeightPreferencePersistsAndResolvesIndependentlyFromAppUnits() throws {
         let defaults = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: defaultsSuiteName(defaults)) }
@@ -377,6 +437,23 @@ struct GymRoutineExperienceTests {
 
         #expect(session.workoutKind == .freeWorkout)
         #expect(session.activityLogDisplayName == "Free Workout")
+    }
+
+    @Test func gymFinishActionsAreDurableAndIdempotencyTagged() throws {
+        let sessionId = UUID()
+        let actionId = UUID()
+        var action = ActiveGymWorkoutAction.finishWorkout(sessionId: sessionId)
+        action.actionId = actionId
+
+        #expect(action.shouldQueueOverWatchConnectivity)
+
+        let data = try #require(ActiveGymWorkoutCodec.encodeAction(action))
+        let decoded = try #require(ActiveGymWorkoutCodec.decodeAction(data))
+
+        #expect(decoded.kind == .finishWorkout)
+        #expect(decoded.sessionId == sessionId)
+        #expect(decoded.actionId == actionId)
+        #expect(decoded.shouldQueueOverWatchConnectivity)
     }
 
     private static func makeExercise(

@@ -9,6 +9,9 @@ import Foundation
 @MainActor
 final class GymLiveActivityManager {
     private var activity: Activity<PulsarGymLiveActivityAttributes>?
+    private var lastContentState: PulsarGymLiveActivityAttributes.ContentState?
+    private var lastContentUpdateAt: Date?
+    private static let elapsedOnlyUpdateInterval: TimeInterval = 10
 
     func startIfPossible(state: ActiveGymWorkoutState) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
@@ -24,15 +27,22 @@ final class GymLiveActivityManager {
         }
 
         let attributes = PulsarGymLiveActivityAttributes(sessionId: state.sessionId)
+        let contentState = Self.contentState(from: state)
         activity = try? Activity.request(
             attributes: attributes,
-            content: .init(state: Self.contentState(from: state), staleDate: nil)
+            content: .init(state: contentState, staleDate: Self.activeStaleDate())
         )
+        if activity != nil {
+            remember(contentState)
+        }
     }
 
     func update(state: ActiveGymWorkoutState) {
         guard let activity else { return }
-        let content = ActivityContent(state: Self.contentState(from: state), staleDate: nil)
+        let contentState = Self.contentState(from: state)
+        guard shouldUpdate(contentState) else { return }
+        remember(contentState)
+        let content = ActivityContent(state: contentState, staleDate: Self.activeStaleDate())
         Task {
             await activity.update(content)
         }
@@ -46,6 +56,8 @@ final class GymLiveActivityManager {
             await Self.endStaleActivitiesIfNeeded(activeState: nil)
         }
         self.activity = nil
+        lastContentState = nil
+        lastContentUpdateAt = nil
     }
 
     static func endStaleActivitiesIfNeeded(activeState: ActiveGymWorkoutState?) async {
@@ -83,6 +95,28 @@ final class GymLiveActivityManager {
             restRemainingSeconds: state.restRemainingSeconds,
             isFinished: state.isFinished
         )
+    }
+
+    private func shouldUpdate(_ next: PulsarGymLiveActivityAttributes.ContentState) -> Bool {
+        guard let previous = lastContentState else { return true }
+        guard next != previous else { return false }
+
+        var previousWithUpdatedElapsed = previous
+        previousWithUpdatedElapsed.elapsedSeconds = next.elapsedSeconds
+        if previousWithUpdatedElapsed == next {
+            guard let lastContentUpdateAt else { return true }
+            return Date().timeIntervalSince(lastContentUpdateAt) >= Self.elapsedOnlyUpdateInterval
+        }
+        return true
+    }
+
+    private func remember(_ contentState: PulsarGymLiveActivityAttributes.ContentState) {
+        lastContentState = contentState
+        lastContentUpdateAt = Date()
+    }
+
+    private static func activeStaleDate() -> Date {
+        Date().addingTimeInterval(15 * 60)
     }
 
     private static func finishedContentState(from state: ActiveGymWorkoutState?) -> PulsarGymLiveActivityAttributes.ContentState {

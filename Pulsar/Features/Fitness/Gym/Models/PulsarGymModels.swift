@@ -127,6 +127,18 @@ struct PulsarExerciseAttribution: Codable, Hashable {
             licenseAuthorURL: licenseAuthorURL
         )
     }
+
+    nonisolated static func custom(sourceExerciseID: String?) -> PulsarExerciseAttribution {
+        PulsarExerciseAttribution(
+            sourceName: "Pulsar Custom",
+            sourceURL: "pulsar://custom-exercises",
+            sourceExerciseID: sourceExerciseID,
+            licenseTitle: nil,
+            licenseObjectURL: nil,
+            licenseAuthor: nil,
+            licenseAuthorURL: nil
+        )
+    }
 }
 
 struct PulsarExercise: Identifiable, Codable, Hashable {
@@ -161,6 +173,39 @@ struct PulsarExercise: Identifiable, Codable, Hashable {
     var equipmentSummary: String {
         guard !equipment.isEmpty else { return "Bodyweight" }
         return equipment.map(\.name).joined(separator: ", ")
+    }
+
+    nonisolated static func custom(
+        id: String,
+        name: String,
+        primaryMuscleGroup: PulsarMuscleGroup,
+        thumbnailURL: String?
+    ) -> PulsarExercise {
+        let primaryMuscle = PulsarMuscle(
+            name: primaryMuscleGroup.displayName,
+            englishName: primaryMuscleGroup.displayName,
+            group: primaryMuscleGroup
+        )
+        let imageURLs = thumbnailURL.map { [$0] } ?? []
+
+        return PulsarExercise(
+            id: id,
+            wgerID: nil,
+            wgerUUID: nil,
+            name: name,
+            instructions: nil,
+            primaryMuscles: [primaryMuscle],
+            secondaryMuscles: [],
+            primaryMuscleGroup: primaryMuscleGroup,
+            equipment: [PulsarEquipment(name: "Custom")],
+            imageURLs: imageURLs,
+            thumbnailURL: thumbnailURL,
+            attribution: .custom(sourceExerciseID: id),
+            category: "Custom",
+            level: nil,
+            force: nil,
+            mechanic: nil
+        )
     }
 }
 
@@ -458,6 +503,8 @@ struct PulsarGymWorkoutSession: Identifiable, Codable, Hashable {
     var averageHeartRate: Double?
     var maxHeartRate: Double?
     var healthKitStatusMessage: String?
+    var heartRateSourceHistory: [WorkoutHeartRateSourceSegment]
+    var heartRateSourceStatusMessage: String?
     var trainedMuscleGroups: [PulsarMuscleGroup]
     var muscleLoadByGroup: [String: Double]
     var muscleLoadByMatrixGroup: [String: Double]
@@ -483,6 +530,8 @@ struct PulsarGymWorkoutSession: Identifiable, Codable, Hashable {
         self.averageHeartRate = nil
         self.maxHeartRate = nil
         self.healthKitStatusMessage = nil
+        self.heartRateSourceHistory = []
+        self.heartRateSourceStatusMessage = nil
         self.trainedMuscleGroups = []
         self.muscleLoadByGroup = [:]
         self.muscleLoadByMatrixGroup = [:]
@@ -532,6 +581,8 @@ struct PulsarGymWorkoutSession: Identifiable, Codable, Hashable {
         self.averageHeartRate = state.averageHeartRate
         self.maxHeartRate = state.maxHeartRate
         self.healthKitStatusMessage = state.healthKitStatusMessage
+        self.heartRateSourceHistory = []
+        self.heartRateSourceStatusMessage = nil
         self.trainedMuscleGroups = []
         self.muscleLoadByGroup = [:]
         self.muscleLoadByMatrixGroup = [:]
@@ -556,6 +607,8 @@ struct PulsarGymWorkoutSession: Identifiable, Codable, Hashable {
         case averageHeartRate
         case maxHeartRate
         case healthKitStatusMessage
+        case heartRateSourceHistory
+        case heartRateSourceStatusMessage
         case trainedMuscleGroups
         case muscleLoadByGroup
         case muscleLoadByMatrixGroup
@@ -584,6 +637,8 @@ struct PulsarGymWorkoutSession: Identifiable, Codable, Hashable {
         averageHeartRate = try? container.decodeIfPresent(Double.self, forKey: .averageHeartRate)
         maxHeartRate = try? container.decodeIfPresent(Double.self, forKey: .maxHeartRate)
         healthKitStatusMessage = try? container.decodeIfPresent(String.self, forKey: .healthKitStatusMessage)
+        heartRateSourceHistory = (try? container.decodeIfPresent([WorkoutHeartRateSourceSegment].self, forKey: .heartRateSourceHistory)) ?? []
+        heartRateSourceStatusMessage = try? container.decodeIfPresent(String.self, forKey: .heartRateSourceStatusMessage)
         trainedMuscleGroups = (try? container.decodeIfPresent([PulsarMuscleGroup].self, forKey: .trainedMuscleGroups)) ?? []
         muscleLoadByGroup = (try? container.decodeIfPresent([String: Double].self, forKey: .muscleLoadByGroup)) ?? [:]
         muscleLoadByMatrixGroup = (try? container.decodeIfPresent([String: Double].self, forKey: .muscleLoadByMatrixGroup))
@@ -846,6 +901,20 @@ struct PulsarGymWorkoutSetSession: Identifiable, Codable, Hashable {
     }
 }
 
+struct PulsarGymCompletedExerciseSummary: Identifiable, Codable, Hashable {
+    var id: UUID
+    var exerciseName: String
+    var weightUnit: PulsarWeightUnit
+    var sets: [PulsarGymCompletedSetSummary]
+}
+
+struct PulsarGymCompletedSetSummary: Identifiable, Codable, Hashable {
+    var id: UUID
+    var setNumber: Int
+    var reps: Int
+    var weight: Double
+}
+
 struct PulsarGymWorkoutSummary: Identifiable, Codable, Hashable {
     var id: UUID
     var sessionId: UUID
@@ -866,6 +935,9 @@ struct PulsarGymWorkoutSummary: Identifiable, Codable, Hashable {
     var averageHeartRate: Double?
     var maxHeartRate: Double?
     var healthKitStatusMessage: String?
+    var heartRateSourceHistory: [WorkoutHeartRateSourceSegment]?
+    var heartRateSourceStatusMessage: String?
+    var completedExerciseSummaries: [PulsarGymCompletedExerciseSummary]
 
     init(session: PulsarGymWorkoutSession) {
         id = UUID()
@@ -882,11 +954,14 @@ struct PulsarGymWorkoutSummary: Identifiable, Codable, Hashable {
         totalSets = session.exercises.flatMap(\.sets).count
         let summaryWeightUnit = session.exercises.first?.weightUnit ?? .kilograms
         weightUnit = summaryWeightUnit
+        completedExerciseSummaries = Self.completedExerciseSummaries(from: session.exercises)
         healthKitWorkoutUUID = session.healthKitWorkoutUUID
         activeEnergyKilocalories = session.activeEnergyKilocalories
         averageHeartRate = session.averageHeartRate
         maxHeartRate = session.maxHeartRate
         healthKitStatusMessage = session.healthKitStatusMessage
+        heartRateSourceHistory = session.heartRateSourceHistory
+        heartRateSourceStatusMessage = session.heartRateSourceStatusMessage
         totalVolume = session.exercises.reduce(0) { partialResult, exercise in
             partialResult + exercise.sets.reduce(0) { setPartial, set in
                 guard set.isCompleted else { return setPartial }
@@ -912,11 +987,14 @@ struct PulsarGymWorkoutSummary: Identifiable, Codable, Hashable {
         totalSets = state.totalSets
         let summaryWeightUnit = state.exercises.first.map { PulsarWeightUnit.gymDisplayName($0.weightUnit) } ?? .kilograms
         weightUnit = summaryWeightUnit
+        completedExerciseSummaries = Self.completedExerciseSummaries(from: state.exercises)
         healthKitWorkoutUUID = state.healthKitWorkoutUUID
         activeEnergyKilocalories = state.activeEnergyKilocalories
         averageHeartRate = state.averageHeartRate
         maxHeartRate = state.maxHeartRate
         healthKitStatusMessage = state.healthKitStatusMessage
+        heartRateSourceHistory = []
+        heartRateSourceStatusMessage = nil
         totalVolume = state.exercises.reduce(0) { partialResult, exercise in
             let exerciseUnit = PulsarWeightUnit.gymDisplayName(exercise.weightUnit)
             return partialResult + exercise.sets.reduce(0) { setPartial, set in
@@ -930,6 +1008,56 @@ struct PulsarGymWorkoutSummary: Identifiable, Codable, Hashable {
 
     var sourceDeviceName: String {
         (source ?? .iPhone).displayName
+    }
+
+    var heartRateSourceSummaryText: String? {
+        WorkoutHeartRateSourceSummaryFormatter.summaryText(for: heartRateSourceHistory ?? [])
+    }
+
+    nonisolated static func completedExerciseSummaries(
+        from exercises: [PulsarGymWorkoutExerciseSession]
+    ) -> [PulsarGymCompletedExerciseSummary] {
+        exercises.compactMap { exercise in
+            let completedSets = exercise.sets.compactMap { set -> PulsarGymCompletedSetSummary? in
+                guard set.isCompleted else { return nil }
+                return PulsarGymCompletedSetSummary(
+                    id: set.id,
+                    setNumber: set.setNumber,
+                    reps: max(1, set.completedReps ?? set.targetReps),
+                    weight: max(0, set.completedWeight ?? set.targetWeight)
+                )
+            }
+            guard !completedSets.isEmpty else { return nil }
+            return PulsarGymCompletedExerciseSummary(
+                id: exercise.id,
+                exerciseName: exercise.exerciseName,
+                weightUnit: exercise.weightUnit,
+                sets: completedSets
+            )
+        }
+    }
+
+    nonisolated static func completedExerciseSummaries(
+        from exercises: [ActiveGymWorkoutExerciseState]
+    ) -> [PulsarGymCompletedExerciseSummary] {
+        exercises.compactMap { exercise in
+            let completedSets = exercise.sets.compactMap { set -> PulsarGymCompletedSetSummary? in
+                guard set.isCompleted else { return nil }
+                return PulsarGymCompletedSetSummary(
+                    id: set.id,
+                    setNumber: set.setNumber,
+                    reps: max(1, set.completedReps ?? set.targetReps),
+                    weight: max(0, set.completedWeight ?? set.targetWeight)
+                )
+            }
+            guard !completedSets.isEmpty else { return nil }
+            return PulsarGymCompletedExerciseSummary(
+                id: exercise.id,
+                exerciseName: exercise.exerciseName,
+                weightUnit: PulsarWeightUnit.gymDisplayName(exercise.weightUnit),
+                sets: completedSets
+            )
+        }
     }
 }
 

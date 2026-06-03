@@ -109,6 +109,7 @@ final class PulsarActiveWorkoutManager: ObservableObject {
     @Published private(set) var minimizedRunWorkoutKind: PulsarOutdoorWorkoutKind?
     @Published private(set) var gymSessionViewModel: GymWorkoutSessionViewModel?
     @Published private(set) var isGymWorkoutMinimized = false
+    @Published private(set) var adaptiveStrainPlan: AdaptiveStrainPlan?
 
     private var automaticallyOpenedActiveWorkoutSessionID: UUID?
     private var lastVisiblePresentationBySessionID: [UUID: PulsarActiveWorkoutPresentation] = [:]
@@ -185,6 +186,14 @@ final class PulsarActiveWorkoutManager: ObservableObject {
         presentedWorkout = .run(workoutKind)
     }
 
+    func presentRunSummary(_ workoutKind: PulsarOutdoorWorkoutKind, sessionID: UUID) {
+        setActiveWorkout(kind: .run(workoutKind), sessionID: sessionID, phase: "finished")
+        clearUserMinimizedOverrideIfNeeded(sessionID: sessionID)
+        setPresentation(.expanded(sessionID), reason: "presentRunSummary")
+        presentedWorkout = .run(workoutKind)
+        PulsarStateDebugLogger.log("[PulsarSummary] Run summary presentation retained session=\(sessionID.uuidString) type=\(workoutKind.rawValue)")
+    }
+
     func clearRunWorkout(
         sessionID: UUID? = nil,
         phase: String = "ended",
@@ -240,7 +249,8 @@ final class PulsarActiveWorkoutManager: ObservableObject {
         gymSessionViewModel = GymWorkoutSessionViewModel(
             routine: routine,
             workoutWeightUnit: workoutWeightUnit,
-            historyStore: historyStore
+            historyStore: historyStore,
+            adaptiveStrainPlan: adaptiveStrainPlan
         )
         if let sessionID = gymSessionViewModel?.session.id {
             setActiveWorkout(kind: .gym, sessionID: sessionID, phase: "active")
@@ -248,6 +258,12 @@ final class PulsarActiveWorkoutManager: ObservableObject {
             setPresentation(.expanded(sessionID), reason: "startGym")
         }
         isGymWorkoutMinimized = false
+    }
+
+    func setAdaptiveStrainPlan(_ plan: AdaptiveStrainPlan?, reason: String) {
+        adaptiveStrainPlan = plan
+        gymSessionViewModel?.setAdaptiveStrainPlan(plan, reason: reason)
+        PulsarStateDebugLogger.log("[PulsarAdaptiveStrainGuard] active workout manager plan updated reason=\(reason) target=\(plan?.recommendedRange.displayText ?? "nil") priority=\(plan?.recoveryPriority.rawValue ?? "nil")")
     }
 
     func minimizeGymWorkout(sessionID: UUID? = nil) {
@@ -310,6 +326,14 @@ final class PulsarActiveWorkoutManager: ObservableObject {
         clearUserMinimizedOverrideIfNeeded(sessionID: resolvedSessionID)
         presentedWorkout = .watchGym
         setPresentation(.expanded(resolvedSessionID), reason: "presentWatchGym")
+    }
+
+    func presentWatchGymSummary(sessionID: UUID) {
+        setActiveWorkout(kind: .watchGym, sessionID: sessionID, phase: "finished")
+        clearUserMinimizedOverrideIfNeeded(sessionID: sessionID)
+        setPresentation(.expanded(sessionID), reason: "presentWatchGymSummary")
+        presentedWorkout = .watchGym
+        PulsarStateDebugLogger.log("[PulsarSummary] Watch gym summary presentation retained session=\(sessionID.uuidString)")
     }
 
     func minimizeWatchGymWorkout(sessionID: UUID? = nil) {

@@ -3,6 +3,7 @@
 //  Pulsar
 //
 
+import PhotosUI
 import SwiftUI
 import UIKit
 
@@ -79,6 +80,8 @@ private struct GymExercisePickerView: View {
     var onCancel: () -> Void
     var onContinue: () -> Void
 
+    @State private var isPresentingCustomExerciseSheet = false
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 18) {
@@ -89,6 +92,11 @@ private struct GymExercisePickerView: View {
                     groups: catalogStore.availableMuscleGroups,
                     selection: $viewModel.selectedMuscleGroup
                 )
+
+                GymCustomExercisePrompt(searchText: viewModel.searchText) {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    isPresentingCustomExerciseSheet = true
+                }
 
                 catalogContent
             }
@@ -137,6 +145,24 @@ private struct GymExercisePickerView: View {
         .task {
             await catalogStore.loadCatalogIfNeeded()
         }
+        .sheet(isPresented: $isPresentingCustomExerciseSheet) {
+            GymCustomExerciseSheet(
+                initialName: viewModel.searchText,
+                initialMuscleGroup: viewModel.selectedMuscleGroup
+            ) { draft in
+                let exercise = try catalogStore.addCustomExercise(
+                    name: draft.name,
+                    primaryMuscleGroup: draft.muscleGroup,
+                    imageData: draft.imageData
+                )
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+                    viewModel.addExercise(exercise)
+                }
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            }
+            .environment(\.colorScheme, .dark)
+            .preferredColorScheme(.dark)
+        }
     }
 
     @ViewBuilder
@@ -161,7 +187,7 @@ private struct GymExercisePickerView: View {
                 GymCatalogStateView(
                     symbolName: "magnifyingglass",
                     title: "No exercises found",
-                    message: "Try another name or muscle group."
+                    message: "Try another name, choose another muscle group, or create a custom exercise."
                 )
                 .padding(.top, 38)
             } else {
@@ -215,6 +241,71 @@ private struct GymExerciseSectionView: View {
                 }
             }
         }
+    }
+}
+
+private struct GymCustomExercisePrompt: View {
+    var searchText: String
+    var action: () -> Void
+
+    private var trimmedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 13) {
+                ZStack {
+                    Circle()
+                        .fill(.white.opacity(0.10))
+                    Image(systemName: "plus")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 42, height: 42)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Create custom exercise")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.white)
+
+                    Text(subtitle)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.58))
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(.white.opacity(0.46))
+            }
+            .padding(14)
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.75, green: 0.66, blue: 1.0).opacity(0.16),
+                        .white.opacity(0.055)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(.white.opacity(0.12), lineWidth: 1)
+            }
+        }
+        .buttonStyle(PulsarGymPressButtonStyle())
+    }
+
+    private var subtitle: String {
+        if trimmedSearchText.isEmpty {
+            return "Add your own name, photo, and muscle group."
+        }
+        return "Use \"\(trimmedSearchText)\" as a starting point."
     }
 }
 
@@ -292,19 +383,29 @@ private struct GymExerciseThumbnail: View {
                 .fill(.white.opacity(isSelected ? 0.15 : 0.09))
 
             if let urlString, let url = URL(string: urlString) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
+                if url.isFileURL {
+                    if let image = UIImage(contentsOfFile: url.path) {
+                        Image(uiImage: image)
                             .resizable()
                             .scaledToFill()
-                    case .failure:
+                    } else {
                         fallbackIcon
-                    case .empty:
-                        ProgressView()
-                            .tint(.white.opacity(0.72))
-                    @unknown default:
-                        fallbackIcon
+                    }
+                } else {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        case .failure:
+                            fallbackIcon
+                        case .empty:
+                            ProgressView()
+                                .tint(.white.opacity(0.72))
+                        @unknown default:
+                            fallbackIcon
+                        }
                     }
                 }
             } else {
@@ -442,6 +543,234 @@ private struct GymExerciseSearchBar: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(.white.opacity(0.12), lineWidth: 1)
         }
+    }
+}
+
+private struct GymCustomExerciseDraft {
+    var name: String
+    var muscleGroup: PulsarMuscleGroup
+    var imageData: Data?
+}
+
+private struct GymCustomExerciseSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var exerciseName: String
+    @State private var muscleGroup: PulsarMuscleGroup
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var selectedImage: UIImage?
+    @State private var selectedImageData: Data?
+    @State private var errorMessage: String?
+    @FocusState private var isNameFocused: Bool
+
+    var onCreate: (GymCustomExerciseDraft) throws -> Void
+
+    init(
+        initialName: String,
+        initialMuscleGroup: PulsarMuscleGroup?,
+        onCreate: @escaping (GymCustomExerciseDraft) throws -> Void
+    ) {
+        let trimmedName = initialName.trimmingCharacters(in: .whitespacesAndNewlines)
+        _exerciseName = State(initialValue: trimmedName)
+        _muscleGroup = State(initialValue: initialMuscleGroup ?? .other)
+        self.onCreate = onCreate
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
+                    photoPicker
+                    nameField
+                    muscleGroupPicker
+
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color(red: 1.0, green: 0.48, blue: 0.56))
+                            .padding(.horizontal, 2)
+                    }
+                }
+                .padding(18)
+            }
+            .background(GymGlassBackground().ignoresSafeArea())
+            .navigationTitle("Custom Exercise")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.76))
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Create & Add") {
+                        createExercise()
+                    }
+                    .font(.subheadline.weight(.bold))
+                    .disabled(!canCreate)
+                }
+            }
+            .onAppear {
+                isNameFocused = exerciseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            .onChange(of: selectedPhotoItem) { _, item in
+                loadPhoto(from: item)
+            }
+        }
+        .tint(.white)
+    }
+
+    private var canCreate: Bool {
+        !exerciseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var photoPicker: some View {
+        PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(.white.opacity(0.085))
+
+                if let selectedImage {
+                    Image(uiImage: selectedImage)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    VStack(spacing: 10) {
+                        Image(systemName: "photo.badge.plus")
+                            .font(.system(size: 30, weight: .semibold))
+                            .symbolRenderingMode(.hierarchical)
+                        Text("Add exercise photo")
+                            .font(.subheadline.weight(.bold))
+                        Text("Optional, saved only for this custom exercise.")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.54))
+                    }
+                    .foregroundStyle(.white.opacity(0.78))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 178)
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(.white.opacity(0.13), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var nameField: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("Name")
+                .font(.caption.weight(.black))
+                .foregroundStyle(.white.opacity(0.58))
+
+            TextField("Exercise name", text: $exerciseName)
+                .textInputAutocapitalization(.words)
+                .autocorrectionDisabled()
+                .focused($isNameFocused)
+                .submitLabel(.done)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 14)
+                .background(.white.opacity(0.085), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                }
+        }
+    }
+
+    private var muscleGroupPicker: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("Muscle division")
+                .font(.caption.weight(.black))
+                .foregroundStyle(.white.opacity(0.58))
+
+            Menu {
+                ForEach(PulsarMuscleGroup.allCases) { group in
+                    Button {
+                        muscleGroup = group
+                    } label: {
+                        if group == muscleGroup {
+                            Label(group.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(group.displayName)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Text(muscleGroup.displayName)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+
+                    Spacer(minLength: 0)
+
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(.white.opacity(0.48))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 14)
+                .background(.white.opacity(0.085), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                }
+            }
+        }
+    }
+
+    private func createExercise() {
+        do {
+            try onCreate(
+                GymCustomExerciseDraft(
+                    name: exerciseName,
+                    muscleGroup: muscleGroup,
+                    imageData: selectedImageData
+                )
+            )
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func loadPhoto(from item: PhotosPickerItem?) {
+        guard let item else { return }
+        Task {
+            guard let data = try? await item.loadTransferable(type: Data.self),
+                  let image = UIImage(data: data) else {
+                errorMessage = "Could not load that photo. Try another image."
+                return
+            }
+            selectedImage = image
+            selectedImageData = GymCustomExerciseImageProcessor.jpegData(from: image)
+            errorMessage = nil
+        }
+    }
+}
+
+private enum GymCustomExerciseImageProcessor {
+    static func jpegData(from image: UIImage) -> Data? {
+        let maxDimension: CGFloat = 900
+        let longestSide = max(image.size.width, image.size.height)
+        guard longestSide > 0 else { return image.jpegData(compressionQuality: 0.84) }
+
+        let scale = min(1, maxDimension / longestSide)
+        let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        let resizedImage = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+        return resizedImage.jpegData(compressionQuality: 0.84)
     }
 }
 
@@ -1526,6 +1855,8 @@ private struct GymRestPresetButton: View {
 }
 
 private struct GymRoutineEmojiPicker: View {
+    private static let defaultOptions: [String] = ["💪", "🦵", "🏋️", "🔥", "⚡️", "🏃", "🧠", "🪽", "🍑", "🧱", "🎯", "⭐️"]
+
     @Binding var selectedEmoji: String
     var suggestedEmoji: String
     @Environment(\.dismiss) private var dismiss
@@ -1533,7 +1864,7 @@ private struct GymRoutineEmojiPicker: View {
     @FocusState private var isCustomEmojiFocused: Bool
 
     private var options: [String] {
-        let values = [suggestedEmoji, "💪", "🦵", "🏋️", "🔥", "⚡️", "🏃", "🧠", "🪽", "🍑", "🧱", "🎯", "⭐️"]
+        let values = [suggestedEmoji] + Self.defaultOptions
         var seen: Set<String> = []
         return values.filter { seen.insert($0).inserted }
     }

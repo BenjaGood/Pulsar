@@ -429,8 +429,19 @@ actor HealthKitGateway {
             }
             store.execute(query)
         }
-        let source = await fetchQuantitySamples(type: type, start: start, end: end).map { provenance(for: $0) }.first
+        let source = await fetchFirstQuantitySample(type: type, start: start, end: end).map { provenance(for: $0) }
         return (sum, source)
+    }
+
+    private func fetchFirstQuantitySample(type: HKQuantityType, start: Date, end: Date) async -> HKQuantitySample? {
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: 1, sortDescriptors: [sort]) { _, samples, _ in
+                continuation.resume(returning: samples?.first as? HKQuantitySample)
+            }
+            store.execute(query)
+        }
     }
 
     private func fetchQuantitySamples(type: HKQuantityType, start: Date, end: Date) async -> [HKQuantitySample] {

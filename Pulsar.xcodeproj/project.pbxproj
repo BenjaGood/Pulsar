@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		EDF329D42FA7FABD00359606 /* Pulsar Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = EDF329CA2FA7FABC00359606 /* Pulsar Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		EDF329D42FA7FABD00359606 /* Pulsar Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = EDF329CA2FA7FABC00359606 /* Pulsar Watch App.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		EDF33A102FA9000000000001 /* PulsarWidgetsExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = EDF33A132FA9000000000004 /* PulsarWidgetsExtension.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 

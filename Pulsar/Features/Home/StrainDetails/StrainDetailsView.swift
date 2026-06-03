@@ -28,11 +28,6 @@ struct StrainDetailsView: View {
             withAnimation(.smooth(duration: 0.45)) { contentVisible = true }
             await viewModel.loadIfNeeded()
         }
-        .safeAreaInset(edge: .top) {
-            PulsarSyncStatusPill()
-                .padding(.horizontal, 18)
-                .padding(.top, 6)
-        }
     }
 
     @ViewBuilder
@@ -79,26 +74,30 @@ private struct StrainDetailsHeader: View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Current Strain")
-                    .font(.largeTitle.weight(.bold))
+                    .pulsarTextStyle(.screenTitle)
                 Text(viewModel.dateSubtitle)
-                    .font(.callout.weight(.medium))
+                    .pulsarTextStyle(.screenSubtitle)
                     .foregroundStyle(.secondary)
             }
             HStack(alignment: .center, spacing: 12) {
                 StrainHeaderMetric(title: "Current", value: viewModel.scoreText, subtitle: viewModel.accumulatedSubtitle, tint: .orange)
-                StrainHeaderMetric(title: "Target Range", value: viewModel.recommendedTargetText, subtitle: "Recovery + recent load", tint: .cyan)
+                StrainHeaderMetric(title: "Target Range", value: viewModel.recommendedTargetText, subtitle: viewModel.adaptiveZoneText, tint: .cyan)
             }
             StrainTargetProgressBar(current: viewModel.hasCurrentStrainValue ? viewModel.summary.score : nil, targetRange: viewModel.targetRange)
             HStack(spacing: 10) {
                 StrainLoadSplitPill(title: "Active", value: viewModel.activeStrainText, subtitle: "Workout", tint: .orange)
                 StrainLoadSplitPill(title: "Passive", value: viewModel.passiveStrainText, subtitle: "Movement", tint: .cyan)
             }
-            Text(viewModel.insights.first?.text ?? viewModel.statusText)
-                .font(.callout.weight(.medium))
+            Text(viewModel.adaptiveHeadline)
+                .pulsarTextStyle(.appBody)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Text(viewModel.adaptiveRationale)
+                .pulsarTextStyle(.caption)
+                .foregroundStyle(.secondary.opacity(0.86))
+                .fixedSize(horizontal: false, vertical: true)
             Text(viewModel.statusText)
-                .font(.subheadline.weight(.semibold))
+                .pulsarTextStyle(.metricLabel)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(.orange.opacity(0.14), in: Capsule())
@@ -123,16 +122,15 @@ private struct StrainLoadSplitPill: View {
                 .frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title.uppercased())
-                    .font(.caption2.weight(.bold))
-                    .tracking(0.6)
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(.secondary)
                 Text(subtitle)
-                    .font(.caption2)
+                    .pulsarTextStyle(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
             Text(value)
-                .font(.callout.weight(.bold).monospacedDigit())
+                .pulsarMonospacedMetric(.appBodyEmphasis)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -153,15 +151,13 @@ private struct StrainHeaderMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title.uppercased())
-                .font(.caption2.weight(.bold))
-                .tracking(0.7)
+                .pulsarTextStyle(.overline)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.system(size: 34, weight: .bold, design: .rounded))
-                .monospacedDigit()
+                .pulsarMonospacedMetric(.metricValue)
                 .lineLimit(1)
             Text(subtitle)
-                .font(.caption.weight(.medium))
+                .pulsarTextStyle(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
@@ -233,9 +229,9 @@ private struct StrainHeartLoadCard: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Heart Load")
-                        .font(.title3.weight(.semibold))
+                        .pulsarTextStyle(.sectionTitle)
                     Text("Heart rate and workout intensity across the day")
-                        .font(.caption)
+                        .pulsarTextStyle(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -260,10 +256,10 @@ private struct HeartLoadCalloutRow: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.orange)
                     Text(callout.title)
-                        .font(.caption2.weight(.medium))
+                        .pulsarTextStyle(.caption)
                         .foregroundStyle(.secondary)
                     Text(callout.value)
-                        .font(.caption.weight(.semibold))
+                        .pulsarMonospacedMetric(.metricLabel)
                         .lineLimit(1)
                         .minimumScaleFactor(0.72)
                 }
@@ -331,7 +327,7 @@ struct HeartLoadTimelineView: View {
                     .position(x: frame.midX, y: frame.midY)
                 if frame.width > 54 {
                     Text(workoutLabel(for: band))
-                        .font(.caption2.weight(.semibold))
+                        .pulsarTextStyle(.caption)
                         .foregroundStyle(.orange)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
@@ -378,8 +374,7 @@ struct HeartLoadTimelineView: View {
             let preferredY = location.y - 24 < layout.plotRect.minY + 4 ? location.y + 24 : location.y - 24
             let labelY = min(max(layout.plotRect.minY + labelSize.height / 2 + 4, preferredY), layout.plotRect.maxY - labelSize.height / 2 - 4)
             Text("\(Int(peak.bpm.rounded())) bpm")
-                .font(.caption2.weight(.bold))
-                .monospacedDigit()
+                .pulsarMonospacedMetric(.caption)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
                 .background(.black.opacity(0.30), in: Capsule())
@@ -394,7 +389,7 @@ struct HeartLoadTimelineView: View {
             ForEach(visibleMarkers(for: layout)) { marker in
                 let x = xPosition(for: marker.date, layout: layout)
                 Text(marker.label)
-                    .font(.caption2.weight(.medium))
+                    .pulsarTextStyle(.caption)
                     .foregroundStyle(.secondary)
                     .position(x: min(max(layout.plotRect.minX + 8, x), layout.plotRect.maxX - 8), y: layout.axisY)
             }
@@ -403,7 +398,7 @@ struct HeartLoadTimelineView: View {
 
     private func note(layout: HeartLoadChartLayout) -> some View {
         Text(chart.intensityDescription)
-            .font(.caption2)
+            .pulsarTextStyle(.caption)
             .foregroundStyle(.tertiary)
             .lineLimit(1)
             .minimumScaleFactor(0.78)

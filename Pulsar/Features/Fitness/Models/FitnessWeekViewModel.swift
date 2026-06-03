@@ -441,6 +441,7 @@ final class FitnessWeekViewModel: ObservableObject {
             metadata: gymDetailMetadata(for: session, muscleSummary: muscleSummary),
             completedSets: muscleSummary.completedSets,
             totalSets: muscleSummary.totalSets,
+            gymSetSummaries: PulsarGymWorkoutSummary.completedExerciseSummaries(from: session.exercises),
             mainMuscleGroups: muscleSummary.mainMuscleGroupNames,
             muscleLoadByMatrixGroup: muscleSummary.loadByMatrixGroup,
             muscleExercisesByMatrixGroup: muscleSummary.exercisesByMatrixGroup

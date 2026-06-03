@@ -16,11 +16,21 @@ final class ExerciseCatalogStore: ObservableObject {
 
     private let service: FreeExerciseDBService
     private let cache: ExerciseCatalogCache
+    private let customStore: CustomExerciseCatalogStore
     private var hasLoaded = false
+    private var catalogExercises: [PulsarExercise] = []
+    private var customExercises: [PulsarExercise] = []
 
-    init(service: FreeExerciseDBService? = nil, cache: ExerciseCatalogCache? = nil) {
+    init(
+        service: FreeExerciseDBService? = nil,
+        cache: ExerciseCatalogCache? = nil,
+        customStore: CustomExerciseCatalogStore? = nil
+    ) {
         self.service = service ?? FreeExerciseDBService()
         self.cache = cache ?? ExerciseCatalogCache()
+        self.customStore = customStore ?? CustomExerciseCatalogStore()
+        self.customExercises = self.customStore.loadExercises()
+        publishExercises()
     }
 
     var hasExercises: Bool {
@@ -60,7 +70,8 @@ final class ExerciseCatalogStore: ObservableObject {
                 schemaVersion: ExerciseCatalogCache.schemaVersion
             )
             cache.save(snapshot)
-            exercises = fetchedExercises
+            catalogExercises = fetchedExercises
+            publishExercises()
             lastRefreshDate = snapshot.refreshedAt
             isShowingCachedData = false
         } catch {
@@ -76,11 +87,38 @@ final class ExerciseCatalogStore: ObservableObject {
         isLoading = false
     }
 
+    @discardableResult
+    func addCustomExercise(
+        name: String,
+        primaryMuscleGroup: PulsarMuscleGroup,
+        imageData: Data?
+    ) throws -> PulsarExercise {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            throw CustomExerciseCatalogError.missingName
+        }
+
+        let exerciseID = Self.customExerciseID(for: trimmedName)
+        let thumbnailURL = try customStore.saveImageData(imageData, exerciseID: exerciseID)
+        let exercise = PulsarExercise.custom(
+            id: exerciseID,
+            name: trimmedName,
+            primaryMuscleGroup: primaryMuscleGroup,
+            thumbnailURL: thumbnailURL
+        )
+
+        customExercises.insert(exercise, at: 0)
+        customStore.saveExercises(customExercises)
+        publishExercises()
+        return exercise
+    }
+
     private func loadCachedCatalog() {
         guard let snapshot = cache.loadSnapshot() else { return }
-        exercises = snapshot.exercises.sorted {
+        catalogExercises = snapshot.exercises.sorted {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
+        publishExercises()
         lastRefreshDate = snapshot.refreshedAt
         isShowingCachedData = true
     }
@@ -94,9 +132,30 @@ final class ExerciseCatalogStore: ObservableObject {
             schemaVersion: ExerciseCatalogCache.schemaVersion
         )
         cache.save(snapshot)
-        exercises = bundledExercises
+        catalogExercises = bundledExercises
+        publishExercises()
         lastRefreshDate = nil
         isShowingCachedData = false
+    }
+
+    private func publishExercises() {
+        let catalogIds = Set(catalogExercises.map(\.id))
+        let uniqueCustomExercises = customExercises.filter { !catalogIds.contains($0.id) }
+        exercises = (uniqueCustomExercises + catalogExercises).sorted { first, second in
+            if first.attribution.sourceName == "Pulsar Custom",
+               second.attribution.sourceName != "Pulsar Custom" {
+                return true
+            }
+            if second.attribution.sourceName == "Pulsar Custom",
+               first.attribution.sourceName != "Pulsar Custom" {
+                return false
+            }
+            return first.name.localizedCaseInsensitiveCompare(second.name) == .orderedAscending
+        }
+    }
+
+    private static func customExerciseID(for name: String) -> String {
+        "\(name.normalizedPulsarIdentifier(prefix: "custom-exercise"))-\(UUID().uuidString.lowercased())"
     }
 }
 
@@ -133,5 +192,72 @@ final class ExerciseCatalogCache {
         } catch {
             assertionFailure("Unable to cache exercise catalog: \(error.localizedDescription)")
         }
+    }
+}
+
+enum CustomExerciseCatalogError: LocalizedError {
+    case missingName
+
+    var errorDescription: String? {
+        switch self {
+        case .missingName:
+            return "Add a name for your custom exercise."
+        }
+    }
+}
+
+final class CustomExerciseCatalogStore {
+    private struct Snapshot: Codable {
+        var schemaVersion: Int
+        var exercises: [PulsarExercise]
+    }
+
+    private static let schemaVersion = 1
+
+    private let fileURL: URL
+    private let imageDirectoryURL: URL
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
+
+    init(fileManager: FileManager = .default) {
+        let supportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fileManager.temporaryDirectory
+        let directoryURL = supportURL.appendingPathComponent("Pulsar/ExerciseCatalog", isDirectory: true)
+        self.fileURL = directoryURL.appendingPathComponent("custom-exercises-v1.json")
+        self.imageDirectoryURL = directoryURL.appendingPathComponent("CustomExerciseImages", isDirectory: true)
+    }
+
+    func loadExercises() -> [PulsarExercise] {
+        guard let data = try? Data(contentsOf: fileURL),
+              let snapshot = try? decoder.decode(Snapshot.self, from: data),
+              snapshot.schemaVersion == Self.schemaVersion else {
+            return []
+        }
+        return snapshot.exercises
+    }
+
+    func saveExercises(_ exercises: [PulsarExercise]) {
+        do {
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let snapshot = Snapshot(schemaVersion: Self.schemaVersion, exercises: exercises)
+            let data = try encoder.encode(snapshot)
+            try data.write(to: fileURL, options: [.atomic])
+        } catch {
+            assertionFailure("Unable to save custom exercises: \(error.localizedDescription)")
+        }
+    }
+
+    func saveImageData(_ imageData: Data?, exerciseID: String) throws -> String? {
+        guard let imageData else { return nil }
+        try FileManager.default.createDirectory(
+            at: imageDirectoryURL,
+            withIntermediateDirectories: true
+        )
+        let imageURL = imageDirectoryURL.appendingPathComponent("\(exerciseID).jpg")
+        try imageData.write(to: imageURL, options: [.atomic])
+        return imageURL.absoluteString
     }
 }

@@ -44,8 +44,8 @@ final class HeartbeatHapticsManager: ObservableObject {
             let softPulse = CHHapticEvent(
                 eventType: .hapticTransient,
                 parameters: [
-                    CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.34),
-                    CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.22)
+                    CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.22),
+                    CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.12)
                 ],
                 relativeTime: 0
             )
@@ -53,10 +53,10 @@ final class HeartbeatHapticsManager: ObservableObject {
             let strongPulse = CHHapticEvent(
                 eventType: .hapticTransient,
                 parameters: [
-                    CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.82),
-                    CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.38)
+                    CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.38),
+                    CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.20)
                 ],
-                relativeTime: 0.14
+                relativeTime: 0.10
             )
 
             let pattern = try CHHapticPattern(events: [softPulse, strongPulse], parameters: [])
@@ -70,12 +70,12 @@ final class HeartbeatHapticsManager: ObservableObject {
     private func playFallbackHeartbeat() {
         let softPulse = UIImpactFeedbackGenerator(style: .soft)
         softPulse.prepare()
-        softPulse.impactOccurred(intensity: 0.55)
+        softPulse.impactOccurred(intensity: 0.35)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
-            let strongPulse = UIImpactFeedbackGenerator(style: .medium)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) {
+            let strongPulse = UIImpactFeedbackGenerator(style: .light)
             strongPulse.prepare()
-            strongPulse.impactOccurred(intensity: 0.84)
+            strongPulse.impactOccurred(intensity: 0.55)
         }
     }
 }

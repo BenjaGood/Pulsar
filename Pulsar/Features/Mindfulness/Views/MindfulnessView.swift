@@ -135,9 +135,9 @@ struct MindfulnessView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Guided sessions")
-                        .font(.title3.weight(.bold))
+                        .pulsarTextStyle(.sectionTitle)
                     Text("Breath, recovery, focus, and rest")
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -163,7 +163,7 @@ struct MindfulnessView: View {
     private var insightsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Intelligence")
-                .font(.title3.weight(.bold))
+                .pulsarTextStyle(.sectionTitle)
 
             ForEach(store.dashboard.insights) { insight in
                 PulsarMindfulnessInsightCard(insight: insight)
@@ -182,12 +182,12 @@ struct MindfulnessView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Latest session")
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.overline)
                         .foregroundStyle(.secondary)
                     Text(session.title)
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                     Text("\(session.durationText) · \(session.category.title)")
-                        .font(.subheadline)
+                        .pulsarTextStyle(.screenSubtitle)
                         .foregroundStyle(.secondary)
                 }
 

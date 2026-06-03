@@ -79,10 +79,9 @@ struct DailyExerciseProgressSection: View {
             } else {
                 HStack(spacing: 6) {
                     Image(systemName: "dumbbell.fill")
-                        .font(.caption2.weight(.black))
+                        .pulsarTextStyle(.caption)
                     Text("\(viewModel.dailySummaries.count)")
-                        .font(.caption.weight(.black))
-                        .monospacedDigit()
+                        .pulsarMonospacedMetric(.metricLabel)
                 }
                 .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
                 .padding(.horizontal, 10)
@@ -119,9 +118,9 @@ struct DailyExerciseProgressSection: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: metric.symbolName)
-                            .font(.caption2.weight(.black))
+                            .pulsarTextStyle(.caption)
                         Text(metric.title)
-                            .font(.caption.weight(.black))
+                            .pulsarTextStyle(.metricLabel)
                     }
                     .foregroundStyle(metric == selectedMetric ? selectedMetricText : unselectedMetricText)
                     .frame(maxWidth: .infinity)
@@ -265,12 +264,11 @@ private struct DailyProgressDateStrip: View {
                 } label: {
                     VStack(spacing: 7) {
                         Text(daySymbol(for: day))
-                            .font(.caption2.weight(.black))
+                            .pulsarTextStyle(.caption)
                             .foregroundStyle(isSelected(day) ? primaryText : secondaryText)
 
                         Text(dayNumber(for: day))
-                            .font(.subheadline.weight(.black))
-                            .monospacedDigit()
+                            .pulsarMonospacedMetric(.appBodyEmphasis)
                             .foregroundStyle(isSelected(day) ? primaryText : secondaryText)
 
                         HStack(spacing: 3) {
@@ -375,7 +373,7 @@ private struct DailyExerciseProgressCard: View {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(summary.exerciseName)
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(primaryText)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
@@ -385,7 +383,7 @@ private struct DailyExerciseProgressCard: View {
                             .fill(accent)
                             .frame(width: 6, height: 6)
                         Text(summary.muscleGroupName)
-                            .font(.caption.weight(.black))
+                            .pulsarTextStyle(.metricLabel)
                             .foregroundStyle(accent)
                             .lineLimit(1)
                     }
@@ -405,15 +403,14 @@ private struct DailyExerciseProgressCard: View {
             VStack(alignment: .leading, spacing: 9) {
                 HStack {
                     Text(chartTitle)
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.overline)
                         .foregroundStyle(PulsarTheme.fitnessTertiaryText(for: colorScheme))
                         .textCase(.uppercase)
 
                     Spacer()
 
                     Text(bestSetText)
-                        .font(.caption.weight(.black))
-                        .monospacedDigit()
+                        .pulsarMonospacedMetric(.metricLabel)
                         .foregroundStyle(primaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.72)
@@ -526,14 +523,13 @@ private struct DailyExerciseMetricTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(value)
-                .font(.subheadline.weight(.black))
+                .pulsarMonospacedMetric(.appBodyEmphasis)
                 .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
-                .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
 
             Text(title)
-                .font(.caption2.weight(.black))
+                .pulsarTextStyle(.caption)
                 .foregroundStyle(PulsarTheme.fitnessTertiaryText(for: colorScheme))
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -931,6 +931,8 @@ struct HealthDataSourceRouter {
                 text.contains("com.apple.health")
         case .ouraRing:
             return text.contains("oura")
+        case .airPodsPro3:
+            return text.contains("airpods") || text.contains("airpod")
         case .iPhone:
             return text.contains("iphone")
         case .manual:
@@ -1022,6 +1024,8 @@ private extension HealthSourceID {
             return "appleWatchHealthKit"
         case .ouraRing:
             return "ouraRing"
+        case .airPodsPro3:
+            return "airPodsPro3WorkoutBackup"
         case .iPhone:
             return "iPhoneSensors"
         case .manual:
@@ -1048,6 +1052,8 @@ private extension HealthSourceID {
             return "Apple Watch / HealthKit"
         case .ouraRing:
             return "Oura Ring"
+        case .airPodsPro3:
+            return "AirPods Pro 3 workout backup"
         case .iPhone:
             return "iPhone"
         case .manual:

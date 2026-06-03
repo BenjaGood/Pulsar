@@ -27,6 +27,7 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
     private var tickTask: Task<Void, Never>?
     private var restTask: Task<Void, Never>?
     private var stateTickTask: Task<Void, Never>?
+    private var finishFallbackTask: Task<Void, Never>?
     private var isFinishing = false
     private var lastMetricsSentAt = Date.distantPast
 
@@ -239,13 +240,22 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
         await startWorkoutIfNeeded(configuration: Self.strengthConfiguration)
     }
 
-    func completeSet(sessionId: UUID, exerciseId: UUID, setId: UUID) {
+    func completeSet(
+        sessionId: UUID,
+        exerciseId: UUID,
+        setId: UUID,
+        reps: Int? = nil,
+        weight: Double? = nil,
+        sendsAction: Bool = true
+    ) {
         guard var state = syncStore.activeGymState,
               state.sessionId == sessionId,
               !state.isFinished,
               let exerciseIndex = state.exercises.firstIndex(where: { $0.id == exerciseId }),
               let setIndex = state.exercises[exerciseIndex].sets.firstIndex(where: { $0.id == setId }) else {
-            syncStore.sendGymAction(.completeSet(sessionId: sessionId, exerciseId: exerciseId, setId: setId))
+            if sendsAction {
+                syncStore.sendGymAction(.completeSet(sessionId: sessionId, exerciseId: exerciseId, setId: setId, reps: reps, weight: weight))
+            }
             return
         }
 
@@ -253,10 +263,14 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
             return
         }
 
+        let actualReps = max(1, reps ?? state.exercises[exerciseIndex].sets[setIndex].targetReps)
+        let actualWeight = max(0, weight ?? state.exercises[exerciseIndex].sets[setIndex].targetWeight)
+        state.exercises[exerciseIndex].sets[setIndex].targetReps = actualReps
+        state.exercises[exerciseIndex].sets[setIndex].targetWeight = actualWeight
         state.exercises[exerciseIndex].sets[setIndex].isCompleted = true
         state.exercises[exerciseIndex].sets[setIndex].completedAt = Date()
-        state.exercises[exerciseIndex].sets[setIndex].completedReps = state.exercises[exerciseIndex].sets[setIndex].targetReps
-        state.exercises[exerciseIndex].sets[setIndex].completedWeight = state.exercises[exerciseIndex].sets[setIndex].targetWeight
+        state.exercises[exerciseIndex].sets[setIndex].completedReps = actualReps
+        state.exercises[exerciseIndex].sets[setIndex].completedWeight = actualWeight
 
         let restDecision = restDecisionAfterCompleting(exerciseIndex: exerciseIndex, setIndex: setIndex, in: state)
         state = normalizedState(state)
@@ -272,7 +286,68 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
 
         WKInterfaceDevice.current().play(.success)
         syncStore.storeActiveGymState(state, broadcast: true, reason: "watchGymSetCompleted")
-        syncStore.sendGymAction(.completeSet(sessionId: sessionId, exerciseId: exerciseId, setId: setId))
+        if sendsAction {
+            syncStore.sendGymAction(.completeSet(sessionId: sessionId, exerciseId: exerciseId, setId: setId, reps: actualReps, weight: actualWeight))
+        }
+    }
+
+    func updateSetValues(
+        sessionId: UUID,
+        exerciseId: UUID,
+        setId: UUID,
+        reps: Int? = nil,
+        weight: Double? = nil,
+        sendsAction: Bool = true,
+        playsHaptic: Bool = true
+    ) {
+        let nextReps = reps.map { max(1, $0) }
+        let nextWeight = weight.map { max(0, $0) }
+        guard nextReps != nil || nextWeight != nil else { return }
+
+        guard var state = syncStore.activeGymState,
+              state.sessionId == sessionId,
+              !state.isFinished,
+              let exerciseIndex = state.exercises.firstIndex(where: { $0.id == exerciseId }),
+              let setIndex = state.exercises[exerciseIndex].sets.firstIndex(where: { $0.id == setId }) else {
+            if sendsAction {
+                syncStore.sendGymAction(.updateSetValues(sessionId: sessionId, exerciseId: exerciseId, setId: setId, reps: nextReps, weight: nextWeight))
+            }
+            return
+        }
+
+        var didUpdate = false
+        if let nextReps {
+            if state.exercises[exerciseIndex].sets[setIndex].targetReps != nextReps {
+                state.exercises[exerciseIndex].sets[setIndex].targetReps = nextReps
+                didUpdate = true
+            }
+            if state.exercises[exerciseIndex].sets[setIndex].isCompleted,
+               state.exercises[exerciseIndex].sets[setIndex].completedReps != nextReps {
+                state.exercises[exerciseIndex].sets[setIndex].completedReps = nextReps
+                didUpdate = true
+            }
+        }
+        if let nextWeight {
+            if state.exercises[exerciseIndex].sets[setIndex].targetWeight != nextWeight {
+                state.exercises[exerciseIndex].sets[setIndex].targetWeight = nextWeight
+                didUpdate = true
+            }
+            if state.exercises[exerciseIndex].sets[setIndex].isCompleted,
+               state.exercises[exerciseIndex].sets[setIndex].completedWeight != nextWeight {
+                state.exercises[exerciseIndex].sets[setIndex].completedWeight = nextWeight
+                didUpdate = true
+            }
+        }
+
+        guard didUpdate else { return }
+        state = normalizedState(state)
+        if playsHaptic {
+            WKInterfaceDevice.current().play(.click)
+        }
+        syncStore.storeActiveGymState(state, broadcast: true, reason: "watchGymSetAdjusted")
+        if sendsAction {
+            syncStore.sendGymAction(.updateSetValues(sessionId: sessionId, exerciseId: exerciseId, setId: setId, reps: nextReps, weight: nextWeight))
+        }
     }
 
     func skipRest(sessionId: UUID) {
@@ -290,7 +365,6 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
         WKInterfaceDevice.current().play(.stop)
         syncStore.sendGymAction(.finishWorkout(sessionId: sessionId))
         await finishCurrentWorkoutIfNeeded()
-        markActiveStateFinished(workoutUUID: nil)
     }
 
     func finishCurrentWorkoutIfNeeded() async {
@@ -298,8 +372,7 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
             markActiveStateFinished(workoutUUID: nil)
             return
         }
-        workoutSession?.end()
-        await finishWorkout()
+        requestWorkoutSessionStop(reason: "watchGymFinish")
     }
 
     private func startWorkoutIfNeeded(configuration: HKWorkoutConfiguration) async {
@@ -695,21 +768,28 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
     }
 
     private func handle(_ action: ActiveGymWorkoutAction) async {
-        if let sessionId = action.sessionId {
-            activeSessionId = activeSessionId ?? sessionId
-        }
-
         switch action.kind {
         case .finishWorkout:
+            guard shouldHandleSessionScopedAction(action, reason: "watchGymFinishFromPhone") != nil else { return }
             await finishCurrentWorkoutIfNeeded()
         case .requestState:
+            activeSessionId = activeSessionId ?? action.sessionId
             syncStore.sendGymAction(.requestState(sessionId: activeSessionId))
         case .skipRestTimer:
-            if let sessionId = action.sessionId {
+            if let sessionId = shouldHandleSessionScopedAction(action, reason: "watchGymRestSkippedFromPhone") {
                 clearRest(sessionId: sessionId, reason: "watchGymRestSkippedFromPhone")
             }
+        case .updateSetValues:
+            guard let sessionId = shouldHandleSessionScopedAction(action, reason: "watchGymSetAdjustedFromPhone"),
+                  let exerciseId = action.exerciseId,
+                  let setId = action.setId else { return }
+            updateSetValues(sessionId: sessionId, exerciseId: exerciseId, setId: setId, reps: action.setReps, weight: action.setWeight, sendsAction: false, playsHaptic: false)
+        case .completeSet:
+            guard let sessionId = shouldHandleSessionScopedAction(action, reason: "watchGymSetCompletedFromPhone"),
+                  let exerciseId = action.exerciseId,
+                  let setId = action.setId else { return }
+            completeSet(sessionId: sessionId, exerciseId: exerciseId, setId: setId, reps: action.setReps, weight: action.setWeight, sendsAction: false)
         case .metricsUpdated,
-             .completeSet,
              .requestSavedRoutines,
              .startFreeWorkoutFromWatch,
              .startSavedRoutineFromWatch:
@@ -717,19 +797,43 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
         }
     }
 
+    private func shouldHandleSessionScopedAction(_ action: ActiveGymWorkoutAction, reason: String) -> UUID? {
+        guard let incomingSessionId = action.sessionId else {
+            PulsarSyncDebugLogger.log("Watch Gym action ignored because it has no session kind=\(action.kind.rawValue) reason=\(reason)")
+            return nil
+        }
+        guard let activeSessionId else {
+            PulsarSyncDebugLogger.log("Watch Gym action ignored because no local session is active kind=\(action.kind.rawValue) session=\(incomingSessionId.uuidString) reason=\(reason)")
+            return nil
+        }
+        guard activeSessionId == incomingSessionId else {
+            PulsarSyncDebugLogger.log("Watch Gym action ignored because session does not match kind=\(action.kind.rawValue) incoming=\(incomingSessionId.uuidString) active=\(activeSessionId.uuidString) reason=\(reason)")
+            return nil
+        }
+        return incomingSessionId
+    }
+
     private func finishWorkout() async {
         guard !isFinishing, workoutSession != nil || workoutBuilder != nil else { return }
         isFinishing = true
+        let session = workoutSession
+        let builder = workoutBuilder
         tickTask?.cancel()
         tickTask = nil
         stateTickTask?.cancel()
         stateTickTask = nil
+        finishFallbackTask?.cancel()
+        finishFallbackTask = nil
         stopRest()
 
         let end = Date()
+        defer {
+            session?.end()
+            PulsarSyncDebugLogger.log("[PulsarWorkoutLifecycle] Watch Gym HealthKit session ended after builder finish session=\(activeSessionId?.uuidString ?? "none")")
+        }
         do {
-            try await workoutBuilder?.endCollection(at: end)
-            let workout = try await workoutBuilder?.finishWorkout()
+            try await builder?.endCollection(at: end)
+            let workout = try await builder?.finishWorkout()
             sendMetricsIfNeeded(force: true, workoutUUID: workout?.uuid)
             markActiveStateFinished(workoutUUID: workout?.uuid)
             WKInterfaceDevice.current().play(.success)
@@ -747,11 +851,59 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
         tickTask = nil
         stateTickTask?.cancel()
         stateTickTask = nil
+        finishFallbackTask?.cancel()
+        finishFallbackTask = nil
         stopRest()
         workoutSession = nil
         workoutBuilder = nil
         startedAt = nil
         isFinishing = false
+    }
+
+    private func requestWorkoutSessionStop(reason: String) {
+        guard let workoutSession else {
+            PulsarSyncDebugLogger.log("[PulsarWorkoutLifecycle] Watch Gym HealthKit stop skipped because session is nil reason=\(reason) session=\(activeSessionId?.uuidString ?? "none")")
+            Task { await finishWorkout() }
+            return
+        }
+        switch workoutSession.state {
+        case .ended, .stopped:
+            PulsarSyncDebugLogger.log("[PulsarWorkoutLifecycle] Watch Gym HealthKit stop skipped because session is already terminal reason=\(reason) state=\(Self.describe(workoutSession.state)) session=\(activeSessionId?.uuidString ?? "none")")
+            Task { await finishWorkout() }
+        default:
+            workoutSession.stopActivity(with: Date())
+            PulsarSyncDebugLogger.log("[PulsarWorkoutLifecycle] Watch Gym HealthKit stopActivity requested reason=\(reason) state=\(Self.describe(workoutSession.state)) session=\(activeSessionId?.uuidString ?? "none")")
+            finishFallbackTask?.cancel()
+            finishFallbackTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                await MainActor.run {
+                    guard let self,
+                          !self.isFinishing,
+                          self.workoutSession != nil || self.workoutBuilder != nil else { return }
+                    PulsarSyncDebugLogger.log("[PulsarWorkoutLifecycle] Watch Gym stopped callback timed out; finishing builder fallback session=\(self.activeSessionId?.uuidString ?? "none")")
+                    Task { await self.finishWorkout() }
+                }
+            }
+        }
+    }
+
+    private static func describe(_ state: HKWorkoutSessionState) -> String {
+        switch state {
+        case .notStarted:
+            "notStarted"
+        case .prepared:
+            "prepared"
+        case .running:
+            "running"
+        case .paused:
+            "paused"
+        case .stopped:
+            "stopped"
+        case .ended:
+            "ended"
+        @unknown default:
+            "unknown(\(state.rawValue))"
+        }
     }
 
     private static let strengthConfiguration: HKWorkoutConfiguration = {
@@ -782,8 +934,10 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
 extension WatchGymSessionManager: HKWorkoutSessionDelegate {
     nonisolated func workoutSession(_ workoutSession: HKWorkoutSession, didChangeTo toState: HKWorkoutSessionState, from fromState: HKWorkoutSessionState, date: Date) {
         Task { @MainActor in
-            if toState == .ended {
+            if toState == .stopped {
                 await self.finishWorkout()
+            } else if toState == .ended {
+                PulsarSyncDebugLogger.log("[PulsarWorkoutLifecycle] Watch Gym HealthKit session ended callback session=\(self.activeSessionId?.uuidString ?? "none")")
             }
         }
     }

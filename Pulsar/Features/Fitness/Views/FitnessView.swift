@@ -240,7 +240,7 @@ struct FitnessView: View {
 private struct FitnessPageTitleHeader: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            FitnessRunnerGlyph()
+            RunningGlyphView()
                 .frame(width: 32, height: 28)
                 .alignmentGuide(.firstTextBaseline) { dimensions in
                     dimensions[VerticalAlignment.center] + 7
@@ -248,7 +248,7 @@ private struct FitnessPageTitleHeader: View {
                 .accessibilityHidden(true)
 
             Text("Fitness")
-                .font(.largeTitle.weight(.bold))
+                .pulsarTextStyle(.screenTitle)
                 .foregroundStyle(.primary)
         }
         .accessibilityElement(children: .ignore)
@@ -257,51 +257,14 @@ private struct FitnessPageTitleHeader: View {
     }
 }
 
-private struct FitnessRunnerGlyph: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isStriding = false
+struct RunningGlyphView: View {
+    var tint: Color = .primary
 
-    @ViewBuilder
     var body: some View {
-        if reduceMotion {
-            runnerSymbol
-        } else {
-            runnerSymbol
-                .rotationEffect(.degrees(isStriding ? -4 : 3), anchor: .bottom)
-                .offset(y: isStriding ? -1.6 : 0.9)
-                .scaleEffect(
-                    x: isStriding ? 1.015 : 0.985,
-                    y: isStriding ? 0.985 : 1.015,
-                    anchor: .bottom
-                )
-                .symbolEffect(.bounce.up.byLayer, options: .speed(1.28).repeating, isActive: true)
-                .animation(
-                    .easeInOut(duration: 0.38).repeatForever(autoreverses: true),
-                    value: isStriding
-                )
-                .onAppear {
-                    startRunningAnimation()
-                }
-                .onChange(of: reduceMotion) { _, isReduced in
-                    if isReduced {
-                        isStriding = false
-                    } else {
-                        startRunningAnimation()
-                }
-            }
-        }
-    }
-
-    private func startRunningAnimation() {
-        guard !reduceMotion else { return }
-        isStriding = true
-    }
-
-    private var runnerSymbol: some View {
         Image(systemName: "figure.run")
             .font(.system(size: 27, weight: .semibold))
             .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(.primary)
+            .foregroundStyle(tint)
             .frame(width: 32, height: 28)
     }
 }

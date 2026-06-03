@@ -43,6 +43,7 @@ struct OuraDataMapper {
             syncedAt: syncedAt
         )
         let samples = makeCanonicalSamples(
+            dayKey: dayKey,
             sleepMetric: sleepMetric,
             recoveryMetric: recoveryMetric,
             strainMetric: strainMetric,
@@ -627,6 +628,7 @@ struct OuraDataMapper {
     }
 
     private func makeCanonicalSamples(
+        dayKey: String,
         sleepMetric: PulsarSleepSyncMetric?,
         recoveryMetric: PulsarRecoverySyncMetric?,
         strainMetric: PulsarStrainSyncMetric?,
@@ -641,23 +643,23 @@ struct OuraDataMapper {
             samples.append(sample(metric: .sleep, recordID: "oura-sleep-\(sleepMetric.sleepDateKey)", start: sleepMetric.sleepStart, end: sleepMetric.sleepEnd, value: sleepMetric.totalSleepMinutes, unit: "min", syncedAt: syncedAt))
         }
         if let recoveryMetric {
-            samples.append(sample(metric: .recovery, recordID: "oura-recovery-\(recoveryMetric.computedAt.timeIntervalSinceReferenceDate)", start: recoveryMetric.computedAt, value: Double(recoveryMetric.score), unit: "score", syncedAt: syncedAt))
+            samples.append(sample(metric: .recovery, recordID: "oura-recovery-\(dayKey)", start: recoveryMetric.computedAt, value: Double(recoveryMetric.score), unit: "score", syncedAt: syncedAt))
             if let hrv = recoveryMetric.hrvSDNN {
-                samples.append(sample(metric: .hrv, recordID: "oura-hrv-\(recoveryMetric.computedAt.timeIntervalSinceReferenceDate)", start: recoveryMetric.computedAt, value: hrv, unit: "ms", syncedAt: syncedAt))
+                samples.append(sample(metric: .hrv, recordID: "oura-hrv-\(dayKey)", start: recoveryMetric.computedAt, value: hrv, unit: "ms", syncedAt: syncedAt))
             }
             if let restingHeartRate = recoveryMetric.restingHeartRate {
-                samples.append(sample(metric: .restingHeartRate, recordID: "oura-rhr-\(recoveryMetric.computedAt.timeIntervalSinceReferenceDate)", start: recoveryMetric.computedAt, value: restingHeartRate, unit: "bpm", syncedAt: syncedAt))
+                samples.append(sample(metric: .restingHeartRate, recordID: "oura-rhr-\(dayKey)", start: recoveryMetric.computedAt, value: restingHeartRate, unit: "bpm", syncedAt: syncedAt))
             }
         }
         if let strainMetric {
-            samples.append(sample(metric: .activity, recordID: "oura-activity-\(strainMetric.computedAt.timeIntervalSinceReferenceDate)", start: strainMetric.computedAt, value: Double(strainMetric.steps), unit: "steps", syncedAt: syncedAt))
+            samples.append(sample(metric: .activity, recordID: "oura-activity-\(dayKey)", start: strainMetric.computedAt, value: Double(strainMetric.steps), unit: "steps", syncedAt: syncedAt))
         }
         if let stressMetric {
-            samples.append(sample(metric: .stress, recordID: "oura-stress-\(stressMetric.computedAt.timeIntervalSinceReferenceDate)", start: stressMetric.computedAt, value: Double(stressMetric.score), unit: "score", syncedAt: syncedAt))
+            samples.append(sample(metric: .stress, recordID: "oura-stress-\(dayKey)", start: stressMetric.computedAt, value: Double(stressMetric.score), unit: "score", syncedAt: syncedAt))
         }
         if let healthMonitorMetric {
             for value in healthMonitorMetric.metrics where value.value != nil {
-                samples.append(sample(metric: metricType(for: value.kind), recordID: "oura-\(value.kind.rawValue)-\(healthMonitorMetric.computedAt.timeIntervalSinceReferenceDate)", start: healthMonitorMetric.computedAt, value: value.value, unit: nil, syncedAt: syncedAt))
+                samples.append(sample(metric: metricType(for: value.kind), recordID: "oura-\(value.kind.rawValue)-\(dayKey)", start: healthMonitorMetric.computedAt, value: value.value, unit: nil, syncedAt: syncedAt))
             }
         }
         for heartRate in heartRates {

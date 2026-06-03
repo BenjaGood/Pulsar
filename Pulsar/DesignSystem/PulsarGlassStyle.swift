@@ -137,12 +137,11 @@ struct PlaceholderMetricCard: View {
             }
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.headline)
+                    .pulsarTextStyle(.cardTitle)
                 Text(value)
-                    .font(.largeTitle.weight(.semibold))
-                    .monospacedDigit()
+                    .pulsarMonospacedMetric(.metricValue)
                 Text(subtitle)
-                    .font(.footnote)
+                    .pulsarTextStyle(.caption)
                     .foregroundStyle(.secondary)
             }
         }

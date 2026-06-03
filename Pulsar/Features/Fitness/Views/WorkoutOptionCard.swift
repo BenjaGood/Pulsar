@@ -29,13 +29,13 @@ struct WorkoutOptionCard: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(workout.name)
-                        .font(.subheadline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(primaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.82)
 
                     Text(workout.category)
-                        .font(.caption.weight(.bold))
+                        .pulsarTextStyle(.overline)
                         .foregroundStyle(workout.accent.color)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 5)

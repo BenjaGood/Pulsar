@@ -86,7 +86,13 @@ final class HomeViewModel: ObservableObject {
     private var healthKitAnchors: [String: HKQueryAnchor] = [:]
     private var deferredSilentSyncTask: Task<Void, Never>?
     private var liveStressRefreshTask: Task<Void, Never>?
+    private var healthKitRefreshDebounceTask: Task<Void, Never>?
+    private var pendingHealthKitRefreshMetrics = Set<String>()
+    private var pendingHealthKitRefreshNeedsStress = false
+    private var recentHealthKitChangeFingerprints: [String: String] = [:]
     private var lastLiveStressRefreshAt: Date?
+    private static let healthKitUpdateDebounceInterval: TimeInterval = 1.25
+    private static let healthKitUpdateLowPowerDebounceInterval: TimeInterval = 3.0
 
     init(profileStore: ProfileStore? = nil, healthKit: HealthKitGateway = HealthKitGateway(), sleepDataService: SleepSummaryProviding? = nil, strainDataService: StrainSummaryProviding? = nil, recoveryDataService: RecoverySummaryProviding? = nil, stressDataService: StressSummaryProviding? = nil, healthMonitorDataService: HealthMonitorSummaryProviding? = nil, healthEventMonitor: HealthEventMonitor? = nil, lifecycleStore: AppLifecycleStore? = nil, syncStore: PulsarWatchConnectivitySyncStore? = nil, dashboardCache: PulsarDashboardCache? = nil, dailyHistoryStore: DailyHealthHistoryStore? = nil, bannerCenter: PulsarSyncBannerCenter? = nil, ouraSyncService: OuraSyncServicing? = nil, sourcePriorityStore: HealthSourcePriorityStore? = nil, syncPolicy: PulsarSyncPolicy = PulsarSyncPolicy(), calendar: Calendar = .current, defaults: UserDefaults = .standard) {
         self.profileStore = profileStore ?? ProfileStore()
@@ -133,6 +139,7 @@ final class HomeViewModel: ObservableObject {
     deinit {
         deferredSilentSyncTask?.cancel()
         liveStressRefreshTask?.cancel()
+        healthKitRefreshDebounceTask?.cancel()
     }
 
     func refreshProfileFromStore() {
@@ -166,6 +173,7 @@ final class HomeViewModel: ObservableObject {
             date: selectedDate,
             recoveryScore: dashboard.recovery.score > 0 ? dashboard.recovery.score : nil,
             recentStrainScores: recentStrainScores(before: selectedDate),
+            adaptivePlan: adaptiveStrainPlan(for: selectedDate),
             provider: strainDataService,
             calendar: calendar,
             canRequestHealthData: lifecycleStore.hasSeenHealthKitOnboarding
@@ -383,7 +391,9 @@ final class HomeViewModel: ObservableObject {
                 didBuildValidPayload = didBuildValidPayload || ouraPayload.hasValidData
                 let didCommitOuraPayload = syncStore.storeLocalPayload(ouraPayload, broadcast: true, reason: "OuraCloudSync")
                 didCommitDailyMetrics = didCommitDailyMetrics || (ouraPayload.hasCompleteDailyScores && didCommitOuraPayload)
-                upsertDailyRecordIfUsable(ouraPayload)
+                if didCommitOuraPayload {
+                    upsertDailyRecordIfUsable(ouraPayload)
+                }
                 healthKitStatus = "HealthKit connected · Oura synced"
                 PulsarOuraLogger.log("Oura payload committed dateKey=\(ouraPayload.resolvedDateKey) session=\(ouraPayload.syncSessionID?.uuidString ?? "none")")
             }
@@ -429,18 +439,64 @@ final class HomeViewModel: ObservableObject {
         let changes = await healthKit.anchoredChanges(for: sampleType, anchor: healthKitAnchors[anchorKey], start: start)
         healthKitAnchors[anchorKey] = changes.newAnchor
         PulsarHealthKitLogger.log("Anchored update received metric=\(metric) samples=\(changes.samples.count) deleted=\(changes.deletedObjects.count)")
+        guard !changes.samples.isEmpty || !changes.deletedObjects.isEmpty else {
+            return
+        }
+        let fingerprint = healthKitChangeFingerprint(samples: changes.samples, deletedObjects: changes.deletedObjects)
+        guard recentHealthKitChangeFingerprints[anchorKey] != fingerprint else {
+            PulsarHealthKitLogger.log("Duplicate anchored update ignored metric=\(metric) samples=\(changes.samples.count) deleted=\(changes.deletedObjects.count)")
+            return
+        }
+        recentHealthKitChangeFingerprints[anchorKey] = fingerprint
         await healthEventMonitor.processObservedChange(
             sampleType: sampleType,
             profile: profileStore.profile,
             dashboard: dashboard
         )
-        guard !changes.samples.isEmpty || !changes.deletedObjects.isEmpty else {
-            return
+        scheduleCoalescedHealthKitRefresh(
+            metric: metric,
+            needsStressRefresh: isStressRelevantSampleType(sampleType)
+        )
+    }
+
+    private func healthKitChangeFingerprint(samples: [HKSample], deletedObjects: [HKDeletedObject]) -> String {
+        let sampleIDs = samples.map { "s:\($0.uuid.uuidString)" }.sorted()
+        let deletedIDs = deletedObjects.map { "d:\($0.uuid.uuidString)" }.sorted()
+        return (sampleIDs + deletedIDs).joined(separator: "|")
+    }
+
+    private func scheduleCoalescedHealthKitRefresh(metric: String, needsStressRefresh: Bool) {
+        pendingHealthKitRefreshMetrics.insert(metric)
+        pendingHealthKitRefreshNeedsStress = pendingHealthKitRefreshNeedsStress || needsStressRefresh
+        healthKitRefreshDebounceTask?.cancel()
+        let delay = ProcessInfo.processInfo.isLowPowerModeEnabled
+            ? Self.healthKitUpdateLowPowerDebounceInterval
+            : Self.healthKitUpdateDebounceInterval
+        healthKitRefreshDebounceTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await self?.runCoalescedHealthKitRefresh()
         }
-        if isStressRelevantSampleType(sampleType) {
-            await refreshLiveStress(reason: "healthKitAnchoredUpdate:\(metric)", force: true)
+    }
+
+    private func runCoalescedHealthKitRefresh() async {
+        healthKitRefreshDebounceTask = nil
+        guard !Task.isCancelled else { return }
+        let metrics = pendingHealthKitRefreshMetrics.sorted()
+        let needsStressRefresh = pendingHealthKitRefreshNeedsStress
+        pendingHealthKitRefreshMetrics.removeAll()
+        pendingHealthKitRefreshNeedsStress = false
+        guard !metrics.isEmpty else { return }
+
+        let reason = "healthKitAnchoredUpdate:\(metrics.joined(separator: ","))"
+        if needsStressRefresh {
+            await refreshLiveStress(reason: reason, force: true)
         }
-        await requestSilentSync(reason: "healthKitAnchoredUpdate:\(metric)")
+        await requestSilentSync(reason: reason)
     }
 
     private func startLiveStressUpdates() {
@@ -546,17 +602,21 @@ final class HomeViewModel: ObservableObject {
     private func buildHealthKitDashboard(profile: UserProfile, date: Date, wakeUpDate: Date, generatedAt: Date) async throws -> HomeDashboard {
         async let sleepTask = sleepDataService.sleepSummary(profile: profile, wakeUpDate: wakeUpDate, calendar: calendar, refreshedAt: generatedAt)
         async let strainTask = strainDataService.strainSummary(profile: profile, date: date, calendar: calendar, refreshedAt: generatedAt)
-        async let recoveryTask = recoveryDataService.recoverySummary(profile: profile, date: date, calendar: calendar, refreshedAt: generatedAt)
-        let (sleep, strain, recovery) = try await (sleepTask, strainTask, recoveryTask)
-        let stress = try await stressDataService.stressSummary(profile: profile, date: date, calendar: calendar, refreshedAt: generatedAt, sleep: sleep, strain: strain)
-        let healthMonitor = await healthMonitorDataService.healthMonitorSummary(
+        let (sleep, strain) = try await (sleepTask, strainTask)
+        let recentStrainRecords = strainRecords
+        async let recoveryTask = recoveryDataService.recoverySummary(profile: profile, date: date, calendar: calendar, refreshedAt: generatedAt, sleep: sleep, strain: strain)
+        async let stressTask = stressDataService.stressSummary(profile: profile, date: date, calendar: calendar, refreshedAt: generatedAt, sleep: sleep, strain: strain)
+        async let healthMonitorTask = healthMonitorDataService.healthMonitorSummary(
             profile: profile,
             date: date,
             calendar: calendar,
             refreshedAt: generatedAt,
             sleep: sleep,
-            history: strainRecords
+            history: recentStrainRecords
         )
+        let recovery = try await recoveryTask
+        let stress = try await stressTask
+        let healthMonitor = await healthMonitorTask
         let dashboard = HomeDashboard(profile: profile, sleep: sleep, recovery: recovery, strain: strain, stress: stress, healthMonitor: healthMonitor, generatedAt: generatedAt, usingSampleData: false)
         upsertDailyRecordIfUsable(dashboard, date: date)
         return dashboard
@@ -699,7 +759,8 @@ final class HomeViewModel: ObservableObject {
         guard ouraConnectionStore.storedToken != nil else { return false }
         return HealthSourcePriorityCategory.allCases.contains {
             let preference = sourcePriorityStore.preference(for: $0)
-            return preference.currentSource == .ouraRing || $0.fallbackOrder.contains(.ouraRing)
+            return preference.currentSource == .ouraRing ||
+                (preference.fallbackEnabled && $0.fallbackOrder.contains(.ouraRing))
         }
     }
 
@@ -1384,6 +1445,7 @@ final class HomeViewModel: ObservableObject {
             .compactMap { $0?.lowercased() }
             .joined(separator: " ")
         if text.contains("oura") { return .ouraRing }
+        if text.contains("airpods") || text.contains("airpod") { return .airPodsPro3 }
         if first.isAppleWatchLike || text.contains("watch") || text.contains("healthkit") || text.contains("apple health") {
             return .appleWatch
         }
@@ -1414,7 +1476,7 @@ final class HomeViewModel: ObservableObject {
     private func logStrainValidation(dashboard: HomeDashboard, context: String) {
         let strain = dashboard.strain
         let recoveryScore = dashboard.recovery.score > 0 ? dashboard.recovery.score : nil
-        let targetRange = PulsarSharedMetricCalculator.recommendedStrainTargetRange(forRecoveryScore: recoveryScore, recentStrainScores: recentStrainScores(before: selectedDate))
+        let targetRange = adaptiveStrainPlan(for: selectedDate)?.recommendedRange
         let zoneMinutes = strain.timeInZones
             .filter { $0.minutes > 0 }
             .map { "z\($0.zone)=\(Int($0.minutes.rounded()))m" }
@@ -1422,22 +1484,38 @@ final class HomeViewModel: ObservableObject {
         PulsarSyncDebugLogger.log("strain validation context=\(context) workoutsToday=\(strain.workouts.count) activeEnergy=\(Int((strain.activeEnergyKilocalories ?? 0).rounded())) totalEnergy=\((strain.activeEnergyKilocalories ?? 0) + (strain.basalEnergyKilocalories ?? 0) > 0 ? String(Int(((strain.activeEnergyKilocalories ?? 0) + (strain.basalEnergyKilocalories ?? 0)).rounded())) : "nil") exerciseMinutes=\(Int(strain.exerciseMinutes.rounded())) steps=\(strain.steps) averageHeartRate=\(strain.averageActiveHeartRate.map { String(Int($0.rounded())) } ?? "nil") maxHeartRate=\(strain.peakHeartRate.map { String(Int($0.rounded())) } ?? "nil") timeInZones=\(zoneMinutes.isEmpty ? "none" : zoneMinutes) activeLoad=\(String(format: "%.1f", strain.workoutLoad)) passiveLoad=\(String(format: "%.1f", strain.movementLoad)) rawLoad=\(String(format: "%.1f", strain.rawLoad)) recoveryScore=\(recoveryScore.map(String.init) ?? "nil") finalCurrentStrain=\(strain.score) targetStrainRange=\(targetRange?.displayText ?? "nil")")
     }
 
-    func recommendedStrainTargetRange(for date: Date? = nil) -> PulsarSharedStrainTargetRange? {
+    func adaptiveStrainPlan(for date: Date? = nil) -> AdaptiveStrainPlan? {
         let day = calendar.startOfDay(for: date ?? selectedDate)
-        let recoveryScore = dashboard.recovery.score > 0 ? dashboard.recovery.score : nil
-        return PulsarSharedMetricCalculator.recommendedStrainTargetRange(
-            forRecoveryScore: recoveryScore,
-            recentStrainScores: recentStrainScores(before: day)
+        return AdaptiveStrainGuard().makePlan(
+            input: AdaptiveStrainGuardInput(
+                profile: profileStore.profile,
+                sleep: dashboard.sleep,
+                recovery: dashboard.recovery,
+                strain: dashboard.strain,
+                stress: dashboard.stress,
+                recentRecords: recentDailyRecords(before: day, limit: 28),
+                date: day,
+                calendar: calendar,
+                generatedAt: dashboard.generatedAt
+            )
         )
     }
 
+    func recommendedStrainTargetRange(for date: Date? = nil) -> PulsarSharedStrainTargetRange? {
+        adaptiveStrainPlan(for: date)?.recommendedRange
+    }
+
     private func recentStrainScores(before date: Date) -> [Int] {
+        recentDailyRecords(before: date, limit: 7)
+            .map(\.strainScore)
+    }
+
+    private func recentDailyRecords(before date: Date, limit: Int) -> [DailyStrainRecord] {
         let day = calendar.startOfDay(for: date)
-        return strainRecords
+        return Array(strainRecords
             .filter { $0.date < day && $0.strainScore > 0 }
             .sorted { $0.date < $1.date }
-            .suffix(7)
-            .map(\.strainScore)
+            .suffix(limit))
     }
 
     private func latestVisibleMetricTimestamp(in dashboard: HomeDashboard) -> Date {

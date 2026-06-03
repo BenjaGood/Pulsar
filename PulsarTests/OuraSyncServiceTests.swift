@@ -54,6 +54,28 @@ struct OuraSyncServiceTests {
         #expect(OuraDateParser.dayString(for: startDate, calendar: calendar) == OuraDateParser.dayString(for: calendar.date(byAdding: .day, value: -3, to: date)!, calendar: calendar))
     }
 
+    @Test func automaticSyncReusesRecentCoveredWindow() async throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let date = Date()
+        let tokenStore = OuraInMemoryTokenStore(token: validToken())
+        let connectionStore = OuraConnectionStore(defaults: ephemeralDefaults(), tokenStorage: tokenStore)
+        let authService = OuraAuthService(
+            configuration: testConfiguration(),
+            tokenStorage: tokenStore,
+            backendClient: FakeBackend(),
+            connectionStore: connectionStore
+        )
+        let client = RecordingOuraAPIClient()
+        let service = OuraSyncService(apiClient: client, authService: authService, connectionStore: connectionStore)
+
+        _ = try await service.sync(date: date, calendar: calendar, reason: "initialAppEntry")
+        _ = try await service.sync(date: date, calendar: calendar, reason: "appBecameActive")
+
+        #expect(client.startDates.count == 1)
+        #expect(client.endDates.count == 1)
+    }
+
     private func validToken() -> OuraStoredToken {
         OuraStoredToken(
             accessToken: "access",

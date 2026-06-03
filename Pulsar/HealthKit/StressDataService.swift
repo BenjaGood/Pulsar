@@ -521,7 +521,6 @@ enum StressInputFingerprint {
     nonisolated private static func signals(_ value: StressDailySignals) -> String {
         [
             "d:\(date(value.date))",
-            "computed:\(date(value.computedAt))",
             "hrv:\(number(value.heartRateVariabilitySDNN))",
             "hrvAt:\(date(value.heartRateVariabilityTimestamp))",
             "rhr:\(number(value.restingHeartRate))",

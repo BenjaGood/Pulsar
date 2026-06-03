@@ -7,6 +7,13 @@ import Foundation
 
 protocol RecoverySummaryProviding {
     func recoverySummary(profile: UserProfile, date: Date, calendar: Calendar, refreshedAt: Date) async throws -> RecoverySummary
+    func recoverySummary(profile: UserProfile, date: Date, calendar: Calendar, refreshedAt: Date, sleep: SleepSummary, strain: StrainSummary) async throws -> RecoverySummary
+}
+
+extension RecoverySummaryProviding {
+    func recoverySummary(profile: UserProfile, date: Date, calendar: Calendar, refreshedAt: Date, sleep _: SleepSummary, strain _: StrainSummary) async throws -> RecoverySummary {
+        try await recoverySummary(profile: profile, date: date, calendar: calendar, refreshedAt: refreshedAt)
+    }
 }
 
 struct RecoveryDataService: RecoverySummaryProviding {
@@ -21,32 +28,44 @@ struct RecoveryDataService: RecoverySummaryProviding {
     }
 
     func recoverySummary(profile: UserProfile, date: Date, calendar: Calendar, refreshedAt: Date) async throws -> RecoverySummary {
-        let interval = queryInterval(for: date, calendar: calendar, refreshedAt: refreshedAt)
         async let sleep = sleepDataService.sleepSummary(profile: profile, wakeUpDate: date, calendar: calendar, refreshedAt: refreshedAt)
         async let strain = strainDataService.strainSummary(profile: profile, date: date, calendar: calendar, refreshedAt: refreshedAt)
+        let values = try await (sleep, strain)
+        return try await recoverySummary(
+            profile: profile,
+            date: date,
+            calendar: calendar,
+            refreshedAt: refreshedAt,
+            sleep: values.0,
+            strain: values.1
+        )
+    }
+
+    func recoverySummary(profile: UserProfile, date: Date, calendar: Calendar, refreshedAt: Date, sleep: SleepSummary, strain: StrainSummary) async throws -> RecoverySummary {
+        let interval = queryInterval(for: date, calendar: calendar, refreshedAt: refreshedAt)
         async let biometrics = healthKit.fetchDailyBiometrics(date: date, calendar: calendar)
         async let baseline = baselineDays(before: interval.start, calendar: calendar)
         async let trend = trendDays(endingAt: interval.start, calendar: calendar)
 
-        let values = try await (sleep, strain, biometrics, baseline, trend)
-        PulsarSyncDebugLogger.log("samples loaded for recovery: baselineDays=\(values.3.count) trendDays=\(values.4.count) sleepScore=\(values.0.score) strainScore=\(values.1.score) hrv=\(values.2.hrvSDNNMilliseconds.map { Int($0.rounded()) } ?? 0)")
+        let values = try await (biometrics, baseline, trend)
+        PulsarSyncDebugLogger.log("samples loaded for recovery: baselineDays=\(values.1.count) trendDays=\(values.2.count) sleepScore=\(sleep.score) strainScore=\(strain.score) hrv=\(values.0.hrvSDNNMilliseconds.map { Int($0.rounded()) } ?? 0)")
         var summary = RecoveryAnalyzer().analyze(
             RecoveryAnalysisInput(
                 date: date,
-                biometrics: values.2,
-                baselineDays: values.3,
-                trendDays: values.4,
-                sleep: values.0,
-                strain: values.1,
+                biometrics: values.0,
+                baselineDays: values.1,
+                trendDays: values.2,
+                sleep: sleep,
+                strain: strain,
                 queryInterval: interval,
                 refreshedAt: refreshedAt
             )
         )
         if let sharedMetric = sharedRecoveryMetric(
-            biometrics: values.2,
-            baselineDays: values.3,
-            sleep: values.0,
-            strain: values.1,
+            biometrics: values.0,
+            baselineDays: values.1,
+            sleep: sleep,
+            strain: strain,
             computedAt: refreshedAt
         ) {
             summary = summary.applying(sharedMetric: sharedMetric)

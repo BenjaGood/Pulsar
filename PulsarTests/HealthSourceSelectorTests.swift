@@ -801,6 +801,129 @@ struct HealthSourceSelectorTests {
         #expect(HealthSourceDisplayCopy.activeSourceTitle == "Active Source")
     }
 
+    @Test func airPodsPro3NeverBecomeDailySourceOutsideWorkout() {
+        let now = Date(timeIntervalSinceReferenceDate: 10_000)
+        let selector = ActiveSourceSelector()
+        let automaticSource = selector.activeSource(
+            for: .heartRate,
+            mode: .automatic,
+            snapshots: [
+                snapshot(.appleWatch, metrics: [.heartRate], lastSyncAt: now.addingTimeInterval(-8 * 60 * 60)),
+                snapshot(.airPodsPro3, metrics: [.heartRate], lastSyncAt: now)
+            ],
+            now: now
+        )
+        let manualAirPodsSource = selector.activeSource(
+            for: .heartRate,
+            mode: .manual(.airPodsPro3),
+            snapshots: [
+                snapshot(.airPodsPro3, metrics: [.heartRate], lastSyncAt: now)
+            ],
+            now: now
+        )
+
+        #expect(automaticSource != .airPodsPro3)
+        #expect(manualAirPodsSource != .airPodsPro3)
+        #expect(HealthSourcePriorityCategory.allCases.allSatisfy { !$0.fallbackOrder.contains(.airPodsPro3) })
+    }
+
+    @Test func airPodsWorkoutFallbackPolicyRequiresActiveWorkoutAndPrimaryFailure() {
+        let startedAt = Date(timeIntervalSinceReferenceDate: 20_000)
+        let policy = WorkoutHeartRateFallbackPolicy(primaryStaleAfter: 30, backupSampleFreshnessWindow: 40)
+
+        #expect(policy.status(
+            primarySource: .appleWatch,
+            primaryLastSeenAt: startedAt.addingTimeInterval(10),
+            airPodsLastSeenAt: nil,
+            workoutStartedAt: startedAt,
+            now: startedAt.addingTimeInterval(15),
+            isWorkoutActive: true
+        ) == .primaryAppleWatch)
+
+        #expect(policy.status(
+            primarySource: .garmin,
+            primaryLastSeenAt: startedAt.addingTimeInterval(10),
+            airPodsLastSeenAt: nil,
+            workoutStartedAt: startedAt,
+            now: startedAt.addingTimeInterval(15),
+            isWorkoutActive: true
+        ) == .primaryGarmin)
+
+        #expect(policy.status(
+            primarySource: .appleWatch,
+            primaryLastSeenAt: startedAt,
+            airPodsLastSeenAt: startedAt.addingTimeInterval(42),
+            workoutStartedAt: startedAt,
+            now: startedAt.addingTimeInterval(45),
+            isWorkoutActive: true
+        ) == .appleWatchDisconnectedUsingAirPods)
+
+        #expect(policy.status(
+            primarySource: .garmin,
+            primaryLastSeenAt: startedAt,
+            airPodsLastSeenAt: startedAt.addingTimeInterval(42),
+            workoutStartedAt: startedAt,
+            now: startedAt.addingTimeInterval(45),
+            isWorkoutActive: true
+        ) == .garminDisconnectedUsingAirPods)
+
+        #expect(policy.status(
+            primarySource: .appleWatch,
+            primaryLastSeenAt: startedAt,
+            airPodsLastSeenAt: nil,
+            workoutStartedAt: startedAt,
+            now: startedAt.addingTimeInterval(45),
+            isWorkoutActive: true
+        ) == .airPodsUnavailableHeartRatePaused)
+
+        #expect(policy.status(
+            primarySource: .appleWatch,
+            primaryLastSeenAt: startedAt,
+            airPodsLastSeenAt: startedAt.addingTimeInterval(42),
+            workoutStartedAt: startedAt,
+            now: startedAt.addingTimeInterval(45),
+            isWorkoutActive: false
+        ) == nil)
+
+        #expect(policy.status(
+            primarySource: .unknown,
+            primaryLastSeenAt: nil,
+            airPodsLastSeenAt: startedAt.addingTimeInterval(42),
+            workoutStartedAt: startedAt,
+            now: startedAt.addingTimeInterval(45),
+            isWorkoutActive: true
+        ) == nil)
+    }
+
+    @Test func heartRateSourceClassifierDetectsAirPodsGarminAndGenericHealthKit() {
+        #expect(WorkoutHeartRateSourceClassifier.classify(
+            sourceName: "AirPods Pro 3",
+            sourceBundleIdentifier: "com.apple.health",
+            productType: nil,
+            deviceName: nil,
+            deviceManufacturer: "Apple",
+            deviceModel: nil
+        ) == .airPodsPro3)
+
+        #expect(WorkoutHeartRateSourceClassifier.classify(
+            sourceName: "Garmin Connect",
+            sourceBundleIdentifier: "com.garmin.connect",
+            productType: nil,
+            deviceName: nil,
+            deviceManufacturer: "Garmin",
+            deviceModel: nil
+        ) == .garmin)
+
+        #expect(WorkoutHeartRateSourceClassifier.classify(
+            sourceName: "Health",
+            sourceBundleIdentifier: "com.apple.health",
+            productType: nil,
+            deviceName: nil,
+            deviceManufacturer: nil,
+            deviceModel: nil
+        ) == .healthKit)
+    }
+
     private func snapshot(
         _ sourceID: HealthSourceID,
         connectionState: SourceConnectionState = .connected,

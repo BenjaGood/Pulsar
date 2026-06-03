@@ -140,20 +140,6 @@ struct WatchWorkoutPickerView: View {
                 }
             }
             .navigationTitle("")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        WKInterfaceDevice.current().play(.click)
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.caption.weight(.black))
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Close workout picker")
-                }
-            }
         }
         .onAppear {
             withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) {

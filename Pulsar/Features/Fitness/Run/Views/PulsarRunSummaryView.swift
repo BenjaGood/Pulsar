@@ -18,6 +18,7 @@ struct PulsarRunSummaryView: View {
                 header
                 routeMap
                 heroStats
+                heartRateSourceCard
                 charts
                 splits
                 actionButtons
@@ -36,14 +37,14 @@ struct PulsarRunSummaryView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(summary.workoutKind.outdoorTitle)
-                    .font(.system(size: 36, weight: .black, design: .rounded))
+                    .pulsarTextStyle(.screenTitle)
                 Text(summary.startedAt.formatted(.dateTime.weekday(.wide).month(.abbreviated).day().hour().minute()))
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.screenSubtitle)
                     .foregroundStyle(.secondary)
             }
             Spacer()
             Label(summary.source.label, systemImage: summary.source == .appleWatch ? "applewatch" : "iphone")
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.metricLabel)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 8)
                 .background(.ultraThinMaterial, in: Capsule())
@@ -55,9 +56,9 @@ struct PulsarRunSummaryView: View {
         if routeCoordinates.count > 1 {
             VStack(alignment: .leading, spacing: 12) {
                 Label("Route", systemImage: "map.fill")
-                    .font(.headline.weight(.bold))
+                    .pulsarTextStyle(.cardTitle)
                     .padding(.horizontal, 4)
-                Map {
+                Map(initialPosition: routeMapPosition) {
                     MapPolyline(coordinates: routeCoordinates)
                         .stroke(summary.workoutKind.accentColor, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
                     if let startCoordinate = routeCoordinates.first {
@@ -83,9 +84,9 @@ struct PulsarRunSummaryView: View {
             PulsarRunGlassCard {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Route", systemImage: "map")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                     Text("Route map will appear here when GPS points are available.")
-                        .font(.subheadline.weight(.semibold))
+                        .pulsarTextStyle(.screenSubtitle)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -132,6 +133,20 @@ struct PulsarRunSummaryView: View {
             }
 
             SummaryTile(title: "Source", value: summary.sourceDeviceName, symbol: summary.source == .appleWatch ? "applewatch" : "iphone", tint: summary.workoutKind.accentColor)
+        }
+    }
+
+    @ViewBuilder
+    private var heartRateSourceCard: some View {
+        if let sourceText = summary.heartRateSourceSummaryText {
+            Label(sourceText, systemImage: "heart.text.square.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.82)
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .pulsarLiquidGlass(cornerRadius: 20)
         }
     }
 
@@ -220,8 +235,8 @@ struct PulsarRunSummaryView: View {
             Button {
                 isShowingShareComposer = true
             } label: {
-                Label("Share", systemImage: "square.and.arrow.up")
-                    .font(.headline.weight(.bold))
+                Label(shareActionTitle, systemImage: "square.and.arrow.up")
+                    .pulsarTextStyle(.buttonTitle)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
@@ -232,7 +247,7 @@ struct PulsarRunSummaryView: View {
             if let onDone {
                 Button(action: onDone) {
                     Text("Done")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.buttonTitle)
                         .foregroundStyle(summary.workoutKind.accentColor)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
@@ -256,8 +271,22 @@ struct PulsarRunSummaryView: View {
         summary.route.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
     }
 
+    private var routeMapPosition: MapCameraPosition {
+        guard let bounds = summary.gpsRoute.bounds else { return .automatic }
+        return .region(
+            MKCoordinateRegion(
+                center: bounds.center,
+                span: MKCoordinateSpan(latitudeDelta: bounds.latitudeDelta, longitudeDelta: bounds.longitudeDelta)
+            )
+        )
+    }
+
     private var shouldShowDistanceMetrics: Bool {
         summary.workoutKind.isOutdoorDistanceWorkout || summary.distanceMeters > 10 || routeCoordinates.count > 1
+    }
+
+    private var shareActionTitle: String {
+        shouldShowDistanceMetrics ? "Share Route" : "Share"
     }
 
     private var routeAltitudeSamples: [ElevationSample] {
@@ -279,14 +308,14 @@ private struct SummaryTile: View {
                     .font(.headline.weight(.bold))
                     .foregroundStyle(tint)
                 Text(value)
-                    .font(.system(size: 24, weight: .black, design: .rounded).monospacedDigit())
+                    .pulsarMonospacedMetric(.metricValue)
                     .lineLimit(1)
                     .minimumScaleFactor(0.68)
                 HStack(spacing: 4) {
                     Text(title)
                     if let unit { Text(unit) }
                 }
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.metricLabel)
                 .foregroundStyle(.secondary)
             }
         }

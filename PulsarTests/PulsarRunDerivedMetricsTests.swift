@@ -27,6 +27,38 @@ struct PulsarRunDerivedMetricsTests {
         #expect(PulsarRunFormatters.paceOrSpeed(workoutKind: .running, paceSecondsPerKilometer: 301, speedMetersPerSecond: 5) == "5:01 /km")
     }
 
+    @Test func shareRouteProjectionKeepsStraightRoutesVisible() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let vertical = GPSWorkoutRoute(points: [
+            GPSRoutePoint(latitude: 37.00, longitude: -122.00, timestamp: start),
+            GPSRoutePoint(latitude: 37.01, longitude: -122.00, timestamp: start.addingTimeInterval(60))
+        ])
+        let horizontal = GPSWorkoutRoute(points: [
+            GPSRoutePoint(latitude: 37.00, longitude: -122.00, timestamp: start),
+            GPSRoutePoint(latitude: 37.00, longitude: -121.99, timestamp: start.addingTimeInterval(60))
+        ])
+
+        for route in [vertical, horizontal] {
+            let points = PulsarShareRouteProjection.normalizedPoints(from: route, inset: 0.09)
+            #expect(points.count == 2)
+            #expect(points.allSatisfy { $0.x.isFinite && $0.y.isFinite })
+            #expect(points.allSatisfy { $0.x >= 0.09 && $0.x <= 0.91 && $0.y >= 0.09 && $0.y <= 0.91 })
+        }
+    }
+
+    @Test func shareRouteProjectionSortsByTimestampBeforeDrawing() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let route = GPSWorkoutRoute(points: [
+            GPSRoutePoint(latitude: 37.01, longitude: -122.00, timestamp: start.addingTimeInterval(60)),
+            GPSRoutePoint(latitude: 37.00, longitude: -122.00, timestamp: start)
+        ])
+
+        let points = PulsarShareRouteProjection.normalizedPoints(from: route, inset: 0.09)
+
+        #expect(points.count == 2)
+        #expect(abs((points.first?.y ?? 0) - 0.91) < 0.001)
+    }
+
     @Test func autoPauseIgnoresPoorAccuracy() {
         #expect(PulsarRunDerivedMetrics.shouldAutoPause(speedMetersPerSecond: 0.2, horizontalAccuracy: 12))
         #expect(!PulsarRunDerivedMetrics.shouldAutoPause(speedMetersPerSecond: 0.2, horizontalAccuracy: 80))
@@ -816,6 +848,35 @@ struct PulsarRunDerivedMetricsTests {
         #expect(cachedRuns.first?.pulsarWorkoutSessionId == sessionId)
         #expect(cachedRuns.first?.workoutUUID == workoutUUID)
         #expect(cachedRuns.first?.distanceMeters == 1_200)
+    }
+
+    @Test func runTransportPreservesSessionScopedCommandsAndAcknowledgements() throws {
+        let sessionId = UUID()
+        let commandId = UUID()
+        let sentAt = Date(timeIntervalSince1970: 1_800_000_100)
+        let command = PulsarRunSessionCommand(
+            sessionId: sessionId,
+            command: .finish,
+            commandId: commandId,
+            sentAt: sentAt,
+            retryAttempt: 1
+        )
+
+        let commandData = try #require(PulsarRunTransportCodec.encode(.sessionCommand(command)))
+        #expect(PulsarRunTransportCodec.decode(commandData) == .sessionCommand(command))
+
+        let acknowledgement = PulsarRunCommandAcknowledgement(
+            commandId: commandId,
+            sessionId: sessionId,
+            command: .finish,
+            accepted: true,
+            phase: .finishing,
+            message: nil,
+            acknowledgedAt: sentAt.addingTimeInterval(0.2)
+        )
+
+        let acknowledgementData = try #require(PulsarRunTransportCodec.encode(.commandAcknowledgement(acknowledgement)))
+        #expect(PulsarRunTransportCodec.decode(acknowledgementData) == .commandAcknowledgement(acknowledgement))
     }
 
     private func makeActiveWorkoutState(

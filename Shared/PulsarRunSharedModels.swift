@@ -922,6 +922,8 @@ struct PulsarRunMetricSnapshot: Codable, Equatable {
     var route: [PulsarRunCoordinate]
     var splits: [PulsarRunSplit]
     var statusMessage: String?
+    var heartRateSourceStatusMessage: String?
+    var heartRateSourceHistory: [WorkoutHeartRateSourceSegment]?
 
     nonisolated static let empty = PulsarRunMetricSnapshot(
         pulsarWorkoutSessionId: nil,
@@ -952,7 +954,9 @@ struct PulsarRunMetricSnapshot: Codable, Equatable {
         verticalOscillationCentimeters: nil,
         route: [],
         splits: [],
-        statusMessage: nil
+        statusMessage: nil,
+        heartRateSourceStatusMessage: nil,
+        heartRateSourceHistory: nil
     )
 }
 
@@ -1015,6 +1019,8 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
     var endedAt: Date
     var source: PulsarRunRecordingSource
     var sourceName: String?
+    var heartRateSourceHistory: [WorkoutHeartRateSourceSegment]
+    var heartRateSourceStatusMessage: String?
     var distanceMeters: Double
     var elapsedTime: TimeInterval
     var movingTime: TimeInterval
@@ -1069,6 +1075,10 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
         return source.label
     }
 
+    nonisolated var heartRateSourceSummaryText: String? {
+        WorkoutHeartRateSourceSummaryFormatter.summaryText(for: heartRateSourceHistory)
+    }
+
     nonisolated init(
         id: UUID,
         pulsarWorkoutSessionId: UUID? = nil,
@@ -1078,6 +1088,8 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
         endedAt: Date,
         source: PulsarRunRecordingSource,
         sourceName: String? = nil,
+        heartRateSourceHistory: [WorkoutHeartRateSourceSegment] = [],
+        heartRateSourceStatusMessage: String? = nil,
         distanceMeters: Double,
         elapsedTime: TimeInterval,
         movingTime: TimeInterval,
@@ -1102,6 +1114,8 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
         self.endedAt = endedAt
         self.source = source
         self.sourceName = sourceName
+        self.heartRateSourceHistory = heartRateSourceHistory
+        self.heartRateSourceStatusMessage = heartRateSourceStatusMessage
         self.distanceMeters = distanceMeters
         self.elapsedTime = elapsedTime
         self.movingTime = movingTime
@@ -1128,6 +1142,8 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
         case endedAt
         case source
         case sourceName
+        case heartRateSourceHistory
+        case heartRateSourceStatusMessage
         case distanceMeters
         case elapsedTime
         case movingTime
@@ -1155,6 +1171,8 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
         endedAt = try container.decode(Date.self, forKey: .endedAt)
         source = try container.decode(PulsarRunRecordingSource.self, forKey: .source)
         sourceName = try container.decodeIfPresent(String.self, forKey: .sourceName)
+        heartRateSourceHistory = try container.decodeIfPresent([WorkoutHeartRateSourceSegment].self, forKey: .heartRateSourceHistory) ?? []
+        heartRateSourceStatusMessage = try container.decodeIfPresent(String.self, forKey: .heartRateSourceStatusMessage)
         distanceMeters = try container.decode(Double.self, forKey: .distanceMeters)
         elapsedTime = try container.decode(TimeInterval.self, forKey: .elapsedTime)
         movingTime = try container.decode(TimeInterval.self, forKey: .movingTime)
@@ -1193,12 +1211,32 @@ enum PulsarRunControlCommand: String, Codable, Hashable {
     case finish
 }
 
+struct PulsarRunSessionCommand: Codable, Equatable {
+    var sessionId: UUID?
+    var command: PulsarRunControlCommand
+    var commandId: UUID
+    var sentAt: Date
+    var retryAttempt: Int
+}
+
+struct PulsarRunCommandAcknowledgement: Codable, Equatable {
+    var commandId: UUID
+    var sessionId: UUID?
+    var command: PulsarRunControlCommand
+    var accepted: Bool
+    var phase: PulsarRunPhase
+    var message: String?
+    var acknowledgedAt: Date
+}
+
 enum PulsarRunTransportEnvelope: Codable, Equatable {
     case identity(PulsarRunSessionIdentity)
     case options(PulsarRunOptions)
     case metrics(PulsarRunMetricSnapshot)
     case routeDelta(PulsarRunRouteDelta)
     case command(PulsarRunControlCommand)
+    case sessionCommand(PulsarRunSessionCommand)
+    case commandAcknowledgement(PulsarRunCommandAcknowledgement)
     case summary(PulsarRunSummary)
 
     private enum CodingKeys: String, CodingKey {
@@ -1208,6 +1246,8 @@ enum PulsarRunTransportEnvelope: Codable, Equatable {
         case metrics
         case routeDelta
         case command
+        case sessionCommand
+        case commandAcknowledgement
         case summary
     }
 
@@ -1217,6 +1257,8 @@ enum PulsarRunTransportEnvelope: Codable, Equatable {
         case metrics
         case routeDelta
         case command
+        case sessionCommand
+        case commandAcknowledgement
         case summary
     }
 
@@ -1234,6 +1276,10 @@ enum PulsarRunTransportEnvelope: Codable, Equatable {
             self = .routeDelta(try container.decode(PulsarRunRouteDelta.self, forKey: .routeDelta))
         case .command:
             self = .command(try container.decode(PulsarRunControlCommand.self, forKey: .command))
+        case .sessionCommand:
+            self = .sessionCommand(try container.decode(PulsarRunSessionCommand.self, forKey: .sessionCommand))
+        case .commandAcknowledgement:
+            self = .commandAcknowledgement(try container.decode(PulsarRunCommandAcknowledgement.self, forKey: .commandAcknowledgement))
         case .summary:
             self = .summary(try container.decode(PulsarRunSummary.self, forKey: .summary))
         }
@@ -1257,6 +1303,12 @@ enum PulsarRunTransportEnvelope: Codable, Equatable {
         case .command(let command):
             try container.encode(Kind.command, forKey: .kind)
             try container.encode(command, forKey: .command)
+        case .sessionCommand(let command):
+            try container.encode(Kind.sessionCommand, forKey: .kind)
+            try container.encode(command, forKey: .sessionCommand)
+        case .commandAcknowledgement(let acknowledgement):
+            try container.encode(Kind.commandAcknowledgement, forKey: .kind)
+            try container.encode(acknowledgement, forKey: .commandAcknowledgement)
         case .summary(let summary):
             try container.encode(Kind.summary, forKey: .kind)
             try container.encode(summary, forKey: .summary)
@@ -2096,7 +2148,10 @@ struct PulsarRunGPSDistanceFilter {
 private extension JSONEncoder {
     static var pulsarRun: JSONEncoder {
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .custom { date, encoder in
+            var container = encoder.singleValueContainer()
+            try container.encode(date.timeIntervalSince1970)
+        }
         return encoder
     }
 }
@@ -2104,7 +2159,23 @@ private extension JSONEncoder {
 private extension JSONDecoder {
     static var pulsarRun: JSONDecoder {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            if let seconds = try? container.decode(Double.self) {
+                return Date(timeIntervalSince1970: seconds)
+            }
+            let string = try container.decode(String.self)
+            let fractionalFormatter = ISO8601DateFormatter()
+            fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = fractionalFormatter.date(from: string) {
+                return date
+            }
+            let formatter = ISO8601DateFormatter()
+            if let date = formatter.date(from: string) {
+                return date
+            }
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid Pulsar run transport date")
+        }
         return decoder
     }
 }

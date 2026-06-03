@@ -54,6 +54,7 @@ struct PulsarRootView: View {
     private var rootShellWithPresentation: some View {
         rootShell
             .tint(.accentColor)
+            .font(PulsarTypography.Role.appBody.font)
             .environmentObject(activeWorkoutManager)
             .environmentObject(runCoordinator)
             .alert(item: workoutFailureNoticeBinding) { notice in
@@ -71,6 +72,7 @@ struct PulsarRootView: View {
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
                     .presentationBackground(.regularMaterial)
+                    .interactiveDismissDisabled(shouldDisableWorkoutInteractiveDismiss(workout))
             }
             .fullScreenCover(item: $presentedPlusDestination) { destination in
                 plusDestinationView(destination)
@@ -82,6 +84,7 @@ struct PulsarRootView: View {
             .task {
                 syncCurrentActiveWorkoutSessionContext(reason: "rootTask")
                 await homeViewModel.requestInitialAppEntrySync()
+                syncAdaptiveStrainGuardPlan(reason: "rootTask")
                 await syncDailyRewindReminder()
                 watchSyncStore.pruneStaleActiveWorkoutState(reason: "rootTask")
                 await GymLiveActivityManager.endStaleActivitiesIfNeeded(activeState: watchSyncStore.activeGymState)
@@ -94,12 +97,16 @@ struct PulsarRootView: View {
                 }
                 Task {
                     await homeViewModel.appDidBecomeActive()
+                    syncAdaptiveStrainGuardPlan(reason: "sceneBecameActive")
                     mindfulnessStore.reload()
                     await syncDailyRewindReminder()
                     watchSyncStore.pruneStaleActiveWorkoutState(reason: "sceneBecameActive")
                     await GymLiveActivityManager.endStaleActivitiesIfNeeded(activeState: watchSyncStore.activeGymState)
                     await reconcileRestoredActiveWorkoutOnAppEntry(source: "sceneBecameActive")
                 }
+            }
+            .onChange(of: homeViewModel.dashboard) { _, _ in
+                syncAdaptiveStrainGuardPlan(reason: "homeDashboardChanged")
             }
             .onChange(of: activeWorkoutManager.presentedWorkout) { _, newValue in
                 if let newValue {
@@ -108,6 +115,9 @@ struct PulsarRootView: View {
             }
             .onChange(of: runCoordinator.snapshot.phase) { _, newPhase in
                 handleRunPhaseChanged(newPhase)
+            }
+            .onChange(of: runCoordinator.summary?.id) { _, _ in
+                presentRunSummaryIfAvailable(source: "runSummaryChanged")
             }
             .onChange(of: runCoordinator.snapshot) { _, _ in
                 cacheActiveWorkoutDisplayStateIfAvailable(reason: "runSnapshotChanged")
@@ -132,12 +142,12 @@ struct PulsarRootView: View {
             }
             .onChange(of: watchSyncStore.activeGymState?.isFinished) { _, isFinished in
                 if isFinished == true {
-                    activeWorkoutManager.clearWatchGymWorkout(
-                        sessionID: watchSyncStore.activeGymState?.sessionId,
-                        phase: "ended",
-                        source: "activeGymStateChanged",
-                        reason: "watchGymFinished"
-                    )
+                    presentFinishedWatchGymSummaryIfNeeded(watchSyncStore.activeGymState, source: "activeGymStateChanged")
+                }
+            }
+            .onChange(of: watchSyncStore.lastFinishedGymState?.sessionId) { _, _ in
+                if let state = watchSyncStore.lastFinishedGymState {
+                    presentFinishedWatchGymSummaryIfNeeded(state, source: "lastFinishedGymStateChanged")
                 }
             }
             .onReceive(watchSyncStore.$lastActiveWorkoutUpdateEvent.compactMap { $0 }) { event in
@@ -210,6 +220,12 @@ struct PulsarRootView: View {
         )
     }
 
+    private func syncAdaptiveStrainGuardPlan(reason: String) {
+        let plan = homeViewModel.adaptiveStrainPlan()
+        runCoordinator.setAdaptiveStrainPlan(plan, reason: reason)
+        activeWorkoutManager.setAdaptiveStrainPlan(plan, reason: reason)
+    }
+
     private var rootShell: some View {
         ZStack(alignment: .bottom) {
             PulsarRootTabBackground(tab: selectedTab)
@@ -237,6 +253,9 @@ struct PulsarRootView: View {
                 .zIndex(1000)
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            rootSyncStatusHost
+        }
         .background(PulsarRootTabBackground(tab: selectedTab).ignoresSafeArea())
     }
 
@@ -256,6 +275,10 @@ struct PulsarRootView: View {
             onPrimaryActiveWorkoutAction: handleActiveWorkoutMiniPlayerAction,
             onMetricsChange: updateTabBarMetrics
         )
+    }
+
+    private var rootSyncStatusHost: some View {
+        PulsarRootSyncStatusHost()
     }
 
     @ViewBuilder
@@ -648,6 +671,13 @@ struct PulsarRootView: View {
         }
 
         let sessionID = runCoordinator.snapshot.pulsarWorkoutSessionId ?? activeWorkout.sessionID
+        if newPhase == .finished, let summary = runCoordinator.summary {
+            let summarySessionID = summary.pulsarWorkoutSessionId ?? sessionID
+            activeWorkoutManager.presentRunSummary(summary.workoutKind, sessionID: summarySessionID)
+            PulsarStateDebugLogger.log("[PulsarSummary] Deferred active run clear until summary dismissal session=\(summarySessionID.uuidString)")
+            return
+        }
+
         if newPhase == .failed,
            let state = watchSyncStore.activeWorkoutState,
            state.sessionId == sessionID,
@@ -662,6 +692,22 @@ struct PulsarRootView: View {
             source: "runCoordinatorPhaseChanged",
             reason: "localRunPhaseChanged"
         )
+    }
+
+    private func presentRunSummaryIfAvailable(source: String) {
+        guard let summary = runCoordinator.summary else { return }
+        let summarySessionID = summary.pulsarWorkoutSessionId
+            ?? runCoordinator.snapshot.pulsarWorkoutSessionId
+            ?? activeWorkoutManager.activeWorkout?.sessionID
+            ?? summary.id
+        activeWorkoutManager.presentRunSummary(summary.workoutKind, sessionID: summarySessionID)
+        PulsarStateDebugLogger.log("[PulsarSummary] Presented run summary source=\(source) session=\(summarySessionID.uuidString)")
+    }
+
+    private func presentFinishedWatchGymSummaryIfNeeded(_ state: ActiveGymWorkoutState?, source: String) {
+        guard let state, state.isFinished else { return }
+        activeWorkoutManager.presentWatchGymSummary(sessionID: state.sessionId)
+        PulsarStateDebugLogger.log("[PulsarSummary] Watch gym summary presentation requested source=\(source) session=\(state.sessionId.uuidString)")
     }
 
     private func cacheActiveWorkoutDisplayStateIfAvailable(reason: String) {
@@ -1012,19 +1058,29 @@ struct PulsarRootView: View {
         switch state.kind {
         case .outdoor:
             runCoordinator.reconcileActiveWorkoutSyncState(state)
-            activeWorkoutManager.clearRunWorkout(
-                sessionID: state.sessionId,
-                phase: state.phase.rawValue,
-                source: source,
-                reason: "endedActiveWorkoutSync"
-            )
+            if let summary = runCoordinator.summary {
+                let summarySessionID = summary.pulsarWorkoutSessionId ?? state.sessionId
+                activeWorkoutManager.presentRunSummary(summary.workoutKind, sessionID: summarySessionID)
+                PulsarSyncDebugLogger.log("[PulsarSummary] Presented ended run sync summary source=\(source) session=\(summarySessionID.uuidString)")
+            } else {
+                activeWorkoutManager.clearRunWorkout(
+                    sessionID: state.sessionId,
+                    phase: state.phase.rawValue,
+                    source: source,
+                    reason: "endedActiveWorkoutSync"
+                )
+            }
         case .gym:
-            activeWorkoutManager.clearWatchGymWorkout(
-                sessionID: state.sessionId,
-                phase: state.phase.rawValue,
-                source: source,
-                reason: "endedActiveWorkoutSync"
-            )
+            if let finishedState = watchSyncStore.lastFinishedGymState {
+                presentFinishedWatchGymSummaryIfNeeded(finishedState, source: source)
+            } else {
+                activeWorkoutManager.clearWatchGymWorkout(
+                    sessionID: state.sessionId,
+                    phase: state.phase.rawValue,
+                    source: source,
+                    reason: "endedActiveWorkoutSync"
+                )
+            }
         }
         syncCurrentActiveWorkoutSessionContext(reason: "endedActiveWorkoutSync")
     }
@@ -1197,6 +1253,21 @@ struct PulsarRootView: View {
         }
     }
 
+    private func shouldDisableWorkoutInteractiveDismiss(_ workout: PulsarPresentedWorkout) -> Bool {
+        switch workout {
+        case .run:
+            return runCoordinator.summary != nil || runCoordinator.snapshot.phase == .finishing
+        case .gym:
+            return activeWorkoutManager.gymSessionViewModel?.summary != nil ||
+                activeWorkoutManager.gymSessionViewModel?.isFinishing == true
+        case .watchGym:
+            if watchSyncStore.activeGymState?.isFinished == true {
+                return true
+            }
+            return watchSyncStore.lastFinishedGymState?.sessionId == activeWorkoutManager.activeWorkout?.sessionID
+        }
+    }
+
     @ViewBuilder
     private func presentedWorkoutView(_ workout: PulsarPresentedWorkout) -> some View {
         switch workout {
@@ -1208,6 +1279,14 @@ struct PulsarRootView: View {
                     activeWorkoutManager.minimizeRunWorkout(
                         workoutKind,
                         sessionID: resolvedRunSessionIDForMiniWorkout(reason: "toolbarMinimize")
+                    )
+                },
+                onSummaryDone: { summary in
+                    activeWorkoutManager.clearRunWorkout(
+                        sessionID: summary.pulsarWorkoutSessionId ?? activeWorkoutManager.activeWorkout?.sessionID,
+                        phase: "finished",
+                        source: "runSummaryDone",
+                        reason: "summaryDismissed"
                     )
                 }
             )
@@ -1229,9 +1308,20 @@ struct PulsarRootView: View {
                     }
             }
         case .watchGym:
-            GymWatchMirroredWorkoutView(syncStore: watchSyncStore) {
-                activeWorkoutManager.minimizeWatchGymWorkout(sessionID: watchSyncStore.activeGymState?.sessionId)
-            }
+            GymWatchMirroredWorkoutView(
+                syncStore: watchSyncStore,
+                onMinimize: {
+                    activeWorkoutManager.minimizeWatchGymWorkout(sessionID: watchSyncStore.activeGymState?.sessionId ?? watchSyncStore.lastFinishedGymState?.sessionId)
+                },
+                onSummaryDone: {
+                    activeWorkoutManager.clearWatchGymWorkout(
+                        sessionID: watchSyncStore.lastFinishedGymState?.sessionId ?? watchSyncStore.activeGymState?.sessionId ?? activeWorkoutManager.activeWorkout?.sessionID,
+                        phase: "finished",
+                        source: "watchGymSummaryDone",
+                        reason: "summaryDismissed"
+                    )
+                }
+            )
         }
     }
 }
@@ -1811,6 +1901,29 @@ private struct PulsarPlusPanelGlassBackground: ViewModifier {
                 }
                 .shadow(color: .black.opacity(0.11), radius: 26, x: 0, y: 15)
         }
+    }
+}
+
+private struct PulsarRootSyncStatusHost: View {
+    @ObservedObject private var center: PulsarSyncBannerCenter = .shared
+
+    var body: some View {
+        Group {
+            if center.state != .hidden {
+                PulsarSyncStatusPill(center: center)
+                    .frame(maxWidth: 420)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 8)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .transition(
+                        .opacity
+                            .combined(with: .scale(scale: 0.98, anchor: .top))
+                    )
+            }
+        }
+        .animation(.smooth(duration: 0.28), value: center.state)
+        .allowsHitTesting(false)
     }
 }
 

@@ -44,6 +44,9 @@ final class GymWorkoutSessionViewModel: ObservableObject {
     @Published private(set) var activeEnergyKilocalories: Double?
     @Published private(set) var healthKitStatusMessage: String?
     @Published private(set) var isHealthKitEnabled = false
+    @Published private(set) var heartRateSourceStatusMessage: String?
+    @Published private(set) var heartRateSourceBanner: String?
+    @Published private(set) var adaptiveWorkoutCoaching: AdaptiveWorkoutCoaching?
     @Published private(set) var isFinishing = false
 
     private let historyStore: PulsarGymWorkoutHistoryStore
@@ -54,6 +57,12 @@ final class GymWorkoutSessionViewModel: ObservableObject {
     private var timerTask: Task<Void, Never>?
     private var restTask: Task<Void, Never>?
     private var highlightTask: Task<Void, Never>?
+    private var heartRateSourceBannerTask: Task<Void, Never>?
+    private var adaptiveCoachingBannerTask: Task<Void, Never>?
+    private var adaptiveHeartRateSamples: [AdaptiveHeartRateSample] = []
+    private var adaptiveStrainPlan: AdaptiveStrainPlan?
+    private var lastAdaptiveCoachingID: String?
+    private var lastAdaptiveCoachingAt: Date?
     private var restEndsAt: Date?
     private var pendingRestFocusTarget: GymWorkoutSetFocusTarget?
     private var didStartWorkoutSystems = false
@@ -65,7 +74,8 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         historyStore: PulsarGymWorkoutHistoryStore? = nil,
         healthKitManager: GymHealthKitWorkoutManager? = nil,
         watchSyncStore: PulsarWatchConnectivitySyncStore? = nil,
-        liveActivityManager: GymLiveActivityManager? = nil
+        liveActivityManager: GymLiveActivityManager? = nil,
+        adaptiveStrainPlan: AdaptiveStrainPlan? = nil
     ) {
         let resolvedHistoryStore = historyStore ?? PulsarGymWorkoutHistoryStore()
         let displayUnit = workoutWeightUnit ?? routine.exercises.first?.weightUnit ?? .kilograms
@@ -86,10 +96,16 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         self.watchSyncStore = watchSyncStore ?? .shared
         self.liveActivityManager = liveActivityManager ?? GymLiveActivityManager()
         self.previousPerformanceByExerciseKey = snapshots
+        self.adaptiveStrainPlan = adaptiveStrainPlan
 
         self.healthKitManager.onMetricsUpdated = { [weak self] metrics in
             Task { @MainActor in
                 self?.applyHealthMetrics(metrics)
+            }
+        }
+        self.healthKitManager.onHeartRateSourceUpdated = { [weak self] status, history, banner in
+            Task { @MainActor in
+                self?.applyHeartRateSource(status: status, history: history, banner: banner)
             }
         }
         self.watchSyncStore.registerGymActionHandler { [weak self] action in
@@ -103,6 +119,8 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         timerTask?.cancel()
         restTask?.cancel()
         highlightTask?.cancel()
+        heartRateSourceBannerTask?.cancel()
+        adaptiveCoachingBannerTask?.cancel()
     }
 
     var completedSetsCount: Int {
@@ -163,6 +181,11 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         publishState(reason: "gymHealthKitStarted")
     }
 
+    func setAdaptiveStrainPlan(_ plan: AdaptiveStrainPlan?, reason: String) {
+        adaptiveStrainPlan = plan
+        PulsarSyncDebugLogger.log("[PulsarAdaptiveStrainGuard] gym plan updated reason=\(reason) target=\(plan?.recommendedRange.displayText ?? "nil") priority=\(plan?.recoveryPriority.rawValue ?? "nil")")
+    }
+
     @discardableResult
     func toggleSet(exerciseID: UUID, setID: UUID) -> GymSetToggleOutcome {
         guard summary == nil,
@@ -215,23 +238,43 @@ final class GymWorkoutSessionViewModel: ObservableObject {
               let exerciseIndex = session.exercises.firstIndex(where: { $0.id == exerciseID }),
               let setIndex = session.exercises[exerciseIndex].sets.firstIndex(where: { $0.id == setID }) else { return }
 
+        guard applySetValues(exerciseIndex: exerciseIndex, setIndex: setIndex, reps: reps, weight: weight) else { return }
+        publishState(reason: "gymSetAdjusted")
+    }
+
+    @discardableResult
+    private func applySetValues(exerciseIndex: Int, setIndex: Int, reps: Int? = nil, weight: Double? = nil) -> Bool {
+        var didUpdate = false
+
         if let reps {
             let nextReps = max(1, reps)
-            session.exercises[exerciseIndex].sets[setIndex].targetReps = nextReps
+            if session.exercises[exerciseIndex].sets[setIndex].targetReps != nextReps {
+                session.exercises[exerciseIndex].sets[setIndex].targetReps = nextReps
+                didUpdate = true
+            }
             if session.exercises[exerciseIndex].sets[setIndex].isCompleted {
-                session.exercises[exerciseIndex].sets[setIndex].completedReps = nextReps
+                if session.exercises[exerciseIndex].sets[setIndex].completedReps != nextReps {
+                    session.exercises[exerciseIndex].sets[setIndex].completedReps = nextReps
+                    didUpdate = true
+                }
             }
         }
 
         if let weight {
             let nextWeight = max(0, weight)
-            session.exercises[exerciseIndex].sets[setIndex].targetWeight = nextWeight
+            if session.exercises[exerciseIndex].sets[setIndex].targetWeight != nextWeight {
+                session.exercises[exerciseIndex].sets[setIndex].targetWeight = nextWeight
+                didUpdate = true
+            }
             if session.exercises[exerciseIndex].sets[setIndex].isCompleted {
-                session.exercises[exerciseIndex].sets[setIndex].completedWeight = nextWeight
+                if session.exercises[exerciseIndex].sets[setIndex].completedWeight != nextWeight {
+                    session.exercises[exerciseIndex].sets[setIndex].completedWeight = nextWeight
+                    didUpdate = true
+                }
             }
         }
 
-        publishState(reason: "gymSetAdjusted")
+        return didUpdate
     }
 
     func addSet(to exerciseID: UUID) {
@@ -314,14 +357,20 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         let finalEnergy = healthResult.activeEnergyKilocalories ?? activeEnergyKilocalories ?? session.activeEnergyKilocalories
         let finalAverageHeartRate = healthResult.averageHeartRate ?? averageHeartRate ?? session.averageHeartRate
         let finalMaxHeartRate = healthResult.maxHeartRate ?? maxHeartRate ?? session.maxHeartRate
+        let finalHeartRateSourceHistory = healthResult.heartRateSourceHistory.isEmpty
+            ? session.heartRateSourceHistory
+            : healthResult.heartRateSourceHistory
 
         session.healthKitWorkoutUUID = finalWorkoutUUID
         session.activeEnergyKilocalories = finalEnergy
         session.averageHeartRate = finalAverageHeartRate
         session.maxHeartRate = finalMaxHeartRate
         session.healthKitStatusMessage = healthResult.statusMessage
+        session.heartRateSourceHistory = finalHeartRateSourceHistory
+        session.heartRateSourceStatusMessage = healthResult.heartRateSourceStatusMessage ?? heartRateSourceStatusMessage
 
         healthKitStatusMessage = healthResult.statusMessage
+        heartRateSourceStatusMessage = session.heartRateSourceStatusMessage
         averageHeartRate = finalAverageHeartRate
         maxHeartRate = finalMaxHeartRate
         activeEnergyKilocalories = finalEnergy
@@ -566,7 +615,77 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         session.averageHeartRate = averageHeartRate
         session.maxHeartRate = maxHeartRate
         session.activeEnergyKilocalories = activeEnergyKilocalories
+        if let currentHeartRate {
+            recordAdaptiveWorkoutHeartRate(currentHeartRate, sampledAt: Date(), reason: "gymHealthMetricsUpdated")
+        }
         publishState(reason: "gymHealthMetricsUpdated")
+    }
+
+    private func recordAdaptiveWorkoutHeartRate(_ bpm: Double, sampledAt: Date, reason: String) {
+        guard let adaptiveStrainPlan, bpm > 0 else { return }
+        adaptiveHeartRateSamples.append(AdaptiveHeartRateSample(timestamp: sampledAt, bpm: bpm))
+        adaptiveHeartRateSamples = adaptiveHeartRateSamples.filter { sampledAt.timeIntervalSince($0.timestamp) <= 12 * 60 }
+        let coaching = RealTimeWorkoutAdaptationEngine().evaluate(
+            RealTimeWorkoutAdaptationInput(
+                plan: adaptiveStrainPlan,
+                workoutKind: .strength,
+                elapsedTime: TimeInterval(elapsedSeconds),
+                currentHeartRate: bpm,
+                averageHeartRate: averageHeartRate,
+                maxObservedHeartRate: maxHeartRate,
+                recentHeartRates: adaptiveHeartRateSamples,
+                sampledAt: sampledAt
+            )
+        )
+        guard let coaching else { return }
+        showAdaptiveWorkoutCoaching(coaching, reason: reason)
+    }
+
+    private func showAdaptiveWorkoutCoaching(_ coaching: AdaptiveWorkoutCoaching, reason: String) {
+        let now = Date()
+        if coaching.id == lastAdaptiveCoachingID,
+           let lastAdaptiveCoachingAt,
+           now.timeIntervalSince(lastAdaptiveCoachingAt) < 8 * 60 {
+            return
+        }
+        lastAdaptiveCoachingID = coaching.id
+        lastAdaptiveCoachingAt = now
+        adaptiveWorkoutCoaching = coaching
+        PulsarSyncDebugLogger.log("[PulsarAdaptiveStrainGuard] gym coaching reason=\(reason) severity=\(coaching.severity.rawValue) message=\(coaching.message)")
+        adaptiveCoachingBannerTask?.cancel()
+        adaptiveCoachingBannerTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 9_000_000_000)
+            await MainActor.run {
+                if self?.adaptiveWorkoutCoaching?.id == coaching.id {
+                    self?.adaptiveWorkoutCoaching = nil
+                }
+            }
+        }
+    }
+
+    private func applyHeartRateSource(
+        status: WorkoutHeartRateFallbackStatus?,
+        history: [WorkoutHeartRateSourceSegment],
+        banner: String?
+    ) {
+        heartRateSourceStatusMessage = status?.message
+        session.heartRateSourceHistory = history
+        session.heartRateSourceStatusMessage = status?.message
+
+        if let banner {
+            heartRateSourceBanner = banner
+            heartRateSourceBannerTask?.cancel()
+            heartRateSourceBannerTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 3_200_000_000)
+                await MainActor.run {
+                    if self?.heartRateSourceBanner == banner {
+                        self?.heartRateSourceBanner = nil
+                    }
+                }
+            }
+        }
+
+        publishState(reason: "gymHeartRateSourceUpdated")
     }
 
     private func applyRemoteMetrics(from action: ActiveGymWorkoutAction) {
@@ -731,7 +850,10 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         switch action.kind {
         case .completeSet:
             guard let exerciseId = action.exerciseId, let setId = action.setId else { return }
-            completeSetFromRemote(exerciseID: exerciseId, setID: setId)
+            completeSetFromRemote(exerciseID: exerciseId, setID: setId, reps: action.setReps, weight: action.setWeight)
+        case .updateSetValues:
+            guard let exerciseId = action.exerciseId, let setId = action.setId else { return }
+            updateSetValues(exerciseID: exerciseId, setID: setId, reps: action.setReps, weight: action.setWeight)
         case .skipRestTimer:
             skipRest()
         case .finishWorkout:
@@ -747,14 +869,15 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         }
     }
 
-    private func completeSetFromRemote(exerciseID: UUID, setID: UUID) {
+    private func completeSetFromRemote(exerciseID: UUID, setID: UUID, reps: Int? = nil, weight: Double? = nil) {
         guard let exerciseIndex = session.exercises.firstIndex(where: { $0.id == exerciseID }),
               let setIndex = session.exercises[exerciseIndex].sets.firstIndex(where: { $0.id == setID }) else {
             publishState(reason: "gymRemoteSetIgnored")
             return
         }
+        let didApplyValues = applySetValues(exerciseIndex: exerciseIndex, setIndex: setIndex, reps: reps, weight: weight)
         guard !session.exercises[exerciseIndex].sets[setIndex].isCompleted else {
-            publishState(reason: "gymRemoteSetAlreadyCompleted")
+            publishState(reason: didApplyValues ? "gymRemoteSetEdited" : "gymRemoteSetAlreadyCompleted")
             return
         }
         toggleSet(exerciseID: exerciseID, setID: setID)

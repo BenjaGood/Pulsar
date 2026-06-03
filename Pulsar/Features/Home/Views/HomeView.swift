@@ -20,8 +20,6 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    PulsarSyncStatusPill()
-
                     if !viewModel.healthKitStatus.hasPrefix("HealthKit connected") {
                         HealthKitStatusBanner(message: viewModel.healthKitStatus)
                     }
@@ -55,9 +53,9 @@ struct HomeView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Text(homeNavigationTitle)
-                                .font(.headline.weight(.semibold))
+                                .pulsarTextStyle(.cardTitle)
                             Image(systemName: "chevron.down")
-                                .font(.caption.weight(.bold))
+                                .pulsarTextStyle(.caption)
                         }
                     }
                     .buttonStyle(.plain)
@@ -147,7 +145,7 @@ struct HomeView: View {
                 HStack(spacing: 8) {
                     ForEach(labels, id: \.self) { label in
                         Text(label)
-                            .font(.caption2.weight(.bold))
+                            .pulsarTextStyle(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .padding(.horizontal, 10)
@@ -287,7 +285,7 @@ struct HomeView: View {
         }
 
         if let suggestedStrainTargetRange {
-            return "Current \(summary.score) · Target \(suggestedStrainTargetRange.displayText)"
+            return "Current \(summary.score) · Guard \(suggestedStrainTargetRange.displayText)"
         }
         if summary.workoutMinutes > 0 {
             return "\(minutes(summary.workoutMinutes)) training"
@@ -358,7 +356,7 @@ private struct HealthKitStatusBanner: View {
             Image(systemName: "heart.text.square")
                 .foregroundStyle(.orange.opacity(0.95))
             Text(message)
-                .font(.footnote.weight(.semibold))
+                .pulsarTextStyle(.caption)
                 .foregroundStyle(colorScheme == .dark ? .white.opacity(0.92) : .primary)
             Spacer(minLength: 0)
         }
@@ -564,7 +562,7 @@ struct AvatarView: View {
                     .clipShape(Circle())
             } else if let initials {
                 Text(initials)
-                    .font(.system(size: size * 0.36, weight: .semibold, design: .rounded))
+                    .font(.system(size: size * 0.36, weight: .semibold))
                     .foregroundStyle(.primary)
             } else {
                 Image(systemName: "person.crop.circle.fill")

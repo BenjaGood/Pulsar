@@ -19,7 +19,7 @@ struct WatchGymEntryView: View {
                 WatchGymOptionsView(syncStore: syncStore)
                     .transition(.opacity.combined(with: .scale(scale: 1.02)))
             } else {
-                WatchWorkoutHeartbeatIntroView(title: "Gym") {
+                WatchWorkoutHeartbeatIntroView(title: "Gym", tint: Color(red: 0.72, green: 0.66, blue: 1.00)) {
                     withAnimation(.smooth(duration: 0.34)) {
                         isShowingOptions = true
                     }

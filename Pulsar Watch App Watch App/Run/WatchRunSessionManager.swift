@@ -25,6 +25,7 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
     private var routeBuilder: HKWorkoutRouteBuilder?
     private var locationManager: CLLocationManager?
     private var tickTask: Task<Void, Never>?
+    private var finishFallbackTask: Task<Void, Never>?
 
     private var startDate: Date?
     private var pauseBeganAt: Date?
@@ -41,9 +42,13 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
     private var lastMetricsSentAt = Date.distantPast
     private var lastRoutePointSentCount = 0
     private var activeWorkoutStartedFrom: PulsarWorkoutStartedFrom?
+    private var handledRemoteCommandIDs = Set<UUID>()
 
     private override init() {
         super.init()
+        syncStore.setRunTransportEnvelopeHandler { [weak self] envelope, reason in
+            self?.handleRunTransportEnvelope(envelope, reason: "watchConnectivity.\(reason)")
+        }
     }
 
     func requestAuthorization(for workoutKind: PulsarOutdoorWorkoutKind = .running) async {
@@ -96,12 +101,20 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
     }
 
     func pause() {
+        guard snapshot.phase == .running else {
+            PulsarSyncDebugLogger.log("Watch run pause skipped because phase is not running session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none") phase=\(snapshot.phase.rawValue)")
+            return
+        }
         pauseWorkoutSessionIfRunning(reason: "watchRunPause")
         applyPausedState(date: Date())
         publishActiveWorkoutState(phase: .paused, updatedFrom: .appleWatch, reason: "watchRunPaused")
     }
 
     func resume() {
+        guard snapshot.phase == .paused else {
+            PulsarSyncDebugLogger.log("Watch run resume skipped because phase is not paused session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none") phase=\(snapshot.phase.rawValue)")
+            return
+        }
         guard resumeWorkoutSessionIfPaused(reason: "watchRunResume") || snapshot.phase == .paused else {
             PulsarSyncDebugLogger.log("Watch run resume skipped because workout is not paused session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none") phase=\(snapshot.phase.rawValue)")
             return
@@ -111,10 +124,17 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
     }
 
     func finish() {
+        if snapshot.phase == .finishing {
+            publishActiveWorkoutState(phase: .ending, updatedFrom: .appleWatch, reason: "watchRunFinishAlreadyInProgress")
+            PulsarSyncDebugLogger.log("[PulsarWorkoutLifecycle] Watch run finish ignored because finish is already in progress session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none")")
+            return
+        }
         guard snapshot.phase == .running || snapshot.phase == .paused else { return }
         snapshot.phase = .finishing
+        message = "Finishing workout..."
         publishActiveWorkoutState(phase: .ending, updatedFrom: .appleWatch, reason: "watchRunEnding")
         endWorkoutSessionIfNeeded(reason: "watchRunFinish")
+        scheduleFinishFallback(reason: "watchRunFinish")
     }
 
     func reset() {
@@ -175,14 +195,23 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
             pauseBeganAt = Date()
         }
 
-        startLocationUpdates()
-        startTicking()
-        sendMetricsIfNeeded(force: true)
-        publishActiveWorkoutState(
-            phase: recoveredPhase == .paused ? .paused : .active,
-            updatedFrom: .appleWatch,
-            reason: "watchRunRecovered"
-        )
+        if recoveredPhase == .finishing {
+            publishActiveWorkoutState(
+                phase: .ending,
+                updatedFrom: .appleWatch,
+                reason: "watchRunRecoveredFinishing"
+            )
+            Task { await finishWorkout() }
+        } else {
+            startLocationUpdates()
+            startTicking()
+            sendMetricsIfNeeded(force: true)
+            publishActiveWorkoutState(
+                phase: recoveredPhase == .paused ? .paused : .active,
+                updatedFrom: .appleWatch,
+                reason: "watchRunRecovered"
+            )
+        }
         message = nil
         PulsarSyncDebugLogger.log("Watch run recovered active HealthKit workout session=\(sessionId.uuidString) type=\(workoutKind.rawValue) state=\(Self.describe(session.state))")
     }
@@ -193,6 +222,13 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
 
         if state.isEnded {
             guard snapshot.pulsarWorkoutSessionId == state.sessionId else { return }
+            if state.lastUpdatedFrom == .iPhone,
+               workoutSession != nil || workoutBuilder != nil,
+               snapshot.phase == .running || snapshot.phase == .paused || snapshot.phase == .finishing {
+                PulsarSyncDebugLogger.log("[PulsarWorkoutSync] Watch run received terminal iPhone state while HealthKit session is local; finishing locally session=\(state.sessionId.uuidString) phase=\(state.phase.rawValue)")
+                finish()
+                return
+            }
             snapshot.phase = state.phase.runPhase
             snapshot.endedAt = state.endedAt ?? Date()
             PulsarSyncDebugLogger.log("Watch run reconciled ended sync state session=\(state.sessionId.uuidString) type=\(workoutKind.rawValue)")
@@ -215,6 +251,35 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
         }
 
         let previousPhase = snapshot.phase
+        if state.phase == .ending,
+           state.lastUpdatedFrom == .iPhone,
+           snapshot.pulsarWorkoutSessionId == state.sessionId {
+            snapshot.elapsedTime = TimeInterval(state.elapsedSeconds)
+            snapshot.currentHeartRate = state.currentHeartRate ?? snapshot.currentHeartRate
+            snapshot.activeEnergyKilocalories = state.activeEnergyKilocalories ?? snapshot.activeEnergyKilocalories
+            applySyncedRunMetrics(from: state, reason: "iPhoneRunSyncEnding")
+            activeWorkoutKind = workoutKind
+
+            if workoutSession != nil || workoutBuilder != nil {
+                if previousPhase == .finishing {
+                    message = "Finishing workout..."
+                    publishActiveWorkoutState(phase: .ending, updatedFrom: .appleWatch, reason: "watchRunEndingAlreadyAcceptedFromIPhone")
+                    scheduleFinishFallback(reason: "iPhoneRunSyncEndingAlreadyFinishing")
+                    PulsarSyncDebugLogger.log("[PulsarWorkoutSync] Watch run kept local finish alive after repeated iPhone ending state session=\(state.sessionId.uuidString)")
+                } else if previousPhase == .running || previousPhase == .paused {
+                    PulsarSyncDebugLogger.log("[PulsarWorkoutSync] Watch run accepted iPhone ending state as finish command session=\(state.sessionId.uuidString) previousPhase=\(previousPhase.rawValue)")
+                    finish()
+                } else {
+                    snapshot.phase = .finishing
+                    message = "Finishing workout..."
+                    publishActiveWorkoutState(phase: .ending, updatedFrom: .appleWatch, reason: "watchRunEndingAcceptedFromIPhone")
+                    endWorkoutSessionIfNeeded(reason: "iPhoneRunSyncEnding")
+                    scheduleFinishFallback(reason: "iPhoneRunSyncEnding")
+                    PulsarSyncDebugLogger.log("[PulsarWorkoutSync] Watch run forced local HealthKit finish from iPhone ending state session=\(state.sessionId.uuidString) previousPhase=\(previousPhase.rawValue)")
+                }
+                return
+            }
+        }
         snapshot.phase = state.phase.runPhase
         snapshot.elapsedTime = TimeInterval(state.elapsedSeconds)
         snapshot.currentHeartRate = state.currentHeartRate ?? snapshot.currentHeartRate
@@ -403,14 +468,16 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
         case .ended, .stopped:
             PulsarSyncDebugLogger.log("Watch run HealthKit end skipped because session is already terminal reason=\(reason) state=\(Self.describe(workoutSession.state)) session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none")")
         default:
-            workoutSession.end()
-            PulsarSyncDebugLogger.log("Watch run HealthKit end requested reason=\(reason) state=\(Self.describe(workoutSession.state)) session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none")")
+            workoutSession.stopActivity(with: Date())
+            PulsarSyncDebugLogger.log("[PulsarWorkoutLifecycle] Watch run HealthKit stopActivity requested reason=\(reason) state=\(Self.describe(workoutSession.state)) session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none")")
         }
     }
 
     private func cleanupRuntime(keepsWorkoutObjects: Bool = false) {
         tickTask?.cancel()
         tickTask = nil
+        finishFallbackTask?.cancel()
+        finishFallbackTask = nil
         locationManager?.stopUpdatingLocation()
         if !keepsWorkoutObjects {
             workoutSession = nil
@@ -430,6 +497,16 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
         lastMetricsSentAt = .distantPast
         lastRoutePointSentCount = 0
         activeWorkoutStartedFrom = nil
+    }
+
+    private func scheduleFinishFallback(reason: String) {
+        finishFallbackTask?.cancel()
+        finishFallbackTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard self.snapshot.phase == .finishing, self.summary == nil else { return }
+            PulsarSyncDebugLogger.log("[PulsarWorkoutLifecycle] Watch run finish fallback fired reason=\(reason) session=\(self.snapshot.pulsarWorkoutSessionId?.uuidString ?? "none")")
+            await self.finishWorkout()
+        }
     }
 
     private func resetDistanceTrackingState() {
@@ -723,16 +800,31 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
     }
 
     private func finishWorkout() async {
-        guard !isFinishing else { return }
+        guard !isFinishing, summary == nil else { return }
         isFinishing = true
-        cleanupRuntime(keepsWorkoutObjects: true)
-        isFinishing = true
+        finishFallbackTask?.cancel()
+        finishFallbackTask = nil
         let end = Date()
         snapshot.endedAt = end
         updateTimeMetrics(date: end)
+        let session = workoutSession
+        let builder = workoutBuilder
+        let routeBuilder = routeBuilder
+        cleanupRuntime(keepsWorkoutObjects: true)
+        isFinishing = true
+
+        defer {
+            session?.end()
+            workoutSession = nil
+            workoutBuilder = nil
+            self.routeBuilder = nil
+            isFinishing = false
+            PulsarSyncDebugLogger.log("[PulsarWorkoutLifecycle] Watch run HealthKit session ended after builder finish session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none")")
+        }
+
         do {
-            try await workoutBuilder?.endCollection(at: end)
-            let workout = try await workoutBuilder?.finishWorkout()
+            try await builder?.endCollection(at: end)
+            let workout = try await builder?.finishWorkout()
             if let workout, !snapshot.route.isEmpty {
                 var routeMetadata = workoutMetadata(startedFrom: .appleWatch)
                 routeMetadata["PulsarRouteSource"] = "Apple Watch GPS"
@@ -746,7 +838,15 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
             let finishedSummary = makeSummary(workoutUUID: workout?.uuid)
             summary = finishedSummary
             snapshot.phase = .finished
-            sendEnvelope(.summary(finishedSummary))
+            message = nil
+            let summaryEnvelope = PulsarRunTransportEnvelope.summary(finishedSummary)
+            sendEnvelope(summaryEnvelope)
+            syncStore.sendRunTransportEnvelope(
+                summaryEnvelope,
+                reason: "watchRunSummaryFinished",
+                queueIfUnreachable: true
+            )
+            try? await session?.stopMirroringToCompanionDevice()
             publishActiveWorkoutState(phase: .ended, updatedFrom: .appleWatch, reason: "watchRunFinished")
             WKInterfaceDevice.current().play(.success)
         } catch {
@@ -816,7 +916,104 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
 
     private func sendEnvelope(_ envelope: PulsarRunTransportEnvelope) {
         guard let data = PulsarRunTransportCodec.encode(envelope) else { return }
-        workoutSession?.sendToRemoteWorkoutSession(data: data) { _, _ in }
+        workoutSession?.sendToRemoteWorkoutSession(data: data) { _, error in
+            if let error {
+                PulsarSyncDebugLogger.log("[PulsarWorkoutSync] Watch run envelope send failed error=\(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func handleSessionCommand(_ command: PulsarRunSessionCommand) {
+        let currentSessionId = snapshot.pulsarWorkoutSessionId
+        guard command.sessionId == nil || command.sessionId == currentSessionId else {
+            sendCommandAcknowledgement(
+                command,
+                accepted: false,
+                message: "Session mismatch current=\(currentSessionId?.uuidString ?? "none")"
+            )
+            return
+        }
+        if command.sessionId == nil,
+           !isFreshSessionlessCommand(command) {
+            sendCommandAcknowledgement(
+                command,
+                accepted: false,
+                message: "Sessionless command is stale"
+            )
+            PulsarSyncDebugLogger.log("[PulsarWorkoutSync] Watch run stale sessionless command rejected command=\(command.command.rawValue) commandId=\(command.commandId.uuidString) sentAt=\(command.sentAt)")
+            return
+        }
+
+        if !handledRemoteCommandIDs.insert(command.commandId).inserted {
+            sendCommandAcknowledgement(command, accepted: true, message: "Duplicate command ignored")
+            PulsarSyncDebugLogger.log("[PulsarWorkoutSync] Watch run duplicate command ignored command=\(command.command.rawValue) session=\(command.sessionId?.uuidString ?? "none") commandId=\(command.commandId.uuidString)")
+            return
+        }
+        if handledRemoteCommandIDs.count > 250 {
+            handledRemoteCommandIDs = [command.commandId]
+        }
+
+        switch command.command {
+        case .pause:
+            pause()
+        case .resume:
+            resume()
+        case .finish:
+            finish()
+        }
+        sendCommandAcknowledgement(command, accepted: true, message: nil)
+        PulsarSyncDebugLogger.log("[PulsarWorkoutSync] Watch run command handled command=\(command.command.rawValue) session=\(command.sessionId?.uuidString ?? "none") commandId=\(command.commandId.uuidString) attempt=\(command.retryAttempt)")
+    }
+
+    private func isFreshSessionlessCommand(_ command: PulsarRunSessionCommand) -> Bool {
+        guard Date().timeIntervalSince(command.sentAt) <= 120 else { return false }
+        if let startedAt = snapshot.startedAt,
+           command.sentAt < startedAt.addingTimeInterval(-5) {
+            return false
+        }
+        return true
+    }
+
+    private func sendCommandAcknowledgement(
+        _ command: PulsarRunSessionCommand,
+        accepted: Bool,
+        message: String?
+    ) {
+        let acknowledgement = PulsarRunCommandAcknowledgement(
+            commandId: command.commandId,
+            sessionId: snapshot.pulsarWorkoutSessionId ?? command.sessionId,
+            command: command.command,
+            accepted: accepted,
+            phase: snapshot.phase,
+            message: message,
+            acknowledgedAt: Date()
+        )
+        let envelope = PulsarRunTransportEnvelope.commandAcknowledgement(acknowledgement)
+        sendEnvelope(envelope)
+        syncStore.sendRunTransportEnvelope(
+            envelope,
+            reason: "watchRunCommandAcknowledgement",
+            queueIfUnreachable: false
+        )
+    }
+
+    private func handleRunTransportEnvelope(_ envelope: PulsarRunTransportEnvelope, reason: String = "healthKitMirror") {
+        switch envelope {
+        case .identity(let identity):
+            applyIdentity(identity)
+        case .sessionCommand(let command):
+            handleSessionCommand(command)
+        case .commandAcknowledgement(let acknowledgement):
+            PulsarSyncDebugLogger.log("[PulsarWorkoutSync] Watch run command acknowledged command=\(acknowledgement.command.rawValue) accepted=\(acknowledgement.accepted) source=\(reason) session=\(acknowledgement.sessionId?.uuidString ?? "none") commandId=\(acknowledgement.commandId.uuidString) phase=\(acknowledgement.phase.rawValue) message=\(acknowledgement.message ?? "none")")
+        case .command(let command):
+            switch command {
+            case .pause: pause()
+            case .resume: resume()
+            case .finish: finish()
+            }
+        case .metrics, .routeDelta, .summary, .options:
+            break
+        }
     }
 
     private func applyIdentity(_ identity: PulsarRunSessionIdentity) {
@@ -984,8 +1181,10 @@ extension WatchRunSessionManager: HKWorkoutSessionDelegate {
                 self.applyRunningState(date: date)
             case .paused:
                 self.applyPausedState(date: date)
-            case .ended:
+            case .stopped:
                 await self.finishWorkout()
+            case .ended:
+                PulsarSyncDebugLogger.log("[PulsarWorkoutLifecycle] Watch run HealthKit session ended callback session=\(self.snapshot.pulsarWorkoutSessionId?.uuidString ?? "none")")
             default:
                 break
             }
@@ -1003,15 +1202,7 @@ extension WatchRunSessionManager: HKWorkoutSessionDelegate {
         Task { @MainActor in
             for item in data {
                 guard let envelope = PulsarRunTransportCodec.decode(item) else { continue }
-                if case .identity(let identity) = envelope {
-                    self.applyIdentity(identity)
-                } else if case .command(let command) = envelope {
-                    switch command {
-                    case .pause: self.pause()
-                    case .resume: self.resume()
-                    case .finish: self.finish()
-                    }
-                }
+                self.handleRunTransportEnvelope(envelope)
             }
         }
     }

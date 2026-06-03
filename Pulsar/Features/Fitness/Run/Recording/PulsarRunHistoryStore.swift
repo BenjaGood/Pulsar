@@ -107,6 +107,7 @@ actor PulsarRunHistoryStore {
                 endedAt: workout.endDate,
                 source: isAppleWatchSource ? .appleWatch : .iPhone,
                 sourceName: sourceName,
+                heartRateSourceHistory: heartRateMetrics.sourceHistory,
                 distanceMeters: workout.totalDistance?.doubleValue(for: .meter()) ?? 0,
                 elapsedTime: workout.duration,
                 movingTime: workout.duration,
@@ -129,9 +130,9 @@ actor PulsarRunHistoryStore {
     private func fetchHeartRateMetrics(
         healthStore: HKHealthStore,
         workout: HKWorkout
-    ) async -> (average: Double?, maximum: Double?) {
+    ) async -> (average: Double?, maximum: Double?, sourceHistory: [WorkoutHeartRateSourceSegment]) {
         guard let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
-            return (nil, nil)
+            return (nil, nil, [])
         }
         let associatedSamples = await fetchHeartRateSamples(
             healthStore: healthStore,
@@ -152,8 +153,9 @@ actor PulsarRunHistoryStore {
 
         let values = samples.map { $0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute())) }
             .filter { $0 > 0 }
-        guard !values.isEmpty else { return (nil, nil) }
-        return (values.reduce(0, +) / Double(values.count), values.max())
+        let sourceHistory = Self.heartRateSourceHistory(from: samples)
+        guard !values.isEmpty else { return (nil, nil, sourceHistory) }
+        return (values.reduce(0, +) / Double(values.count), values.max(), sourceHistory)
     }
 
     private func fetchHeartRateSamples(
@@ -210,6 +212,34 @@ actor PulsarRunHistoryStore {
         return sourceName ?? (isAppleWatchSource ? PulsarRunRecordingSource.appleWatch.label : nil)
     }
 
+    private nonisolated static func heartRateSourceHistory(from samples: [HKQuantitySample]) -> [WorkoutHeartRateSourceSegment] {
+        var history: [WorkoutHeartRateSourceSegment] = []
+        for sample in samples.sorted(by: { $0.startDate < $1.startDate }) {
+            let metadata = WorkoutHeartRateFallbackMonitor.metadata(from: sample)
+            let sourceKind = metadata.sourceKind == .unknown ? WorkoutHeartRateSourceKind.healthKit : metadata.sourceKind
+            if let lastIndex = history.indices.last,
+               history[lastIndex].sourceKind == sourceKind {
+                history[lastIndex].endedAt = sample.startDate
+                history[lastIndex].metadata = metadata
+                continue
+            }
+            if let lastIndex = history.indices.last,
+               history[lastIndex].endedAt == nil {
+                history[lastIndex].endedAt = sample.startDate
+            }
+            history.append(
+                WorkoutHeartRateSourceSegment(
+                    sourceKind: sourceKind,
+                    startedAt: sample.startDate,
+                    endedAt: nil,
+                    metadata: metadata,
+                    isFallback: false
+                )
+            )
+        }
+        return history
+    }
+
     private func persist(_ runs: [PulsarRunSummary]) {
         if let data = try? JSONEncoder().encode(runs) {
             defaults.set(data, forKey: cacheKey)
@@ -234,6 +264,8 @@ private extension PulsarRunSummary {
         merged.pulsarWorkoutSessionId = incoming.pulsarWorkoutSessionId ?? pulsarWorkoutSessionId
         merged.workoutUUID = incoming.workoutUUID ?? workoutUUID
         merged.sourceName = incoming.sourceName ?? sourceName
+        merged.heartRateSourceHistory = incoming.heartRateSourceHistory.isEmpty ? heartRateSourceHistory : incoming.heartRateSourceHistory
+        merged.heartRateSourceStatusMessage = incoming.heartRateSourceStatusMessage ?? heartRateSourceStatusMessage
         if incoming.workoutKind == .other, workoutKind != .other {
             merged.workoutKind = workoutKind
         }
@@ -244,14 +276,24 @@ private extension PulsarRunSummary {
         merged.maxHeartRate = incoming.maxHeartRate ?? maxHeartRate
         merged.steps = incoming.steps ?? steps
         merged.averageCadenceStepsPerMinute = incoming.averageCadenceStepsPerMinute ?? averageCadenceStepsPerMinute
-        merged.distanceMeters = incoming.distanceMeters > 0 ? incoming.distanceMeters : distanceMeters
+        let hasLocalMotionDetail = !route.isEmpty || !splits.isEmpty || movingTime < elapsedTime - 1
+        let incomingLooksLikeGenericHealthKitImport = incoming.route.isEmpty &&
+            incoming.splits.isEmpty &&
+            abs(incoming.movingTime - incoming.elapsedTime) < 1
+        if hasLocalMotionDetail, incomingLooksLikeGenericHealthKitImport {
+            merged.distanceMeters = distanceMeters
+            merged.movingTime = movingTime
+            merged.elapsedTime = elapsedTime
+        } else {
+            merged.distanceMeters = incoming.distanceMeters > 0 ? incoming.distanceMeters : distanceMeters
+            merged.movingTime = incoming.movingTime > 0 ? incoming.movingTime : movingTime
+            merged.elapsedTime = incoming.elapsedTime > 0 ? incoming.elapsedTime : elapsedTime
+        }
         merged.elevationGainMeters = incoming.elevationGainMeters > 0 ? incoming.elevationGainMeters : elevationGainMeters
         merged.elevationLossMeters = incoming.elevationLossMeters > 0 ? incoming.elevationLossMeters : elevationLossMeters
         merged.minimumElevationMeters = incoming.minimumElevationMeters ?? minimumElevationMeters
         merged.maximumElevationMeters = incoming.maximumElevationMeters ?? maximumElevationMeters
         merged.weatherSummary = incoming.weatherSummary ?? weatherSummary
-        merged.movingTime = incoming.movingTime > 0 ? incoming.movingTime : movingTime
-        merged.elapsedTime = incoming.elapsedTime > 0 ? incoming.elapsedTime : elapsedTime
         return merged
     }
 }
