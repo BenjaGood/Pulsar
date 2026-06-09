@@ -532,6 +532,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "PulsarApp-Info.plist";
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Pulsar uses Apple Music access to show the currently playing song and playback status during your workout.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Pulsar reads sleep, heart rate, activity, workout, and profile data from Apple Health to calculate Sleep, Recovery, Strain, and live workout intensity.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Pulsar saves running and gym workouts, routes when available, distance, calories, heart-rate metrics, and workout summaries to Apple Health.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Pulsar uses location during outdoor runs to show your live map, distance, pace, elevation, and route.";
@@ -573,6 +574,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "PulsarApp-Info.plist";
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Pulsar uses Apple Music access to show the currently playing song and playback status during your workout.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Pulsar reads sleep, heart rate, activity, workout, and profile data from Apple Health to calculate Sleep, Recovery, Strain, and live workout intensity.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Pulsar saves running and gym workouts, routes when available, distance, calories, heart-rate metrics, and workout summaries to Apple Health.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Pulsar uses location during outdoor runs to show your live map, distance, pace, elevation, and route.";

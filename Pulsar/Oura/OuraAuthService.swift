@@ -569,7 +569,13 @@ extension OuraAuthService: ASWebAuthenticationPresentationContextProviding {
     nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         MainActor.assumeIsolated {
             let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-            return scenes.flatMap(\.windows).first { $0.isKeyWindow } ?? ASPresentationAnchor()
+            if let keyWindow = scenes.flatMap(\.windows).first(where: \.isKeyWindow) {
+                return keyWindow
+            }
+            if let scene = scenes.first {
+                return ASPresentationAnchor(windowScene: scene)
+            }
+            preconditionFailure("Oura authorization requires an active window scene.")
         }
     }
 }

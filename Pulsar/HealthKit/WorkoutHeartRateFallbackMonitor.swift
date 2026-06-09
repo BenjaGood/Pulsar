@@ -69,14 +69,14 @@ final class WorkoutHeartRateFallbackMonitor {
             predicate: predicate,
             anchor: queryAnchor,
             limit: HKObjectQueryNoLimit
-        ) { [weak self] _, samples, _, newAnchor, _ in
-            Task { @MainActor in
+        ) { _, samples, _, newAnchor, _ in
+            Task { @MainActor [weak self] in
                 self?.handleAddedSamples(samples, newAnchor: newAnchor)
             }
         }
 
-        query.updateHandler = { [weak self] _, samples, _, newAnchor, _ in
-            Task { @MainActor in
+        query.updateHandler = { _, samples, _, newAnchor, _ in
+            Task { @MainActor [weak self] in
                 self?.handleAddedSamples(samples, newAnchor: newAnchor)
             }
         }
@@ -137,10 +137,10 @@ final class WorkoutHeartRateFallbackMonitor {
 
     private func startStatusTimer() {
         statusTimerTask?.cancel()
-        statusTimerTask = Task { [weak self] in
+        statusTimerTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
-                await self?.evaluateStatus(now: Date())
+                self?.evaluateStatus(now: Date())
             }
         }
     }

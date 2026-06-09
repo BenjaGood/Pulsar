@@ -960,7 +960,7 @@ struct PulsarRunMetricSnapshot: Codable, Equatable {
     )
 }
 
-struct PulsarRunSplit: Codable, Equatable, Identifiable {
+nonisolated struct PulsarRunSplit: Codable, Equatable, Identifiable {
     nonisolated var id: Int { index }
     var index: Int
     var distanceMeters: Double
@@ -1326,7 +1326,7 @@ enum PulsarRunTransportCodec {
     }
 }
 
-enum PulsarRunFormatters {
+nonisolated enum PulsarRunFormatters {
     static func distance(_ meters: Double) -> String {
         let kilometers = max(0, meters) / 1_000
         if kilometers < 10 {
@@ -1409,7 +1409,7 @@ enum PulsarRunFormatters {
     }
 }
 
-struct PulsarRunDerivedMetrics {
+nonisolated struct PulsarRunDerivedMetrics {
     enum LocationRejectionReason: String {
         case beforeWorkoutStart
         case cachedSample

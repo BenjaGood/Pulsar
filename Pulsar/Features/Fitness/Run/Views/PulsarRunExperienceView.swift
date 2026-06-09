@@ -8,6 +8,7 @@ import SwiftUI
 struct PulsarRunExperienceView: View {
     @ObservedObject var coordinator: PulsarRunCoordinator
     var workoutKind: PulsarOutdoorWorkoutKind = .running
+    var profile: UserProfile = .empty
     var onMinimize: (() -> Void)?
     var onSummaryDone: ((PulsarRunSummary) -> Void)?
     @Environment(\.dismiss) private var dismiss
@@ -27,6 +28,7 @@ struct PulsarRunExperienceView: View {
                 PulsarLiveRunView(
                     coordinator: coordinator,
                     workoutKind: workoutKind,
+                    profile: profile,
                     isPreparingForRemoval: isSummaryRevealPending
                 ) {
                     onMinimize?()

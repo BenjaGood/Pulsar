@@ -8,6 +8,7 @@ import SwiftUI
 enum PersonalizedWorkoutKind: String, CaseIterable, Identifiable, Hashable {
     case hiking = "Hiking"
     case running = "Running"
+    case indoorRunning = "Indoor Running"
     case walking = "Walking"
     case gym = "Gym"
 
@@ -19,6 +20,7 @@ enum PersonalizedWorkoutKind: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .hiking: "mountain.2.fill"
         case .running: "figure.run"
+        case .indoorRunning: "figure.run"
         case .walking: "figure.walk"
         case .gym: "dumbbell.fill"
         }
@@ -28,6 +30,7 @@ enum PersonalizedWorkoutKind: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .hiking: .terrain
         case .running: .velocity
+        case .indoorRunning: .velocity
         case .walking: .balance
         case .gym: .power
         }
@@ -38,7 +41,7 @@ enum PersonalizedWorkoutKind: String, CaseIterable, Identifiable, Hashable {
         case .running: .running
         case .walking: .walking
         case .hiking: .hiking
-        case .gym: nil
+        case .indoorRunning, .gym: nil
         }
     }
 }

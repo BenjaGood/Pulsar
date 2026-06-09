@@ -33,7 +33,7 @@ final class OuraKeychainTokenStore: OuraTokenStorage {
     private let service: String
     private let account: String
 
-    init(
+    nonisolated init(
         service: String = "aetherial.Pulsar.oura.oauth",
         account: String = "current-user"
     ) {
@@ -119,4 +119,3 @@ final class OuraInMemoryTokenStore: OuraTokenStorage {
         token = nil
     }
 }
-

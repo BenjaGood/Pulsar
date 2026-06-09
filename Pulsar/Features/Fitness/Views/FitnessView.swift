@@ -202,6 +202,8 @@ struct FitnessView: View {
             }) { workout in
                 if workout == .gym {
                     GymWorkoutLaunchFlowView(appUnitPreference: profileStore.profile.preferredUnits)
+                } else if workout == .indoorRunning {
+                    PersonalizedLiveWorkoutExperienceView(workout: workout, profile: profileStore.profile)
                 } else {
                     PersonalizedWorkoutStartView(workout: workout)
                 }
@@ -219,6 +221,7 @@ struct FitnessView: View {
                 PulsarRunIntroExperienceView(
                     coordinator: runCoordinator,
                     workoutKind: workoutKind,
+                    profile: profileStore.profile,
                     onMinimize: {
                         activeWorkoutManager.minimizeRunWorkout(
                             runCoordinator.snapshot.workoutKind,

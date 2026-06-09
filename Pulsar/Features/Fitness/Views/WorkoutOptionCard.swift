@@ -156,6 +156,22 @@ private struct WorkoutGlyphView: View {
                 }
                 .offset(x: -13, y: 10)
             }
+        case .indoorRunning:
+            ZStack {
+                Image(systemName: "figure.run")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(iconGradient)
+
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(workout.accent.color.opacity(0.70))
+                    .frame(width: 25, height: 4)
+                    .offset(y: 15)
+
+                Capsule(style: .continuous)
+                    .fill(.white.opacity(colorScheme == .dark ? 0.76 : 0.88))
+                    .frame(width: 9, height: 2)
+                    .offset(x: 8, y: 13)
+            }
         case .walking:
             ZStack {
                 Image(systemName: "figure.walk")

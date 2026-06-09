@@ -35,6 +35,8 @@
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>Pulsar uses Apple Music access to show the currently playing song and playback status during your workout.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Pulsar reads sleep, heart rate, activity, workout, and profile data from Apple Health to calculate Sleep, Recovery, Strain, and live workout intensity.</string>
 	<key>NSHealthUpdateUsageDescription</key>

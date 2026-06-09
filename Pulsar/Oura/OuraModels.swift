@@ -13,7 +13,7 @@ enum PulsarOuraLogger {
     }
 }
 
-extension OuraScope {
+nonisolated extension OuraScope {
     static let pulsarOAuthScopes: Set<OuraScope> = [
         .email,
         .personal,
@@ -60,7 +60,7 @@ enum OuraAPIEndpoint {
     static let userCollectionBasePath = "/v2/usercollection"
 }
 
-struct OuraIntegrationConfiguration: Equatable {
+nonisolated struct OuraIntegrationConfiguration: Equatable {
     var clientID: String?
     var redirectURI: URL?
     var requestedScopes: Set<OuraScope>
@@ -137,7 +137,7 @@ struct OuraIntegrationConfiguration: Equatable {
         return keys
     }
 
-    static func load(bundle: Bundle = .main, defaults: UserDefaults = .standard) -> OuraIntegrationConfiguration {
+    nonisolated static func load(bundle: Bundle = .main, defaults: UserDefaults = .standard) -> OuraIntegrationConfiguration {
         let mockMode = defaults.bool(forKey: OuraDefaultsKeys.mockMode) ||
             boolValue(named: "OuraMockMode", bundle: bundle)
         let backendBaseURL = urlValue(named: "OuraBackendBaseURL", bundle: bundle)
@@ -203,7 +203,7 @@ struct OuraIntegrationConfiguration: Equatable {
     }
 }
 
-enum OuraDefaultsKeys {
+nonisolated enum OuraDefaultsKeys {
     static let mockMode = "pulsar.oura.mockMode.v1"
     static let connectionStatus = "pulsar.oura.connectionStatus.v1"
     static let lastSyncAt = "pulsar.oura.lastSyncAt.v1"
@@ -262,7 +262,7 @@ struct OuraOAuthTokenResponse: Codable, Equatable {
         )
     }
 
-    static func parseScopes(_ value: String) -> Set<OuraScope> {
+    nonisolated static func parseScopes(_ value: String) -> Set<OuraScope> {
         OuraScope.parseList(value)
     }
 }
@@ -380,7 +380,7 @@ enum OuraAPIError: LocalizedError, Equatable {
     }
 }
 
-struct OuraErrorResponse: Codable, Equatable {
+struct OuraErrorResponse: nonisolated Codable, Equatable {
     var status: Int?
     var title: String?
     var detail: String?
@@ -449,7 +449,7 @@ enum OuraDateParser {
         return calendar.startOfDay(for: parsed)
     }
 
-    static func dayString(for date: Date, calendar: Calendar = .current) -> String {
+    nonisolated static func dayString(for date: Date, calendar: Calendar = .current) -> String {
         let day = calendar.startOfDay(for: date)
         let components = calendar.dateComponents([.year, .month, .day], from: day)
         guard let year = components.year,
@@ -469,7 +469,7 @@ struct OuraListResponse<Value: Codable>: Codable {
     }
 }
 
-struct OuraPersonalInfo: Codable, Equatable {
+nonisolated struct OuraPersonalInfo: Codable, Equatable {
     var id: String?
     var age: Int?
     var weight: Double?
@@ -900,7 +900,7 @@ enum OuraEndpointDebugStatus: String, Equatable {
     }
 }
 
-struct OuraEndpointDebugRow: Equatable {
+nonisolated struct OuraEndpointDebugRow: Equatable {
     var path: String
     var title: String
     var sampleCount: Int
@@ -908,13 +908,13 @@ struct OuraEndpointDebugRow: Equatable {
     var detail: String?
 }
 
-struct OuraDebugValueRow: Equatable {
+nonisolated struct OuraDebugValueRow: Equatable {
     var title: String
     var detail: String
     var isAvailable: Bool
 }
 
-struct OuraSyncDebugReport: Identifiable, Equatable {
+nonisolated struct OuraSyncDebugReport: Identifiable, Equatable {
     var id = UUID()
     var reason: String
     var dateKey: String

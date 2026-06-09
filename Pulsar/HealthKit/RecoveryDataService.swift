@@ -47,7 +47,7 @@ struct RecoveryDataService: RecoverySummaryProviding {
         async let baseline = baselineDays(before: interval.start, calendar: calendar)
         async let trend = trendDays(endingAt: interval.start, calendar: calendar)
 
-        let values = try await (biometrics, baseline, trend)
+        let values = await (biometrics, baseline, trend)
         PulsarSyncDebugLogger.log("samples loaded for recovery: baselineDays=\(values.1.count) trendDays=\(values.2.count) sleepScore=\(sleep.score) strainScore=\(strain.score) hrv=\(values.0.hrvSDNNMilliseconds.map { Int($0.rounded()) } ?? 0)")
         var summary = RecoveryAnalyzer().analyze(
             RecoveryAnalysisInput(

@@ -25,7 +25,7 @@ enum PulsarHealthKitWorkoutRouteImporter {
         return GPSWorkoutRoute(points: points, source: .healthKitRoute, capturedAt: workout.endDate)
     }
 
-    static func splitEstimates(from route: GPSWorkoutRoute) -> [PulsarRunSplit] {
+    nonisolated static func splitEstimates(from route: GPSWorkoutRoute) -> [PulsarRunSplit] {
         guard route.points.count > 1 else { return [] }
         var splits: [PulsarRunSplit] = []
         var previousLocation: CLLocation?

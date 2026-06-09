@@ -1275,6 +1275,7 @@ struct PulsarRootView: View {
             PulsarRunExperienceView(
                 coordinator: runCoordinator,
                 workoutKind: workoutKind,
+                profile: homeViewModel.profileStore.profile,
                 onMinimize: {
                     activeWorkoutManager.minimizeRunWorkout(
                         workoutKind,

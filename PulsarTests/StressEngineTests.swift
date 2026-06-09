@@ -79,7 +79,7 @@ final class StressEngineTests: XCTestCase {
         let day = MockHealthData.calendar.date(from: DateComponents(year: 2026, month: 5, day: 7))!
         let measuredAt = day.addingTimeInterval(13 * 60 * 60)
         let baseline = stressBaseline(day: day, hrv: 58, restingHeartRate: 56, walkingHeartRate: 76)
-        var calm = StressDailySignals(
+        let calm = StressDailySignals(
             date: day,
             computedAt: measuredAt,
             heartRateVariabilitySDNN: 62,

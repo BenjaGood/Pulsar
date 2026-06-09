@@ -93,9 +93,9 @@ enum MeasurementHealthMetricType: String, Codable, CaseIterable, Identifiable, H
     case temperature
     case cycle
 
-    var id: String { rawValue }
+    nonisolated var id: String { rawValue }
 
-    var label: String {
+    nonisolated var label: String {
         switch self {
         case .heartRate:
             return "Heart rate"

@@ -8,6 +8,7 @@ import SwiftUI
 struct PulsarRunIntroExperienceView: View {
     @ObservedObject var coordinator: PulsarRunCoordinator
     var workoutKind: PulsarOutdoorWorkoutKind = .running
+    var profile: UserProfile = .empty
     var onMinimize: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @State private var isShowingRunExperience = false
@@ -15,7 +16,7 @@ struct PulsarRunIntroExperienceView: View {
     var body: some View {
         ZStack {
             if isShowingRunExperience {
-                PulsarRunExperienceView(coordinator: coordinator, workoutKind: workoutKind, onMinimize: onMinimize)
+                PulsarRunExperienceView(coordinator: coordinator, workoutKind: workoutKind, profile: profile, onMinimize: onMinimize)
                     .transition(.opacity.combined(with: .scale(scale: 1.015)))
             } else {
                 PersonalizedWorkoutStartView(
