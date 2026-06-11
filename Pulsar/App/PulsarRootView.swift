@@ -21,6 +21,7 @@ struct PulsarRootView: View {
     @State private var isPlusMenuExpanded = false
     @State private var plusMenuAnchorMetrics: PulsarTabBarMetrics?
     @StateObject private var homeViewModel = HomeViewModel()
+    @StateObject private var homeBackgroundSettings = HomeBackgroundSettingsStore()
     @StateObject private var mindfulnessStore = PulsarMindfulnessStore()
     @StateObject private var mindfulnessRouter = PulsarMindfulnessRouter()
     @StateObject private var deepLinkRouter = PulsarDeepLinkRouter.shared
@@ -228,12 +229,12 @@ struct PulsarRootView: View {
 
     private var rootShell: some View {
         ZStack(alignment: .bottom) {
-            PulsarRootTabBackground(tab: selectedTab)
+            PulsarRootTabBackground(tab: selectedTab, homeBackgroundMode: homeBackgroundSettings.mode)
                 .ignoresSafeArea()
 
             nativeTabs
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea()
+                .ignoresSafeArea(edges: [.top, .bottom])
                 .background(
                     PulsarTabBarMetricsReader { metrics in
                         updateTabBarMetrics(metrics)
@@ -256,7 +257,6 @@ struct PulsarRootView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             rootSyncStatusHost
         }
-        .background(PulsarRootTabBackground(tab: selectedTab).ignoresSafeArea())
     }
 
     @ViewBuilder
@@ -264,6 +264,7 @@ struct PulsarRootView: View {
         PulsarNativeTabController(
             selectedTab: $selectedTab,
             homeViewModel: homeViewModel,
+            homeBackgroundSettings: homeBackgroundSettings,
             activeWorkoutManager: activeWorkoutManager,
             runCoordinator: runCoordinator,
             mindfulnessStore: mindfulnessStore,
@@ -1459,7 +1460,7 @@ private struct PulsarTabBarMetricsReader: UIViewRepresentable {
             let tabFrameInWindow = tabBar.superview?.convert(tabBar.frame, to: tabBar.window) ?? tabBar.frame
             let tabBarHeight = max(tabBar.bounds.height, tabFrameInWindow.height)
             let rawVisibleHeight = tabBar.isHidden || windowHeight <= 0 ? 0 : max(0, windowHeight - tabFrameInWindow.minY)
-            let maximumChromeHeight = max(tabBarHeight + bottomSafeAreaInset + 20, 72)
+            let maximumChromeHeight = max(tabBarHeight + bottomSafeAreaInset + 24, 86)
             let visibleHeight = min(rawVisibleHeight, maximumChromeHeight)
             let isMinimized = !tabBar.isHidden
                 && windowWidth > 0
@@ -1491,17 +1492,14 @@ private struct PulsarTabBarMetricsReader: UIViewRepresentable {
 
 private struct PulsarRootTabBackground: View {
     let tab: PulsarRootTab
+    let homeBackgroundMode: HomeBackgroundMode
 
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         switch tab {
         case .home:
-            LinearGradient(
-                colors: homeColors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            StaticTimeBackgroundView(mode: homeBackgroundMode)
         case .fitness:
             FitnessWeeklyBackground()
         case .food, .mindfulness:
@@ -1672,24 +1670,28 @@ private struct PulsarPlusMorphingMenu: View {
     }
 
     private func compactPlusButton(layout: PulsarPlusMenuLayout) -> some View {
-        ZStack {
-            morphSurface(cornerRadius: layout.plusButtonFrame.width / 2)
-                .matchedGeometryEffect(
-                    id: "plusMorphSurface",
-                    in: morphNamespace,
-                    properties: .frame,
-                    anchor: .center
-                )
+        Button(action: onToggle) {
+            ZStack {
+                morphSurface(cornerRadius: layout.plusButtonFrame.width / 2)
+                    .matchedGeometryEffect(
+                        id: "plusMorphSurface",
+                        in: morphNamespace,
+                        properties: .frame,
+                        anchor: .center
+                    )
 
-            Image(systemName: "plus")
-                .font(.system(size: 30, weight: .regular))
-                .symbolRenderingMode(.monochrome)
-                .foregroundStyle(Color.black.opacity(0.92))
-                .transition(.opacity.combined(with: .scale(scale: 0.78)))
+                Image(systemName: "plus")
+                    .font(.system(size: 35, weight: .light))
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(Color.white.opacity(0.88))
+                    .transition(.opacity.combined(with: .scale(scale: 0.78)))
+            }
         }
+        .buttonStyle(.plain)
         .frame(width: layout.plusButtonFrame.width, height: layout.plusButtonFrame.height)
+        .contentShape(Circle())
         .position(x: layout.plusButtonFrame.midX, y: layout.plusButtonFrame.midY)
-        .accessibilityHidden(true)
+        .accessibilityLabel("Open quick actions")
     }
 
     private func plusCollapseHitTarget(layout: PulsarPlusMenuLayout) -> some View {
@@ -1810,7 +1812,7 @@ private struct PulsarPlusMorphingMenu: View {
 
     private func plusButtonFrame(in proxy: GeometryProxy, tabChromeHeight: CGFloat) -> CGRect {
         let tabHeight = max(tabBarMetrics.height, 58)
-        let sideLength = min(72, max(48, tabHeight))
+        let sideLength = min(60, max(56, tabHeight * 0.82))
         let horizontalInset = max(0, (tabHeight - sideLength) / 2)
         let tabMaxX = tabBarMetrics.maxX > 0 ? min(tabBarMetrics.maxX, proxy.size.width) : proxy.size.width
         let tabMinY = tabBarMetrics.minY > 0 && tabBarMetrics.minY < proxy.size.height
@@ -1849,7 +1851,7 @@ private struct PulsarPlusActionItem: View {
 
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(Color.black.opacity(0.92))
+            .foregroundStyle(Color.white.opacity(0.92))
             .frame(maxWidth: .infinity, minHeight: rowMinHeight, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -1872,6 +1874,7 @@ private struct PulsarPlusPanelGlassBackground: ViewModifier {
 
         if #available(iOS 26.0, *) {
             content
+                .background(darkSurface, in: shape)
                 .glassEffect(
                     .regular.interactive(),
                     in: .rect(cornerRadius: cornerRadius, style: .continuous)
@@ -1881,27 +1884,40 @@ private struct PulsarPlusPanelGlassBackground: ViewModifier {
                         .stroke(
                             LinearGradient(
                                 colors: [
-                                    .white.opacity(0.46),
-                                    .white.opacity(0.18),
-                                    .white.opacity(0.08)
+                                    .white.opacity(0.26),
+                                    .white.opacity(0.10),
+                                    .white.opacity(0.04)
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),
-                            lineWidth: 0.8
+                            lineWidth: 0.55
                         )
                         .blendMode(.plusLighter)
                 }
-                .shadow(color: .black.opacity(0.11), radius: 28, x: 0, y: 16)
+                .shadow(color: .black.opacity(0.06), radius: 16, x: 0, y: 8)
         } else {
             content
                 .background(.ultraThinMaterial, in: shape)
+                .background(darkSurface, in: shape)
                 .overlay {
                     shape
-                        .stroke(.white.opacity(0.28), lineWidth: 0.7)
+                        .stroke(.white.opacity(0.16), lineWidth: 0.55)
                 }
-                .shadow(color: .black.opacity(0.11), radius: 26, x: 0, y: 15)
+                .shadow(color: .black.opacity(0.06), radius: 16, x: 0, y: 8)
         }
+    }
+
+    private var darkSurface: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color.white.opacity(0.040),
+                Color(red: 0.03, green: 0.055, blue: 0.095).opacity(0.16),
+                Color.black.opacity(0.045)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 }
 
@@ -1928,10 +1944,77 @@ private struct PulsarRootSyncStatusHost: View {
     }
 }
 
+private enum PremiumHomeTabBar {
+    static func apply(to tabBar: UITabBar) {
+        let appearance = UITabBarAppearance()
+        appearance.configureWithTransparentBackground()
+        appearance.backgroundEffect = nil
+        appearance.backgroundColor = .clear
+        appearance.shadowColor = .clear
+        appearance.selectionIndicatorImage = selectionIndicatorImage()
+
+        configure(appearance.stackedLayoutAppearance)
+        configure(appearance.inlineLayoutAppearance)
+        configure(appearance.compactInlineLayoutAppearance)
+
+        tabBar.standardAppearance = appearance
+        tabBar.scrollEdgeAppearance = appearance
+        tabBar.tintColor = UIColor(red: 0.54, green: 0.96, blue: 0.56, alpha: 1.0)
+        tabBar.unselectedItemTintColor = UIColor.white.withAlphaComponent(0.58)
+        tabBar.isTranslucent = true
+        tabBar.backgroundColor = .clear
+        tabBar.backgroundImage = UIImage()
+        tabBar.shadowImage = UIImage()
+        tabBar.layer.shadowColor = UIColor.black.cgColor
+        tabBar.layer.shadowOpacity = 0.035
+        tabBar.layer.shadowRadius = 9
+        tabBar.layer.shadowOffset = CGSize(width: 0, height: 5)
+    }
+
+    private static func configure(_ itemAppearance: UITabBarItemAppearance) {
+        itemAppearance.normal.iconColor = UIColor.white.withAlphaComponent(0.52)
+        itemAppearance.normal.titleTextAttributes = [
+            .foregroundColor: UIColor.white.withAlphaComponent(0.52),
+            .font: UIFont.systemFont(ofSize: 12, weight: .medium)
+        ]
+        itemAppearance.selected.iconColor = UIColor(red: 0.54, green: 0.96, blue: 0.56, alpha: 1.0)
+        itemAppearance.selected.titleTextAttributes = [
+            .foregroundColor: UIColor(red: 0.54, green: 0.96, blue: 0.56, alpha: 1.0),
+            .font: UIFont.systemFont(ofSize: 12, weight: .semibold)
+        ]
+    }
+
+    private static func selectionIndicatorImage() -> UIImage {
+        let size = CGSize(width: 58, height: 44)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let image = renderer.image { context in
+            let rect = CGRect(x: 5, y: 7, width: size.width - 10, height: size.height - 14)
+            let path = UIBezierPath(roundedRect: rect, cornerRadius: rect.height / 2)
+            context.cgContext.setShadow(
+                offset: .zero,
+                blur: 10,
+                color: UIColor(red: 0.42, green: 0.95, blue: 0.54, alpha: 0.11).cgColor
+            )
+            UIColor(red: 0.25, green: 0.62, blue: 0.36, alpha: 0.070).setFill()
+            path.fill()
+            context.cgContext.setShadow(offset: .zero, blur: 0, color: nil)
+
+            UIColor.white.withAlphaComponent(0.12).setStroke()
+            path.lineWidth = 0.55
+            path.stroke()
+        }
+        return image.resizableImage(
+            withCapInsets: UIEdgeInsets(top: 0, left: size.width / 2, bottom: 0, right: size.width / 2),
+            resizingMode: .stretch
+        )
+    }
+}
+
 private struct PulsarNativeTabController: UIViewControllerRepresentable {
     @Binding var selectedTab: PulsarRootTab
 
     let homeViewModel: HomeViewModel
+    let homeBackgroundSettings: HomeBackgroundSettingsStore
     let activeWorkoutManager: PulsarActiveWorkoutManager
     let runCoordinator: PulsarRunCoordinator
     let mindfulnessStore: PulsarMindfulnessStore
@@ -2030,7 +2113,7 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
     private func rootView(for tab: PulsarRootTab) -> some View {
         switch tab {
         case .home:
-            HomeView(viewModel: homeViewModel)
+            HomeView(viewModel: homeViewModel, backgroundSettings: homeBackgroundSettings)
                 .environmentObject(activeWorkoutManager)
                 .environmentObject(runCoordinator)
         case .fitness:
@@ -2105,10 +2188,15 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
         mode = .tabBar
         tabBarMinimizeBehavior = .onScrollDown
         tabBar.isTranslucent = true
+        PremiumHomeTabBar.apply(to: tabBar)
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        lowerFloatingTabBarIfNeeded()
+        updateFloatingTabBarChrome()
+        updateSelectedContentBottomSafeArea()
+        extendSelectedContentBehindBottomChrome()
         reportMetrics(for: tabBar.frame)
         positionPlusActionToggleOverlay()
     }
@@ -2240,7 +2328,7 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
     private func plusActionToggleOverlayFrame() -> CGRect {
         let tabFrame = tabBar.frame
         let tabHeight = max(tabFrame.height, 58)
-        let sideLength = min(72, max(48, tabHeight))
+        let sideLength = min(60, max(56, tabHeight * 0.82))
         let horizontalInset = max(0, (tabHeight - sideLength) / 2)
         let minX: CGFloat = 12
         let maxX = max(minX, view.bounds.width - sideLength - 12)
@@ -2278,7 +2366,9 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
         guard let window = view.window else { return }
         let frameInWindow = view.convert(controlsFrame, to: window)
         let windowBounds = window.bounds
-        let visibleHeight = max(0, windowBounds.height - frameInWindow.minY)
+        let rawVisibleHeight = max(0, windowBounds.height - frameInWindow.minY)
+        let maximumChromeHeight = max(controlsFrame.height + window.safeAreaInsets.bottom + 24, 86)
+        let visibleHeight = min(rawVisibleHeight, maximumChromeHeight)
         let metrics = PulsarTabBarMetrics(
             height: controlsFrame.height,
             width: controlsFrame.width,
@@ -2294,6 +2384,72 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
         guard metrics != lastMetrics else { return }
         lastMetrics = metrics
         onMetricsChange?(metrics)
+    }
+
+    private func lowerFloatingTabBarIfNeeded() {
+        let isFloating = tabBar.frame.width > 0 && tabBar.frame.width < view.bounds.width * 0.90
+        guard isFloating else { return }
+
+        let safeAreaBottom = max(view.safeAreaInsets.bottom, 0)
+        let bottomGap: CGFloat = safeAreaBottom > 0 ? 14 : 8
+        let targetMaxY = view.bounds.height - safeAreaBottom - bottomGap
+        let offsetY = targetMaxY - tabBar.frame.maxY
+        guard abs(offsetY) > 0.5 else { return }
+
+        tabBar.frame = tabBar.frame.offsetBy(dx: 0, dy: offsetY)
+    }
+
+    private func updateFloatingTabBarChrome() {
+        let isFloating = tabBar.frame.width > 0 && tabBar.frame.width < view.bounds.width * 0.90
+        guard isFloating else {
+            tabBar.layer.cornerRadius = 0
+            tabBar.layer.shadowPath = nil
+            tabBar.layer.backgroundColor = nil
+            tabBar.layer.borderWidth = 0
+            return
+        }
+
+        let radius = min(tabBar.bounds.height / 2, 36)
+        tabBar.layer.cornerCurve = .continuous
+        tabBar.layer.cornerRadius = radius
+        tabBar.layer.masksToBounds = false
+        tabBar.layer.backgroundColor = UIColor(red: 0.014, green: 0.027, blue: 0.052, alpha: 0.18).cgColor
+        tabBar.layer.borderColor = UIColor.white.withAlphaComponent(0.12).cgColor
+        tabBar.layer.borderWidth = 0.6
+        tabBar.layer.shadowPath = UIBezierPath(
+            roundedRect: tabBar.bounds.insetBy(dx: 1, dy: 1),
+            cornerRadius: radius
+        ).cgPath
+    }
+
+    private func updateSelectedContentBottomSafeArea() {
+        guard let selectedViewController else { return }
+        let targetInset: CGFloat = 0
+        guard abs(selectedViewController.additionalSafeAreaInsets.bottom - targetInset) > 0.5 else { return }
+
+        selectedViewController.additionalSafeAreaInsets.bottom = targetInset
+    }
+
+    private func extendSelectedContentBehindBottomChrome() {
+        guard let contentView = selectedViewController?.view,
+              let containerView = contentView.superview else { return }
+
+        var ancestor: UIView? = containerView
+        while let current = ancestor, current !== view {
+            current.clipsToBounds = false
+            ancestor = current.superview
+        }
+        contentView.clipsToBounds = false
+
+        let targetFrame = view.convert(view.bounds, to: containerView)
+        if abs(contentView.frame.minX - targetFrame.minX) > 0.5 ||
+            abs(contentView.frame.minY - targetFrame.minY) > 0.5 ||
+            abs(contentView.frame.width - targetFrame.width) > 0.5 ||
+            abs(contentView.frame.height - targetFrame.height) > 0.5 {
+            contentView.frame = targetFrame
+        }
+
+        view.bringSubviewToFront(tabBar)
     }
 }
 

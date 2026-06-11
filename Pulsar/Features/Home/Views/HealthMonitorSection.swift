@@ -302,7 +302,7 @@ struct VerticalHealthIndicator: View {
     }
 }
 
-private struct HealthMetricDetailSheet: View {
+struct HealthMetricDetailSheet: View {
     var metric: HealthMetricModel
 
     @Environment(\.colorScheme) private var colorScheme

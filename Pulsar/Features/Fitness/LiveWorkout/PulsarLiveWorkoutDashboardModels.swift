@@ -244,6 +244,11 @@ struct PulsarLiveWorkoutBanner: Identifiable {
     var tint: Color
 }
 
+enum PulsarLiveWorkoutDashboardPresentationStyle: Hashable {
+    case classic
+    case premiumNonGPS
+}
+
 struct PulsarLiveWorkoutDashboardState {
     var title: String
     var subtitle: String
@@ -261,6 +266,7 @@ struct PulsarLiveWorkoutDashboardState {
     var currentHeartRate: Double?
     var heartRateZone: PulsarHeartRateZone?
     var zoneProfile: PulsarHeartRateZoneProfile
+    var insightTitle: String = "Workout Intensity"
     var intensityTitle: String
     var intensitySubtitle: String
     var nowPlaying: PulsarNowPlayingTrack
@@ -268,9 +274,11 @@ struct PulsarLiveWorkoutDashboardState {
     var banners: [PulsarLiveWorkoutBanner] = []
     var controlsDisabled = false
     var musicControlsDisabled = false
+    var presentationStyle: PulsarLiveWorkoutDashboardPresentationStyle = .classic
 
     var isPaused: Bool { phase == .paused }
     var isFinishing: Bool { phase == .finishing || phase == .finished }
+    var isPremiumNonGPS: Bool { presentationStyle == .premiumNonGPS }
 
     var activeZoneColor: Color {
         heartRateZone?.color ?? tint
@@ -281,6 +289,13 @@ struct PulsarLiveWorkoutDashboardState {
             return "No Heart Rate Available"
         }
         return "\(Int(currentHeartRate.rounded()))"
+    }
+
+    var heartRatePlaceholderText: String {
+        if recorderStatusSymbolName == "applewatch" {
+            return "Waiting for Apple Watch..."
+        }
+        return "Waiting for heart rate..."
     }
 
     var heartRateUnitText: String {
@@ -307,5 +322,19 @@ struct PulsarLiveWorkoutDashboardState {
             return currentHeartRate == nil ? "Waiting for heart rate" : zoneProfile.maxHeartRateText
         }
         return "\(heartRateZone.title) - \(heartRateZone.percentRangeText)"
+    }
+
+    var activeZoneTargetText: String {
+        guard let heartRateZone else {
+            return "Target: --"
+        }
+        return "Target: \(heartRateZone.rangeText)"
+    }
+
+    var activeZoneDescriptionText: String {
+        guard let heartRateZone else {
+            return currentHeartRate == nil ? "Waiting for heart rate" : "Set max HR to unlock zones"
+        }
+        return "You're in \(heartRateZone.title) Zone"
     }
 }

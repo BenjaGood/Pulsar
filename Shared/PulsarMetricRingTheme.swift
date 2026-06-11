@@ -10,11 +10,11 @@ enum PulsarMetricRingTheme {
     static func tint(for kind: PulsarMetricRingKind) -> Color {
         switch kind {
         case .sleep:
-            return .indigo
+            return Color(red: 0.56, green: 0.43, blue: 1.00)
         case .recovery:
-            return .green
+            return Color(red: 0.45, green: 0.91, blue: 0.42)
         case .strain:
-            return .orange
+            return Color(red: 1.00, green: 0.62, blue: 0.13)
         }
     }
 

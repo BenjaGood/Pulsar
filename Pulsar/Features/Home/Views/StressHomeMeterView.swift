@@ -8,141 +8,307 @@ import SwiftUI
 struct StressHomeMeterView: View {
     var summary: StressSummary
 
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.homeAdaptiveAppearance) private var appearance
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            header
-            centeredGauge
-            statusRow
-            insightStack
+        PremiumGlassContainer(cornerRadius: 34, tint: statusColor, isInteractive: true) {
+            VStack(alignment: .leading, spacing: 8) {
+                header
+
+                PremiumStressGaugeView(summary: summary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: gaugeHeight)
+
+                statusStack
+                insightCard
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .overlay(cardBorder)
-        .shadow(color: shadowColor, radius: colorScheme == .dark ? 22 : 16, y: 10)
-        .contentShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
         .accessibilityElement(children: .combine)
+        .accessibilityValue("\(summary.confidence.shortLabel). \(sourceText)")
     }
 
     private var header: some View {
         HStack(spacing: 12) {
             Image(systemName: "waveform.path.ecg")
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(accentGradient)
-                .frame(width: 38, height: 38)
-                .background(iconBackground, in: Circle())
+                .foregroundStyle(statusColor)
+                .frame(width: 44, height: 44)
+                .background(
+                    Circle()
+                        .fill(statusColor.opacity(0.10))
+                        .overlay {
+                            Circle()
+                                .fill(
+                                    RadialGradient(
+                                        colors: [statusColor.opacity(0.18), .clear],
+                                        center: .center,
+                                        startRadius: 2,
+                                        endRadius: 34
+                                    )
+                                )
+                        }
+                )
+                .overlay {
+                    Circle()
+                        .stroke(appearance.headerBorderColor.opacity(0.42), lineWidth: 0.8)
+                }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("Stress")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(primaryText)
-                Text("Estimated stress load")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(secondaryText)
+                    .font(.system(size: 25, weight: .semibold, design: .rounded))
+                    .foregroundStyle(appearance.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.74)
+                Text(subtitle)
+                    .font(.system(size: 17, weight: .medium, design: .rounded))
+                    .foregroundStyle(appearance.secondaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
             }
 
             Spacer(minLength: 8)
 
-            HStack(spacing: 5) {
-                Text("View details")
-                    .font(.caption.weight(.bold))
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.bold))
+            PremiumGlassPill(tint: statusColor, horizontalPadding: 13, verticalPadding: 9) {
+                HStack(spacing: 8) {
+                    Text("View details")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.58)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .bold))
+                }
+                .foregroundStyle(appearance.primaryText.opacity(0.92))
             }
-            .foregroundStyle(statusColor)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(statusColor.opacity(colorScheme == .dark ? 0.15 : 0.10), in: Capsule())
         }
     }
 
-    private var centeredGauge: some View {
-        StressHaloGaugeView(summary: summary, style: .home)
-            .frame(width: 188, height: 188)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.top, 2)
-            .padding(.bottom, 2)
-    }
-
-    private var statusRow: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
+    private var statusStack: some View {
+        VStack(spacing: 7) {
+            HStack {
                 Spacer(minLength: 0)
                 statusPill
-                confidencePill
-                sourcePill
                 Spacer(minLength: 0)
             }
 
-            VStack(spacing: 8) {
-                statusPill
-                confidencePill
-                sourcePill
+            if hasStressScore {
+                VStack(spacing: 2) {
+                    Text(lastUpdatedText)
+                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                        .foregroundStyle(appearance.timeAccentText)
+                        .monospacedDigit()
+                    Text(lastUpdatedCaption)
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(appearance.tertiaryText)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .center)
+
         }
+        .frame(maxWidth: .infinity)
     }
 
     private var statusPill: some View {
-        Text(summary.displayLevelText)
-            .font(.subheadline.weight(.bold))
-            .foregroundStyle(statusColor)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(statusColor.opacity(colorScheme == .dark ? 0.15 : 0.10), in: Capsule())
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
-    }
-
-    private var sourcePill: some View {
-        Text(sourceText)
-            .font(.caption.weight(.bold))
-            .foregroundStyle(secondaryText)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(pillBackground, in: Capsule())
-            .lineLimit(1)
-            .minimumScaleFactor(0.65)
-    }
-
-    private var confidencePill: some View {
-        Text(summary.confidence.shortLabel)
-            .font(.caption.weight(.bold))
-            .foregroundStyle(secondaryText)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(pillBackground, in: Capsule())
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
-    }
-
-    private var insightStack: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            ForEach(insightRows, id: \.self) { insight in
-                HStack(alignment: .top, spacing: 8) {
-                    Circle()
-                        .fill(statusColor.opacity(colorScheme == .dark ? 0.76 : 0.68))
-                        .frame(width: 5, height: 5)
-                        .padding(.top, 6)
-                    Text(insight)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(primaryText.opacity(colorScheme == .dark ? 0.86 : 0.80))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+        PremiumGlassPill(tint: statusColor, horizontalPadding: 12, verticalPadding: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: typicalRangeSymbol)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                Text(typicalRangeText)
+                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.55)
             }
+            .foregroundStyle(statusColor)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(insightBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
-    private var insightRows: [String] {
-        let driverTitles = summary.drivers.map(\.title)
-        let rows = driverTitles.isEmpty ? summary.driverInsights : driverTitles
-        return Array(rows.prefix(2))
+    private var insightCard: some View {
+        HStack(spacing: 13) {
+            ZStack {
+                Circle()
+                    .fill(statusColor.opacity(0.10))
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [statusColor.opacity(0.22), .clear],
+                            center: .center,
+                            startRadius: 2,
+                            endRadius: 36
+                        )
+                    )
+                Image(systemName: insightSymbol)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(statusColor)
+            }
+            .frame(width: 44, height: 44)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(insightTitle)
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundStyle(appearance.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.76)
+
+                Text(insightBody)
+                    .font(.system(size: 13, weight: .regular, design: .rounded))
+                    .foregroundStyle(appearance.secondaryText)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.78)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 6)
+
+            Image(systemName: "chevron.right")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(appearance.tertiaryText)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.020, green: 0.026, blue: 0.044).opacity(0.14),
+                            Color.black.opacity(0.085),
+                            statusColor.opacity(0.018)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(appearance.headerBorderColor.opacity(0.36), lineWidth: 0.55)
+        }
+        .overlay(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(appearance.headerBorderColor.opacity(0.30), lineWidth: 0.45)
+                .blur(radius: 0.2)
+        }
+    }
+
+    private var subtitle: String {
+        switch summary.state {
+        case .workoutPaused, .cooldown:
+            return summary.stressStatusText ?? "Current stress"
+        default:
+            return "Current stress"
+        }
+    }
+
+    private var gaugeHeight: CGFloat {
+        hasStressScore ? 136 : 104
+    }
+
+    private var hasStressScore: Bool {
+        summary.score != nil
+    }
+
+    private var typicalRangeText: String {
+        if summary.state == .lowConfidence {
+            return summary.confidence.shortLabel
+        }
+
+        guard summary.score != nil else {
+            if summary.state == .buildingBaseline { return "Building your baseline" }
+            return "Awaiting stress signals"
+        }
+
+        switch summary.level {
+        case .low, .balanced:
+            return "Within your typical range"
+        case .elevated:
+            return "Slightly above typical"
+        case .high:
+            return "Above your typical range"
+        case nil:
+            return "Stress estimate ready"
+        }
+    }
+
+    private var typicalRangeSymbol: String {
+        if summary.state == .lowConfidence {
+            return "exclamationmark.triangle"
+        }
+
+        guard summary.score != nil else { return "clock.badge.checkmark" }
+        switch summary.level {
+        case .low, .balanced:
+            return "checkmark.square"
+        case .elevated:
+            return "exclamationmark.triangle"
+        case .high:
+            return "exclamationmark.octagon"
+        case nil:
+            return "waveform.path.ecg"
+        }
+    }
+
+    private var insightTitle: String {
+        guard summary.score != nil else {
+            return summary.displayLevelText
+        }
+
+        if summary.state == .lowConfidence {
+            return summary.confidence.shortLabel
+        }
+
+        return "Your stress is \(homeStressLevelText.lowercased())"
+    }
+
+    private var insightBody: String {
+        guard summary.score != nil else {
+            return summary.explanation
+        }
+
+        if summary.state == .lowConfidence {
+            return summary.explanation
+        }
+
+        if homeStressLevelText == "Low" {
+            return "Great balance. Keep it up."
+        }
+
+        if let driver = summary.drivers.first {
+            return driver.detail
+        }
+
+        if let insight = summary.driverInsights.first {
+            return insight
+        }
+
+        return summary.explanation
+    }
+
+    private var insightSymbol: String {
+        switch summary.level {
+        case .low, .balanced:
+            return "sparkles"
+        case .elevated:
+            return "wind"
+        case .high:
+            return "bolt.heart"
+        case nil:
+            return "heart.text.square"
+        }
+    }
+
+    private var homeStressLevelText: String {
+        guard let score = summary.score else { return summary.displayLevelText }
+        switch score {
+        case 0...33:
+            return "Low"
+        case 34...66:
+            return "Medium"
+        default:
+            return "High"
+        }
     }
 
     private var sourceText: String {
@@ -152,88 +318,23 @@ struct StressHomeMeterView: View {
         return "Source \(text)"
     }
 
+    private var latestUpdateDate: Date? {
+        summary.lastUpdated ?? summary.queryEnd
+    }
+
+    private var lastUpdatedText: String {
+        guard let date = latestUpdateDate else {
+            return "Not updated"
+        }
+        return date.formatted(.dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
+    }
+
+    private var lastUpdatedCaption: String {
+        latestUpdateDate == nil ? "No recent update" : "Last updated"
+    }
+
     private var statusColor: Color {
-        summary.level?.stressTint(colorScheme: colorScheme) ?? (colorScheme == .dark ? Color.white.opacity(0.74) : Color(red: 0.38, green: 0.43, blue: 0.52))
-    }
-
-    private var primaryText: Color {
-        colorScheme == .dark ? .white.opacity(0.97) : Color(red: 0.08, green: 0.10, blue: 0.15)
-    }
-
-    private var secondaryText: Color {
-        colorScheme == .dark ? .white.opacity(0.63) : Color(red: 0.35, green: 0.39, blue: 0.47)
-    }
-
-    private var pillBackground: Color {
-        colorScheme == .dark ? Color.white.opacity(0.075) : Color.white.opacity(0.62)
-    }
-
-    private var insightBackground: Color {
-        colorScheme == .dark ? Color.white.opacity(0.055) : Color.white.opacity(0.58)
-    }
-
-    private var iconBackground: LinearGradient {
-        LinearGradient(
-            colors: [
-                statusColor.opacity(colorScheme == .dark ? 0.24 : 0.14),
-                Color.white.opacity(colorScheme == .dark ? 0.07 : 0.72)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    private var accentGradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                colorScheme == .dark ? Color.white.opacity(0.94) : Color(red: 0.14, green: 0.16, blue: 0.21),
-                statusColor
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 30, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: colorScheme == .dark
-                        ? [
-                            Color(red: 0.13, green: 0.16, blue: 0.24).opacity(0.78),
-                            Color(red: 0.06, green: 0.08, blue: 0.14).opacity(0.88),
-                            statusColor.opacity(0.10)
-                        ]
-                        : [
-                            Color.white.opacity(0.90),
-                            Color(red: 0.95, green: 0.97, blue: 1.00).opacity(0.82),
-                            statusColor.opacity(0.08)
-                        ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-    }
-
-    private var cardBorder: some View {
-        RoundedRectangle(cornerRadius: 30, style: .continuous)
-            .stroke(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(colorScheme == .dark ? 0.20 : 0.86),
-                        statusColor.opacity(colorScheme == .dark ? 0.16 : 0.24),
-                        Color.black.opacity(colorScheme == .dark ? 0.16 : 0.06)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: 1
-            )
-    }
-
-    private var shadowColor: Color {
-        colorScheme == .dark ? .black.opacity(0.25) : .black.opacity(0.10)
+        stressGaugeTint(for: summary.score)
     }
 }
 

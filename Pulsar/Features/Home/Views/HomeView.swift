@@ -9,109 +9,121 @@ import UIKit
 struct HomeView: View {
     @ObservedObject var viewModel: HomeViewModel
     @StateObject private var measurementSourceManager = MeasurementSourceManager()
+    @ObservedObject private var backgroundSettings: HomeBackgroundSettingsStore
     @State private var isShowingProfile = false
     @State private var isShowingCalendar = false
     @State private var isShowingMeasurementSource = false
     #if DEBUG
     @State private var lastHomeRenderDiagnosticSignature = ""
     #endif
+    private static let floatingNavigationHeight: CGFloat = 76
+    private static let floatingNavigationExtraScrollSpacing: CGFloat = 28
+    private static let floatingNavigationEndOfContentBuffer: CGFloat = 168
+    private static let maximumSystemBottomInset: CGFloat = 44
 
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    if !viewModel.healthKitStatus.hasPrefix("HealthKit connected") {
-                        HealthKitStatusBanner(message: viewModel.healthKitStatus)
-                    }
-                    metricOrbStack
-                    sourceContextStrip
-                    stressSection
-                    healthMonitorSection
-                }
-                .padding(.horizontal, 18)
-                .padding(.top, 12)
-                .padding(.bottom, 28)
-            }
-            .safeAreaPadding(.bottom, 16)
-            .scrollContentBackground(.hidden)
-            .navigationTitle(homeNavigationTitle)
-            .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        isShowingMeasurementSource = true
-                    } label: {
-                        MeasurementDeviceIconView(type: measurementSourceManager.activeDevice.type, size: 22)
-                    }
-                    .accessibilityLabel("Measurement Source")
-                    .accessibilityHint("Choose which device powers your health metrics")
-                }
-
-                ToolbarItem(placement: .principal) {
-                    Button {
-                        isShowingCalendar = true
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text(homeNavigationTitle)
-                                .pulsarTextStyle(.cardTitle)
-                            Image(systemName: "chevron.down")
-                                .pulsarTextStyle(.caption)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Open calendar")
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        isShowingProfile = true
-                    } label: {
-                        AvatarView(profile: viewModel.dashboard.profile, size: 28)
-                    }
-                    .accessibilityLabel("Open Profile")
-                }
-            }
-            .sheet(isPresented: $isShowingProfile) {
-                PulsarSettingsView(store: viewModel.profileStore) {
-                    viewModel.refreshProfileFromStore()
-                } onHealthAuthorizationUpdated: {
-                    Task { await viewModel.load() }
-                }
-            }
-            .sheet(isPresented: $isShowingCalendar) {
-                StrainCalendarView(selectedDate: viewModel.selectedDate, records: viewModel.strainRecords) { date in
-                    Task { await viewModel.selectDate(date) }
-                }
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-            }
-            .sheet(isPresented: $isShowingMeasurementSource) {
-                MeasurementSourceSheet(manager: measurementSourceManager) {
-                    await viewModel.load()
-                } onDismiss: {
-                    isShowingMeasurementSource = false
-                }
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-            }
-            .ouraDebugReportSheet(viewModel: viewModel)
-            .refreshable { await viewModel.load() }
-            .onAppear {
-                logHomeRenderedStateIfNeeded()
-            }
-            .onChange(of: viewModel.selectedDate) { _, _ in
-                logHomeRenderedStateIfNeeded()
-            }
-            .onChange(of: viewModel.dashboard) { _, _ in
-                logHomeRenderedStateIfNeeded()
-            }
-        }
-        .background(PulsarBackground())
-        .toolbarBackground(.hidden, for: .navigationBar)
+    init(viewModel: HomeViewModel, backgroundSettings: HomeBackgroundSettingsStore = HomeBackgroundSettingsStore()) {
+        self.viewModel = viewModel
+        self._backgroundSettings = ObservedObject(wrappedValue: backgroundSettings)
     }
 
-    private var metricOrbStack: some View {
-        metricOrbLayout
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 300)) { timeline in
+            let backgroundStyle = backgroundSettings.mode.resolvedStyle(for: timeline.date)
+            let appearance = HomeAdaptiveAppearance(style: backgroundStyle)
+
+            homeContent(backgroundStyle: backgroundStyle)
+                .environment(\.homeAdaptiveAppearance, appearance)
+                .preferredColorScheme(appearance.preferredColorScheme)
+        }
+    }
+
+    private func homeContent(backgroundStyle: HomeBackgroundStyle) -> some View {
+        NavigationStack {
+            GeometryReader { proxy in
+                let bottomChromeClearance = Self.bottomChromeClearance(for: proxy.safeAreaInsets.bottom)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HomeHeaderView(
+                            profile: viewModel.dashboard.profile,
+                            activeDevice: measurementSourceManager.activeDevice,
+                            date: viewModel.selectedDate,
+                            onTodayTapped: { isShowingCalendar = true },
+                            onProfileTapped: { isShowingProfile = true },
+                            onDeviceTapped: { isShowingMeasurementSource = true }
+                        )
+
+                        if !viewModel.healthKitStatus.hasPrefix("HealthKit connected") {
+                            HealthKitStatusBanner(message: viewModel.healthKitStatus)
+                        }
+
+                        metricGlassCardStack
+                        stressSection
+                        sourceSummaryCards
+                        healthMonitorSection
+                        Rectangle()
+                            .fill(Color.clear)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: bottomChromeClearance + Self.floatingNavigationEndOfContentBuffer)
+                            .accessibilityHidden(true)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                    .padding(.bottom, 8)
+                }
+                .contentMargins(.bottom, bottomChromeClearance, for: .scrollContent)
+                .background(StaticTimeBackgroundView(style: backgroundStyle))
+                .scrollContentBackground(.hidden)
+                .ignoresSafeArea(edges: .bottom)
+                .toolbar(.hidden, for: .navigationBar)
+                .sheet(isPresented: $isShowingProfile) {
+                    PulsarSettingsView(store: viewModel.profileStore, backgroundSettingsStore: backgroundSettings) {
+                        viewModel.refreshProfileFromStore()
+                    } onHealthAuthorizationUpdated: {
+                        Task { await viewModel.load() }
+                    }
+                }
+                .sheet(isPresented: $isShowingCalendar) {
+                    StrainCalendarView(selectedDate: viewModel.selectedDate, records: viewModel.strainRecords) { date in
+                        Task { await viewModel.selectDate(date) }
+                    }
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+                }
+                .sheet(isPresented: $isShowingMeasurementSource) {
+                    MeasurementSourceSheet(manager: measurementSourceManager) {
+                        await viewModel.load()
+                    } onDismiss: {
+                        isShowingMeasurementSource = false
+                    }
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+                }
+                .ouraDebugReportSheet(viewModel: viewModel)
+                .refreshable { await viewModel.load() }
+                .onAppear {
+                    logHomeRenderedStateIfNeeded()
+                }
+                .onChange(of: viewModel.selectedDate) { _, _ in
+                    logHomeRenderedStateIfNeeded()
+                }
+                .onChange(of: viewModel.dashboard) { _, _ in
+                    logHomeRenderedStateIfNeeded()
+                }
+                .background(Color.clear)
+                .toolbarBackground(.hidden, for: .navigationBar)
+            }
+        }
+    }
+
+    private static func bottomChromeClearance(for safeAreaBottom: CGFloat) -> CGFloat {
+        floatingNavigationHeight
+            + min(max(safeAreaBottom, 0), maximumSystemBottomInset)
+            + floatingNavigationExtraScrollSpacing
+    }
+
+    private var metricGlassCardStack: some View {
+        metricGlassCardLayout
     }
 
     private var homeNavigationTitle: String {
@@ -126,7 +138,7 @@ struct HomeView: View {
         } label: {
             StressHomeMeterView(summary: viewModel.dashboard.stress)
         }
-        .buttonStyle(StressHomeMeterButtonStyle(glowColor: viewModel.dashboard.stress.level?.stressTint(colorScheme: .dark) ?? .blue.opacity(0.6)))
+        .buttonStyle(StressHomeMeterButtonStyle(glowColor: stressGaugeTint(for: viewModel.dashboard.stress.score)))
         .simultaneousGesture(TapGesture().onEnded {
             UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         })
@@ -134,124 +146,151 @@ struct HomeView: View {
     }
 
     private var healthMonitorSection: some View {
-        HealthMonitorSection(summary: viewModel.dashboard.healthMonitor)
+        HealthMonitorGlassSection(summary: viewModel.dashboard.healthMonitor)
     }
 
-    @ViewBuilder
-    private var sourceContextStrip: some View {
-        let labels = sourceContextLabels
-        if !labels.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(labels, id: \.self) { label in
-                        Text(label)
-                            .pulsarTextStyle(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .background(.ultraThinMaterial, in: Capsule(style: .continuous))
+    private var sourceSummaryCards: some View {
+        GeometryReader { proxy in
+            let spacing: CGFloat = 8
+            let minimumInlineWidth: CGFloat = 132
+            let cardWidth = max(118, (proxy.size.width - spacing * 2) / 3)
+
+            if proxy.size.width < minimumInlineWidth * 3 + spacing * 2 {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: spacing) {
+                        ForEach(sourceCardContents) { item in
+                            sourceCardButton(item: item, width: 132)
+                        }
+                    }
+                    .padding(.horizontal, 1)
+                }
+            } else {
+                HStack(spacing: spacing) {
+                    ForEach(sourceCardContents) { item in
+                        sourceCardButton(item: item, width: cardWidth)
                     }
                 }
-                .padding(.horizontal, 1)
+                .frame(width: proxy.size.width, alignment: .center)
             }
         }
+        .frame(height: 64)
     }
 
-    private var metricOrbLayout: some View {
+    private func sourceCardButton(item: HomeSourceCardContent, width: CGFloat) -> some View {
+        Button {
+            isShowingMeasurementSource = true
+        } label: {
+            HomeSourceGlassCard(item: item)
+                .frame(width: width, height: 64)
+        }
+        .buttonStyle(HomeSourceGlassButtonStyle(glowColor: item.tint))
+        .accessibilityLabel("\(item.title), \(item.subtitle)")
+        .accessibilityHint("Open measurement sources")
+    }
+
+    private var metricGlassCardLayout: some View {
         GeometryReader { proxy in
-            let spacing: CGFloat = proxy.size.width < 340 ? 8 : 10
-            let cardWidth = max(78, (proxy.size.width - spacing * 2) / 3)
+            if proxy.size.width < 334 {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 8) {
+                        sleepMetricCard
+                            .frame(width: 112, height: 238)
+                        recoveryMetricCard
+                            .frame(width: 112, height: 238)
+                        strainMetricCard
+                            .frame(width: 112, height: 238)
+                    }
+                    .padding(.horizontal, 1)
+                }
+                .frame(width: proxy.size.width, height: 238, alignment: .leading)
+            } else {
+                let spacing: CGFloat = 8
+                let cardWidth = max(104, (proxy.size.width - spacing * 2) / 3)
+                let cardHeight = CGFloat(238)
 
-            HStack(alignment: .top, spacing: spacing) {
-                sleepMetricOrb
-                    .frame(width: cardWidth, height: 168)
-                recoveryMetricOrb
-                    .frame(width: cardWidth, height: 168)
-                strainMetricOrb
-                    .frame(width: cardWidth, height: 168)
+                HStack(alignment: .top, spacing: spacing) {
+                    sleepMetricCard
+                        .frame(width: cardWidth, height: cardHeight)
+                    recoveryMetricCard
+                        .frame(width: cardWidth, height: cardHeight)
+                    strainMetricCard
+                        .frame(width: cardWidth, height: cardHeight)
+                }
+                .frame(width: proxy.size.width, alignment: .center)
             }
-            .frame(width: proxy.size.width, alignment: .center)
         }
-        .frame(height: 168)
+        .frame(height: 238)
     }
 
-    private var sleepMetricOrb: some View {
-        metricOrbLink(
+    private var sleepMetricCard: some View {
+        metricGlassCardLink(
             title: "Sleep",
             value: viewModel.dashboard.sleep.score,
-            description: sleepDescription(for: viewModel.dashboard.sleep),
-            icon: "moon.zzz.fill",
+            status: sleepStatus(for: viewModel.dashboard.sleep),
+            description: sleepSupportiveDescription(for: viewModel.dashboard.sleep),
+            icon: "moon.zzz",
             metric: .sleep,
             destination: SleepDetailsView(viewModel: viewModel.makeSleepDetailsViewModel())
         )
     }
 
-    private var recoveryMetricOrb: some View {
-        metricOrbLink(
+    private var recoveryMetricCard: some View {
+        metricGlassCardLink(
             title: "Recovery",
             value: viewModel.dashboard.recovery.score,
-            description: recoveryDescription(for: viewModel.dashboard.recovery),
-            icon: "heart.text.square.fill",
+            status: recoveryStatus(for: viewModel.dashboard.recovery),
+            description: recoverySupportiveDescription(for: viewModel.dashboard.recovery),
+            icon: "leaf.fill",
             metric: .recovery,
             destination: RecoveryDetailsView(viewModel: viewModel.makeRecoveryDetailsViewModel())
         )
     }
 
-    private var strainMetricOrb: some View {
-        metricOrbLink(
+    private var strainMetricCard: some View {
+        metricGlassCardLink(
             title: "Strain",
             value: viewModel.dashboard.strain.score,
-            description: strainDescription(for: viewModel.dashboard.strain),
-            icon: "figure.run.circle.fill",
+            status: strainStatus(for: viewModel.dashboard.strain),
+            description: strainSupportiveDescription(for: viewModel.dashboard.strain),
+            icon: "figure.run",
             metric: .strain,
-            targetValue: suggestedStrainTargetRange.map { Double($0.upperBound) },
-            targetRange: suggestedStrainTargetRange.map { Double($0.lowerBound)...Double($0.upperBound) },
-            targetLabel: "Target range",
             showsZeroValue: hasCurrentStrainValue(viewModel.dashboard.strain),
             destination: StrainDetailsView(viewModel: viewModel.makeStrainDetailsViewModel())
         )
     }
 
-    private func metricOrbLink<Destination: View>(
+    private func metricGlassCardLink<Destination: View>(
         title: String,
         value: Int,
+        status: String,
         description: String,
         icon: String,
         metric: PulsarMetricRingKind,
-        targetValue: Double? = nil,
-        targetRange: ClosedRange<Double>? = nil,
-        targetLabel: String? = nil,
         showsZeroValue: Bool = false,
         destination: Destination
     ) -> some View {
-        let colorState = MetricOrbColorState(score: Double(value))
         let tint = PulsarMetricRingTheme.tint(for: metric)
-        let targetAccessibility = targetRange.map { ", \(targetLabel?.lowercased() ?? "target range") \(Int($0.lowerBound.rounded())) to \(Int($0.upperBound.rounded()))" } ?? targetValue.map { ", \(targetLabel?.lowercased() ?? "target") \(Int($0.rounded()))" } ?? ""
 
         return NavigationLink {
             destination
         } label: {
-            PulsarMetricCircle(
+            PremiumGlassMetricCard(
                 title: title,
-                value: Double(value),
+                score: value,
+                status: status,
                 description: description,
                 icon: icon,
                 metric: metric,
-                colorState: colorState,
-                targetValue: targetValue,
-                targetRange: targetRange,
-                targetLabel: targetLabel,
                 showsZeroValue: showsZeroValue
             )
-            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
             .frame(maxWidth: .infinity, alignment: .top)
         }
         .buttonStyle(PulsarMetricCircleButtonStyle(glowColor: tint))
         .simultaneousGesture(TapGesture().onEnded {
             UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         })
-        .accessibilityLabel("\(title) \(value == 0 && !showsZeroValue ? "unavailable" : "\(value)")\(targetAccessibility)")
+        .accessibilityLabel("\(title) \(value == 0 && !showsZeroValue ? "unavailable" : "\(value)"), \(status)")
         .accessibilityHint("Open \(title) details")
     }
 
@@ -259,7 +298,21 @@ struct HomeView: View {
         viewModel.recommendedStrainTargetRange()
     }
 
-    private func sleepDescription(for summary: SleepSummary) -> String {
+    private func sleepStatus(for summary: SleepSummary) -> String {
+        guard summary.score > 0 else { return "Unavailable" }
+        switch summary.score {
+        case 85...100:
+            return "Optimal"
+        case 70..<85:
+            return "Good"
+        case 50..<70:
+            return "Fair"
+        default:
+            return "Low"
+        }
+    }
+
+    private func sleepSupportiveDescription(for summary: SleepSummary) -> String {
         guard summary.score > 0 else {
             if summary.confidenceExplanation == SleepSummary.permissionRequired.confidenceExplanation {
                 return "Health access needed"
@@ -267,73 +320,150 @@ struct HomeView: View {
             return "Awaiting sleep"
         }
 
-        let sleepText = minutes(summary.totalSleepMinutes)
-        return "\(sleepText) sleep"
-    }
-
-    private func recoveryDescription(for summary: RecoverySummary) -> String {
-        guard summary.score > 0 else {
-            return "Build baseline"
+        if summary.score >= 70 {
+            return "You slept well last night."
         }
 
-        return summary.status.label
+        let sleepText = minutes(summary.totalSleepMinutes)
+        return "\(sleepText) logged last night."
     }
 
-    private func strainDescription(for summary: StrainSummary) -> String {
+    private func recoveryStatus(for summary: RecoverySummary) -> String {
+        guard summary.score > 0 else {
+            return "Unavailable"
+        }
+
+        switch summary.score {
+        case 85...100:
+            return "Excellent"
+        case 70..<85:
+            return "Good"
+        case 50..<70:
+            return "Moderate"
+        default:
+            return "Low"
+        }
+    }
+
+    private func recoverySupportiveDescription(for summary: RecoverySummary) -> String {
+        guard summary.score > 0 else {
+            return "Awaiting recent biometrics."
+        }
+
+        switch summary.score {
+        case 85...100:
+            return "Your body is ready for more."
+        case 70..<85:
+            return "Your body is recovering well."
+        case 50..<70:
+            return "Keep today balanced and steady."
+        default:
+            return "Prioritize rest and easier effort."
+        }
+    }
+
+    private func strainStatus(for summary: StrainSummary) -> String {
+        guard hasCurrentStrainValue(summary) else { return "Unavailable" }
+        switch summary.score {
+        case 0..<40:
+            return "Light"
+        case 40..<70:
+            return "Moderate"
+        case 70..<88:
+            return "High"
+        default:
+            return "Peak"
+        }
+    }
+
+    private func strainSupportiveDescription(for summary: StrainSummary) -> String {
         guard hasCurrentStrainValue(summary) else {
             return "Awaiting load"
         }
 
         if let suggestedStrainTargetRange {
-            return "Current \(summary.score) · Guard \(suggestedStrainTargetRange.displayText)"
+            if Double(summary.score) <= Double(suggestedStrainTargetRange.upperBound) {
+                return "Training load is in a good range."
+            }
+            return "Above today's guard \(suggestedStrainTargetRange.displayText)."
         }
         if summary.workoutMinutes > 0 {
-            return "\(minutes(summary.workoutMinutes)) training"
+            return "\(minutes(summary.workoutMinutes)) training logged."
         }
         if summary.steps > 0 {
-            return "\(summary.steps.formatted()) steps"
+            return "\(summary.steps.formatted()) steps so far."
         }
-        return "Current \(summary.score)"
+        return "Current load is \(summary.score)."
     }
 
     private func hasCurrentStrainValue(_ summary: StrainSummary) -> Bool {
         summary.lastUpdated != nil || summary.confidence != .missing || summary.score > 0 || summary.steps > 0 || summary.workoutMinutes > 0 || summary.exerciseMinutes > 0 || (summary.activeEnergyKilocalories ?? 0) > 0
     }
 
-    private var sourceContextLabels: [String] {
-        var labels: [String] = []
-        if let source = compactSourceName(viewModel.dashboard.sleep.sourceBadges) {
-            labels.append(sourceLabel(prefix: "Sleep data", source: source, category: .sleepRecovery))
-        }
-        if let source = compactSourceName(viewModel.dashboard.recovery.sourceBadges) {
-            labels.append(sourceLabel(prefix: "Recovery", source: source, category: .sleepRecovery))
-        }
-        if let source = compactSourceName(viewModel.dashboard.strain.sourceBadges) {
-            labels.append(sourceLabel(prefix: "Steps", source: source, category: .activitySteps))
-            labels.append(sourceLabel(prefix: "Workout data", source: source, category: .workoutsActivity))
-        }
-        if let hrv = viewModel.dashboard.healthMonitor.metrics.first(where: { $0.kind == .hrv }),
-           let source = compactSourceName(hrv.sourceBadges) {
-            labels.append(sourceLabel(prefix: "HRV", source: source, category: .heartMetrics))
-        }
-        return Array(labels.prefix(4))
+    private var sourceCardContents: [HomeSourceCardContent] {
+        [
+            HomeSourceCardContent(
+                title: "Recovery",
+                subtitle: sourceCardSubtitle(
+                    sources: viewModel.dashboard.recovery.sourceBadges,
+                    category: .sleepRecovery,
+                    emptyText: "No source"
+                ),
+                symbol: "chart.bar.fill",
+                tint: Color(red: 0.45, green: 0.91, blue: 0.42)
+            ),
+            HomeSourceCardContent(
+                title: "Steps",
+                subtitle: sourceCardSubtitle(
+                    sources: viewModel.dashboard.strain.sourceBadges,
+                    category: .activitySteps,
+                    emptyText: viewModel.dashboard.strain.steps > 0 ? "\(viewModel.dashboard.strain.steps.formatted()) steps" : "No source"
+                ),
+                symbol: "shoeprints.fill",
+                tint: Color(red: 0.45, green: 0.58, blue: 1.00)
+            ),
+            HomeSourceCardContent(
+                title: "Workouts",
+                subtitle: workoutSourceSubtitle,
+                symbol: "figure.run",
+                tint: Color(red: 0.58, green: 0.42, blue: 1.00)
+            )
+        ]
     }
 
-    private func sourceLabel(prefix: String, source: String, category: HealthSourcePriorityCategory) -> String {
+    private func sourceCardSubtitle(sources: [SourceProvenance], category: HealthSourcePriorityCategory, emptyText: String) -> String {
+        guard let source = compactSourceName(sources) else { return emptyText }
         let resolved = measurementSourceManager.resolvedSource(for: category)
-        let fallback = resolved.isFallback ? " · Using fallback source" : ""
-        return "\(prefix) from \(source)\(fallback)"
+        let suffix = resolved.isFallback ? " fallback" : ""
+        return "from \(source)\(suffix)"
+    }
+
+    private var workoutSourceSubtitle: String {
+        if let workoutSource = viewModel.dashboard.strain.workouts.compactMap(\.sourceName).first(where: { !$0.isEmpty }) {
+            return "from \(compactDisplayName(workoutSource))"
+        }
+        if compactSourceName(viewModel.dashboard.strain.sourceBadges) != nil {
+            return sourceCardSubtitle(sources: viewModel.dashboard.strain.sourceBadges, category: .workoutsActivity, emptyText: "This week")
+        }
+        let workoutCount = viewModel.dashboard.strain.workouts.count
+        if workoutCount == 1 { return "1 today" }
+        if workoutCount > 1 { return "\(workoutCount) today" }
+        return "This week"
     }
 
     private func compactSourceName(_ sources: [SourceProvenance]) -> String? {
         guard let first = sources.first else { return nil }
-        if first.displayName.localizedCaseInsensitiveContains("oura") {
+        return compactDisplayName(first.displayName)
+    }
+
+    private func compactDisplayName(_ displayName: String) -> String {
+        if displayName.localizedCaseInsensitiveContains("oura") {
             return "Oura"
         }
-        if first.displayName.localizedCaseInsensitiveContains("watch") {
+        if displayName.localizedCaseInsensitiveContains("watch") {
             return "Apple Watch"
         }
-        return first.displayName
+        return displayName
     }
 
     private func logHomeRenderedStateIfNeeded() {
@@ -344,6 +474,80 @@ struct HomeView: View {
         lastHomeRenderDiagnosticSignature = signature
         viewModel.logHomeRenderedState(uiRenderedSleepMinutes: sleep.totalSleepMinutes)
         #endif
+    }
+}
+
+private struct HomeSourceCardContent: Identifiable {
+    var id: String { title }
+    var title: String
+    var subtitle: String
+    var symbol: String
+    var tint: Color
+}
+
+private struct HomeSourceGlassCard: View {
+    var item: HomeSourceCardContent
+
+    @Environment(\.homeAdaptiveAppearance) private var appearance
+
+    var body: some View {
+        PremiumGlassContainer(cornerRadius: 26, tint: item.tint.opacity(0.72), isInteractive: true) {
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(item.tint.opacity(0.08))
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [item.tint.opacity(0.18), .clear],
+                                center: .center,
+                                startRadius: 2,
+                                endRadius: 30
+                            )
+                        )
+                    Image(systemName: item.symbol)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(item.tint)
+                }
+                .frame(width: 40, height: 40)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.title)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(appearance.primaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.68)
+
+                    Text(item.subtitle)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(appearance.secondaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.62)
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(appearance.tertiaryText)
+                    .frame(width: 12, alignment: .trailing)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct HomeSourceGlassButtonStyle: ButtonStyle {
+    var glowColor: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.984 : 1)
+            .brightness(configuration.isPressed ? 0.035 : 0)
+            .shadow(color: glowColor.opacity(configuration.isPressed ? 0.16 : 0), radius: 12, y: 6)
+            .animation(.spring(response: 0.28, dampingFraction: 0.82), value: configuration.isPressed)
     }
 }
 
@@ -638,15 +842,21 @@ private func percent(_ value: Double) -> String {
 @MainActor
 private struct HomePolishPreview: View {
     @StateObject private var viewModel: HomeViewModel
+    @StateObject private var backgroundSettings: HomeBackgroundSettingsStore
 
     init() {
         let viewModel = HomeViewModel()
         viewModel.usePreviewDashboard(MockHealthData.homePolishPreviewDashboard)
         _viewModel = StateObject(wrappedValue: viewModel)
+
+        let defaults = UserDefaults(suiteName: "pulsar.home.polish.preview") ?? .standard
+        let backgroundSettings = HomeBackgroundSettingsStore(defaults: defaults)
+        backgroundSettings.setMode(.sunset)
+        _backgroundSettings = StateObject(wrappedValue: backgroundSettings)
     }
 
     var body: some View {
-        HomeView(viewModel: viewModel)
+        HomeView(viewModel: viewModel, backgroundSettings: backgroundSettings)
     }
 }
 #endif

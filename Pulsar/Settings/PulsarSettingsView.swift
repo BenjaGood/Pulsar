@@ -7,12 +7,25 @@ import SwiftUI
 
 struct PulsarSettingsView: View {
     @ObservedObject var store: ProfileStore
+    @ObservedObject var backgroundSettingsStore: HomeBackgroundSettingsStore
     var onProfileUpdated: (() -> Void)? = nil
     var onHealthAuthorizationUpdated: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var healthKitStore = HealthKitSettingsStore()
     @StateObject private var gymSettingsStore = GymSettingsStore()
+
+    init(
+        store: ProfileStore,
+        backgroundSettingsStore: HomeBackgroundSettingsStore = HomeBackgroundSettingsStore(),
+        onProfileUpdated: (() -> Void)? = nil,
+        onHealthAuthorizationUpdated: (() -> Void)? = nil
+    ) {
+        self.store = store
+        self.backgroundSettingsStore = backgroundSettingsStore
+        self.onProfileUpdated = onProfileUpdated
+        self.onHealthAuthorizationUpdated = onHealthAuthorizationUpdated
+    }
 
     var body: some View {
         NavigationStack {
@@ -60,7 +73,15 @@ struct PulsarSettingsView: View {
                     }
 
                     SettingsSectionCard(title: "App") {
-                        SettingsNavigationRow(title: "Appearance", subtitle: "Follows your system appearance", symbol: "circle.lefthalf.filled", tint: .cyan, badge: "Auto")
+                        NavigationLink { HomeBackgroundSettingsView(store: backgroundSettingsStore) } label: {
+                            SettingsNavigationRow(
+                                title: "Home Background",
+                                subtitle: "Static time-of-day Liquid Glass scene",
+                                symbol: "sparkles",
+                                tint: .cyan,
+                                badge: backgroundSettingsStore.mode.shortTitle
+                            )
+                        }
                         SettingsDivider()
                         NavigationLink { NotificationsSettingsView() } label: {
                             SettingsNavigationRow(title: "Notifications", subtitle: "Workout, stress, wind-down, and sleep insights", symbol: "bell.badge.fill", tint: .red)

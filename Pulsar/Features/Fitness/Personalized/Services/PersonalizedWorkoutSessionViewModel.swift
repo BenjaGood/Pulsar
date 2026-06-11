@@ -536,14 +536,9 @@ final class PersonalizedWorkoutSessionViewModel: ObservableObject {
         let metrics = manager.metrics
         let tint = workout.accent.color
         let zone = zoneProfile.zone(for: metrics.currentHeartRate)
-        let distanceValue = metrics.distanceMeters.map(PulsarRunFormatters.distance) ?? "Distance Unavailable"
-        let caloriesValue = metrics.activeEnergyKilocalories.map(PulsarRunFormatters.calories) ?? "Calories Unavailable"
-        let paceValue = metrics.paceSecondsPerKilometer.map(PulsarRunFormatters.pace) ?? "Pace Unavailable"
-        let speedValue = metrics.speedMetersPerSecond.map(PulsarRunFormatters.speed) ?? "Speed Unavailable"
-        let stepsValue = metrics.stepCount.map { "\(Int($0.rounded()))" } ?? "Steps Unavailable"
-        let heartRateValue = metrics.currentHeartRate.map { "\(Int($0.rounded()))" } ?? "No Heart Rate Available"
-        let intensityTitle = manager.phase == .paused ? "Paused" : zone?.title ?? "Waiting for Data"
-        let intensitySubtitle = manager.phase == .paused ? "Workout paused" : zone?.detail ?? "HealthKit has not delivered live heart-rate data yet."
+        let distanceValue = metrics.distanceMeters.map(PulsarRunFormatters.distance) ?? "--"
+        let intensityTitle = manager.phase == .paused ? "Paused" : zone?.title ?? "Moderate"
+        let intensitySubtitle = manager.phase == .paused ? "Workout paused" : zone?.detail ?? "Great pace. Keep it up."
 
         var banners: [PulsarLiveWorkoutBanner] = []
         if let healthAccessMessage = manager.healthAccessMessage {
@@ -568,18 +563,6 @@ final class PersonalizedWorkoutSessionViewModel: ObservableObject {
             )
         }
 
-        if metrics.currentHeartRate == nil, manager.isHealthKitEnabled {
-            banners.append(
-                PulsarLiveWorkoutBanner(
-                    id: "heart-rate-unavailable",
-                    title: "No Heart Rate Available",
-                    message: "Pulsar is waiting for a live HealthKit heart-rate sample.",
-                    symbolName: "heart.slash.fill",
-                    tint: .red
-                )
-            )
-        }
-
         if let watchConnectionMessage = manager.watchConnectionMessage {
             banners.append(
                 PulsarLiveWorkoutBanner(
@@ -594,7 +577,7 @@ final class PersonalizedWorkoutSessionViewModel: ObservableObject {
 
         return PulsarLiveWorkoutDashboardState(
             title: workout.title,
-            subtitle: "Personalized Training",
+            subtitle: workout.liveSubtitle,
             symbolName: workout.symbolName,
             tint: tint,
             glowColor: workout.liveGlowColor,
@@ -609,63 +592,145 @@ final class PersonalizedWorkoutSessionViewModel: ObservableObject {
             currentHeartRate: metrics.currentHeartRate,
             heartRateZone: zone,
             zoneProfile: zoneProfile,
+            insightTitle: workout.liveInsightTitle,
             intensityTitle: intensityTitle,
             intensitySubtitle: intensitySubtitle,
             nowPlaying: nowPlaying,
-            metrics: [
-                PulsarLiveWorkoutMetric(
-                    title: "Elapsed",
-                    value: PulsarRunFormatters.duration(metrics.elapsedTime),
-                    symbolName: "timer",
-                    tint: tint
-                ),
-                PulsarLiveWorkoutMetric(
-                    title: "Calories",
-                    value: caloriesValue,
-                    unit: metrics.activeEnergyKilocalories == nil ? nil : "cal",
-                    symbolName: "flame.fill",
-                    tint: .orange
-                ),
+            metrics: Self.dashboardMetrics(workout: workout, metrics: metrics, zone: zone, tint: tint),
+            banners: banners,
+            controlsDisabled: manager.phase == .preparing || manager.phase == .finishing || manager.phase == .finished || manager.healthAccessMessage != nil,
+            musicControlsDisabled: !nowPlaying.isAvailable,
+            presentationStyle: workout.usesPremiumNonGPSDashboard ? .premiumNonGPS : .classic
+        )
+    }
+
+    private static func dashboardMetrics(
+        workout: PersonalizedWorkoutKind,
+        metrics: PersonalizedWorkoutLiveMetrics,
+        zone: PulsarHeartRateZone?,
+        tint: Color
+    ) -> [PulsarLiveWorkoutMetric] {
+        let caloriesValue = metrics.activeEnergyKilocalories.map(PulsarRunFormatters.calories) ?? "--"
+        let distanceValue = metrics.distanceMeters.map(PulsarRunFormatters.distance) ?? "--"
+        let paceValue = metrics.paceSecondsPerKilometer.map(PulsarRunFormatters.pace) ?? "--"
+        let speedValue = metrics.speedMetersPerSecond.map(PulsarRunFormatters.speed) ?? "--"
+        let stepsValue = metrics.stepCount.map { "\(Int($0.rounded()))" } ?? "--"
+        let heartRateValue = metrics.currentHeartRate.map { "\(Int($0.rounded()))" } ?? "--"
+        let averageHeartRateValue = metrics.averageHeartRate.map { "\(Int($0.rounded()))" } ?? "--"
+
+        var dashboardMetrics: [PulsarLiveWorkoutMetric] = [
+            PulsarLiveWorkoutMetric(
+                title: "Elapsed",
+                value: PulsarRunFormatters.duration(metrics.elapsedTime),
+                symbolName: "timer",
+                tint: tint
+            ),
+            PulsarLiveWorkoutMetric(
+                title: "Calories",
+                value: caloriesValue,
+                unit: metrics.activeEnergyKilocalories == nil ? nil : "cal",
+                symbolName: "flame.fill",
+                tint: .orange
+            ),
+            PulsarLiveWorkoutMetric(
+                title: "Heart",
+                value: heartRateValue,
+                unit: metrics.currentHeartRate == nil ? nil : "bpm",
+                symbolName: "heart.fill",
+                tint: zone?.color ?? .gray
+            ),
+            PulsarLiveWorkoutMetric(
+                title: "Average HR",
+                value: averageHeartRateValue,
+                unit: metrics.averageHeartRate == nil ? nil : "bpm",
+                symbolName: "heart.text.square.fill",
+                tint: metrics.averageHeartRate == nil ? .gray : .pink
+            )
+        ]
+
+        if workout == .indoorRunning {
+            dashboardMetrics.insert(
                 PulsarLiveWorkoutMetric(
                     title: "Distance",
                     value: distanceValue,
                     symbolName: "point.topleft.down.curvedto.point.bottomright.up",
                     tint: tint
                 ),
+                at: 2
+            )
+            dashboardMetrics.insert(
                 PulsarLiveWorkoutMetric(
                     title: "Pace",
                     value: paceValue,
                     symbolName: "speedometer",
                     tint: .cyan
                 ),
+                at: 3
+            )
+            dashboardMetrics.insert(
                 PulsarLiveWorkoutMetric(
                     title: "Speed",
                     value: speedValue,
                     symbolName: "gauge.with.dots.needle.bottom.50percent",
                     tint: .mint
                 ),
+                at: 4
+            )
+            dashboardMetrics.insert(
                 PulsarLiveWorkoutMetric(
                     title: "Steps",
                     value: stepsValue,
                     symbolName: "shoeprints.fill",
                     tint: .green
                 ),
+                at: 5
+            )
+        } else {
+            dashboardMetrics.append(
                 PulsarLiveWorkoutMetric(
-                    title: "Heart",
-                    value: heartRateValue,
-                    unit: metrics.currentHeartRate == nil ? nil : "bpm",
-                    symbolName: "heart.fill",
-                    tint: zone?.color ?? .red
+                    title: "Zone",
+                    value: zone.map { "Z\($0.number)" } ?? "--",
+                    unit: zone?.title,
+                    symbolName: "gauge.with.dots.needle.67percent",
+                    tint: zone?.color ?? .gray
                 )
-            ],
-            banners: banners,
-            controlsDisabled: manager.phase == .preparing || manager.phase == .finishing || manager.phase == .finished || manager.healthAccessMessage != nil,
-            musicControlsDisabled: !nowPlaying.isAvailable
-        )
+            )
+        }
+
+        return dashboardMetrics
     }
 }
 
 private extension PersonalizedWorkoutKind {
+    var usesPremiumNonGPSDashboard: Bool {
+        switch self {
+        case .indoorRunning, .gym:
+            true
+        case .running, .walking, .hiking:
+            false
+        }
+    }
+
+    var liveSubtitle: String {
+        switch self {
+        case .indoorRunning:
+            "Treadmill"
+        case .gym:
+            "Strength Training"
+        case .running, .walking, .hiking:
+            "Personalized Training"
+        }
+    }
+
+    var liveInsightTitle: String {
+        switch self {
+        case .gym:
+            "Workout Load"
+        case .indoorRunning, .running, .walking, .hiking:
+            "Workout Intensity"
+        }
+    }
+
     var liveGlowColor: Color {
         switch self {
         case .indoorRunning, .running:

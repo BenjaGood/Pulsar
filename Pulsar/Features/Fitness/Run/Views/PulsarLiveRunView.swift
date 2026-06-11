@@ -101,8 +101,8 @@ struct PulsarLiveRunView: View {
         let phase = dashboardPhase
 
         return PulsarLiveWorkoutDashboardState(
-            title: activeWorkoutKind.displayName,
-            subtitle: activeWorkoutKind.outdoorTitle,
+            title: activeWorkoutKind.isOutdoorDistanceWorkout ? activeWorkoutKind.displayName : activeWorkoutKind.nonGPSDashboardTitle,
+            subtitle: activeWorkoutKind.isOutdoorDistanceWorkout ? activeWorkoutKind.outdoorTitle : activeWorkoutKind.nonGPSDashboardSubtitle,
             symbolName: activeWorkoutKind.systemImageName,
             tint: activeWorkoutKind.accentColor,
             glowColor: activeWorkoutKind.glowColor,
@@ -117,15 +117,17 @@ struct PulsarLiveRunView: View {
             currentHeartRate: coordinator.snapshot.currentHeartRate,
             heartRateZone: zone,
             zoneProfile: zoneProfile,
-            intensityTitle: phase == .paused ? "Paused" : zone?.title ?? "Waiting for Data",
-            intensitySubtitle: phase == .paused ? "Metrics held" : zone?.detail ?? "No Heart Rate Available",
+            insightTitle: activeWorkoutKind.nonGPSInsightTitle,
+            intensityTitle: phase == .paused ? "Paused" : zone?.title ?? fallbackIntensityTitle,
+            intensitySubtitle: phase == .paused ? "Metrics held" : zone?.detail ?? fallbackIntensitySubtitle,
             nowPlaying: musicManager.track,
             metrics: dashboardMetrics(zone: zone),
             banners: dashboardBanners,
             controlsDisabled: coordinator.snapshot.phase == .finishing ||
                 coordinator.snapshot.phase == .connectingToWatch ||
                 isQuiescingMap,
-            musicControlsDisabled: !musicManager.track.isAvailable
+            musicControlsDisabled: !musicManager.track.isAvailable,
+            presentationStyle: activeWorkoutKind.isOutdoorDistanceWorkout ? .classic : .premiumNonGPS
         )
     }
 
@@ -188,7 +190,11 @@ struct PulsarLiveRunView: View {
     }
 
     private func dashboardMetrics(zone: PulsarHeartRateZone?) -> [PulsarLiveWorkoutMetric] {
-        [
+        guard activeWorkoutKind.isOutdoorDistanceWorkout else {
+            return nonGPSDashboardMetrics(zone: zone)
+        }
+
+        return [
             PulsarLiveWorkoutMetric(
                 title: "Elapsed",
                 value: PulsarRunFormatters.duration(coordinator.snapshot.elapsedTime),
@@ -230,6 +236,72 @@ struct PulsarLiveRunView: View {
                 tint: .mint
             )
         ]
+    }
+
+    private func nonGPSDashboardMetrics(zone: PulsarHeartRateZone?) -> [PulsarLiveWorkoutMetric] {
+        var metrics: [PulsarLiveWorkoutMetric] = [
+            PulsarLiveWorkoutMetric(
+                title: "Time",
+                value: PulsarRunFormatters.duration(coordinator.snapshot.elapsedTime),
+                unit: "Elapsed",
+                symbolName: "timer",
+                tint: .green
+            ),
+            PulsarLiveWorkoutMetric(
+                title: "Calories",
+                value: coordinator.snapshot.activeEnergyKilocalories.map(PulsarRunFormatters.calories) ?? "--",
+                unit: "kcal",
+                symbolName: "flame.fill",
+                tint: .orange
+            ),
+            PulsarLiveWorkoutMetric(
+                title: "Heart Rate",
+                value: coordinator.snapshot.currentHeartRate.map { "\(Int($0.rounded()))" } ?? "--",
+                unit: "bpm",
+                symbolName: "heart.fill",
+                tint: zone?.color ?? .gray
+            ),
+            PulsarLiveWorkoutMetric(
+                title: "Average HR",
+                value: coordinator.snapshot.averageHeartRate.map { "\(Int($0.rounded()))" } ?? "--",
+                unit: "bpm",
+                symbolName: "heart.text.square.fill",
+                tint: coordinator.snapshot.averageHeartRate == nil ? .gray : .pink
+            ),
+            PulsarLiveWorkoutMetric(
+                title: "Zone",
+                value: zone.map { "Z\($0.number)" } ?? "--",
+                unit: zone?.title,
+                symbolName: "gauge.with.dots.needle.67percent",
+                tint: zone?.color ?? .gray
+            )
+        ]
+
+        if let stepCount = coordinator.snapshot.stepCount, activeWorkoutKind.shouldShowStepsMetric {
+            metrics.append(
+                PulsarLiveWorkoutMetric(
+                    title: "Steps",
+                    value: "\(stepCount)",
+                    unit: "steps",
+                    symbolName: "shoeprints.fill",
+                    tint: .mint
+                )
+            )
+        }
+
+        if let cadence = coordinator.snapshot.cadenceStepsPerMinute, activeWorkoutKind.shouldShowCadenceMetric {
+            metrics.append(
+                PulsarLiveWorkoutMetric(
+                    title: "Cadence",
+                    value: PulsarRunFormatters.cadence(cadence),
+                    unit: "spm",
+                    symbolName: "metronome.fill",
+                    tint: .cyan
+                )
+            )
+        }
+
+        return metrics
     }
 
     private var recorderStatusText: String {
@@ -277,6 +349,14 @@ struct PulsarLiveRunView: View {
 
     private var primaryMetricSubtitle: String {
         activeWorkoutKind.isOutdoorDistanceWorkout ? "kilometers" : "elapsed time"
+    }
+
+    private var fallbackIntensityTitle: String {
+        activeWorkoutKind.isOutdoorDistanceWorkout ? "Waiting for Data" : activeWorkoutKind.defaultNonGPSIntensityTitle
+    }
+
+    private var fallbackIntensitySubtitle: String {
+        activeWorkoutKind.isOutdoorDistanceWorkout ? "No Heart Rate Available" : activeWorkoutKind.defaultNonGPSIntensitySubtitle
     }
 
     private var liveEffortTitle: String {
@@ -361,5 +441,122 @@ struct PulsarLiveRunView: View {
         let urls = ["music://nowplaying", "music://"].compactMap(URL.init(string:))
         guard let url = urls.first else { return }
         UIApplication.shared.open(url)
+    }
+}
+
+private extension PulsarOutdoorWorkoutKind {
+    var nonGPSDashboardTitle: String {
+        switch self {
+        case .strength:
+            "Strength Training"
+        case .hiit:
+            "HIIT"
+        case .yoga:
+            "Yoga"
+        case .pilates:
+            "Pilates"
+        case .stretching:
+            "Stretching"
+        case .core:
+            "Core"
+        case .mobility:
+            "Mobility"
+        case .boxing:
+            "Boxing"
+        case .dance:
+            "Dance"
+        case .rowing:
+            "Rowing"
+        case .swimming:
+            "Swimming"
+        case .elliptical:
+            "Elliptical"
+        case .stairClimber:
+            "Stair Climber"
+        case .cooldown:
+            "Cooldown"
+        case .other:
+            "Workout"
+        case .running, .walking, .hiking, .cycling:
+            displayName
+        }
+    }
+
+    var nonGPSDashboardSubtitle: String {
+        switch self {
+        case .strength:
+            "Functional Strength"
+        case .hiit:
+            "Intervals"
+        case .yoga, .pilates, .stretching, .mobility, .cooldown:
+            "Recovery"
+        case .core:
+            "Core Training"
+        case .boxing:
+            "Conditioning"
+        case .dance:
+            "Rhythm"
+        case .rowing, .elliptical, .stairClimber:
+            "Indoor Cardio"
+        case .swimming:
+            "Pool"
+        case .other:
+            "Custom"
+        case .running, .walking, .hiking, .cycling:
+            outdoorTitle
+        }
+    }
+
+    var nonGPSInsightTitle: String {
+        switch self {
+        case .strength:
+            "Workout Load"
+        case .yoga, .pilates, .stretching, .mobility, .cooldown:
+            "Recovery Load"
+        default:
+            "Workout Intensity"
+        }
+    }
+
+    var defaultNonGPSIntensityTitle: String {
+        switch self {
+        case .strength:
+            "Moderate"
+        case .yoga, .pilates, .stretching, .mobility, .cooldown:
+            "Steady"
+        default:
+            "Moderate"
+        }
+    }
+
+    var defaultNonGPSIntensitySubtitle: String {
+        switch self {
+        case .strength:
+            "Good training stimulus."
+        case .yoga, .pilates, .stretching, .mobility, .cooldown:
+            "Smooth effort. Keep breathing."
+        case .hiit, .boxing:
+            "Controlled intensity. Keep it sharp."
+        default:
+            "Great pace. Keep it up."
+        }
+    }
+
+    var shouldShowStepsMetric: Bool {
+        switch self {
+        case .hiit, .dance, .boxing, .elliptical, .stairClimber:
+            true
+        default:
+            false
+        }
+    }
+
+    var shouldShowCadenceMetric: Bool {
+        switch self {
+        case .hiit, .dance, .elliptical, .stairClimber:
+            true
+        default:
+            false
+        }
     }
 }
