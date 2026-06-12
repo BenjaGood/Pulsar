@@ -156,6 +156,8 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     private var lastActivationErrorMessage: String?
     private var lastActiveWorkoutLiveTransferAt = Date.distantPast
     private var lastActiveWorkoutLiveApplicationContextAt = Date.distantPast
+    private var lastActiveGymLiveTransferAt = Date.distantPast
+    private var lastActiveGymLiveApplicationContextAt = Date.distantPast
     private var recentTerminalActiveWorkoutState: PulsarActiveWorkoutSyncState?
     private var recentTerminalGymState: ActiveGymWorkoutState?
     private var receivedWorkoutSyncMessageIDs = Set<String>()
@@ -1205,7 +1207,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             lastFinishedGymState = incoming
             _ = apply(activeWorkoutState: activeState, broadcast: false, reason: "\(reason).gymBridge", isIncomingFromCounterpart: false)
             if broadcast {
-                sendGymStateToCounterpart(incoming)
+                sendGymStateToCounterpart(incoming, reason: reason)
             }
             rememberTerminatedActiveWorkoutSession(incoming.sessionId, reason: reason)
             if activeGymState?.sessionId == incoming.sessionId {
@@ -1228,7 +1230,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         PulsarSyncDebugLogger.log("Active Gym state updated via \(reason) session=\(incoming.sessionId.uuidString) type=\(incoming.workoutKind?.rawValue ?? "unknown") startedFrom=\(incoming.startedFrom?.rawValue ?? "unknown") progress=\(incoming.completedSets)/\(incoming.totalSets) finished=\(incoming.isFinished)")
 
         if broadcast {
-            sendGymStateToCounterpart(incoming)
+            sendGymStateToCounterpart(incoming, reason: reason)
         }
         return true
     }
@@ -1482,7 +1484,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         }
     }
 
-    private func sendGymStateToCounterpart(_ state: ActiveGymWorkoutState) {
+    private func sendGymStateToCounterpart(_ state: ActiveGymWorkoutState, reason: String) {
         guard let session = counterpartSession(for: "Active Gym state"),
               let data = ActiveGymWorkoutCodec.encodeState(state) else { return }
 
@@ -1506,6 +1508,27 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             activeGymState: state,
             savedGymRoutines: savedGymRoutines
         )
+        if isVolatileActiveGymUpdate(reason: reason, state: state) {
+            let now = Date()
+            if now.timeIntervalSince(lastActiveGymLiveApplicationContextAt) >= 2 {
+                lastActiveGymLiveApplicationContextAt = now
+                do {
+                    try session.updateApplicationContext(applicationContext)
+                    PulsarSyncDebugLogger.log("Active Gym live applicationContext updated session=\(state.sessionId.uuidString) reason=\(reason)")
+                } catch {
+                    PulsarSyncDebugLogger.log("Failed to update Active Gym live applicationContext: \(error.localizedDescription)")
+                }
+            }
+            guard now.timeIntervalSince(lastActiveGymLiveTransferAt) >= 10 else {
+                PulsarSyncDebugLogger.log("Active Gym live transfer throttled session=\(state.sessionId.uuidString) reason=\(reason)")
+                return
+            }
+            lastActiveGymLiveTransferAt = now
+            session.transferUserInfo(realtimePayload)
+            PulsarSyncDebugLogger.log("Active Gym live transferUserInfo queued session=\(state.sessionId.uuidString) reason=\(reason)")
+            return
+        }
+
         do {
             try session.updateApplicationContext(applicationContext)
             PulsarSyncDebugLogger.log("Active Gym state applicationContext updated session=\(state.sessionId.uuidString)")
@@ -1514,6 +1537,12 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         }
         session.transferUserInfo(realtimePayload)
         PulsarSyncDebugLogger.log("Active Gym state transferUserInfo queued session=\(state.sessionId.uuidString)")
+    }
+
+    private func isVolatileActiveGymUpdate(reason: String, state: ActiveGymWorkoutState) -> Bool {
+        guard !state.isFinished else { return false }
+        return reason.localizedCaseInsensitiveContains("tick") ||
+            reason.localizedCaseInsensitiveContains("metrics")
     }
 
     private func sendSavedGymRoutinesToCounterpart(_ routines: [WatchGymRoutinePlan]? = nil) {

@@ -17,4 +17,6 @@ Package.resolved
 
 # Local OAuth/developer credentials
 Config/Oura.local.xcconfig
+Config/Orion.local.xcconfig
 Backend/OuraOAuthServer/.env
+Backend/OrionProxyServer/.env

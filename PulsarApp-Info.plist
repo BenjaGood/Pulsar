@@ -53,7 +53,7 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Pulsar connects to your local Oura token exchange backend during development.</string>
+	<string>Pulsar connects to local development backends for Oura and Orion during development.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>OuraBackendBaseURL</key>
@@ -66,6 +66,12 @@
 	<string>$(OURA_OAUTH_REDIRECT_URI)</string>
 	<key>OuraOAuthScopes</key>
 	<string>$(OURA_OAUTH_SCOPES)</string>
+	<key>OrionBackendBaseURL</key>
+	<string>$(ORION_BACKEND_BASE_URL)</string>
+	<key>OrionChatPath</key>
+	<string>$(ORION_CHAT_PATH)</string>
+	<key>OrionMockMode</key>
+	<string>$(ORION_MOCK_MODE)</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

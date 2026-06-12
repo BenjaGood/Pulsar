@@ -7,7 +7,7 @@ import SwiftUI
 import WatchKit
 
 struct WatchActiveGymWorkoutView: View {
-    @ObservedObject var syncStore: PulsarWatchConnectivitySyncStore
+    var syncStore: PulsarWatchConnectivitySyncStore
     var state: ActiveGymWorkoutState
     @State private var isShowingNowPlaying = false
 
@@ -87,9 +87,11 @@ struct WatchActiveGymWorkoutView: View {
                     .foregroundStyle(.white)
                     .lineLimit(2)
                     .minimumScaleFactor(0.76)
-                Text(PulsarGymFormatters.duration(state.elapsedSeconds))
-                    .pulsarMonospacedMetric(.watchValue)
-                    .foregroundStyle(.white)
+                TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                    Text(PulsarGymFormatters.duration(displayElapsedSeconds(at: timeline.date)))
+                        .pulsarMonospacedMetric(.watchValue)
+                        .foregroundStyle(.white)
+                }
             }
 
             Spacer(minLength: 0)
@@ -224,7 +226,7 @@ struct WatchActiveGymWorkoutView: View {
 
     @ViewBuilder
     private var restCard: some View {
-        if let remaining = state.restRemainingSeconds, remaining > 0 {
+        if let remaining = displayRestRemainingSeconds(), remaining > 0 {
             WatchGymGlassCard {
                 HStack(spacing: 8) {
                     Image(systemName: "timer")
@@ -234,9 +236,11 @@ struct WatchActiveGymWorkoutView: View {
                         Text("Rest")
                             .pulsarTextStyle(.watchLabel)
                             .foregroundStyle(.white.opacity(0.58))
-                        Text(PulsarGymFormatters.duration(remaining))
-                            .pulsarMonospacedMetric(.watchMetric)
-                            .foregroundStyle(.white)
+                        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                            Text(PulsarGymFormatters.duration(displayRestRemainingSeconds(at: timeline.date) ?? remaining))
+                                .pulsarMonospacedMetric(.watchMetric)
+                                .foregroundStyle(.white)
+                        }
                     }
                     Spacer()
                     Button("Skip") {
@@ -292,6 +296,17 @@ struct WatchActiveGymWorkoutView: View {
     private var energyText: String {
         guard let energy = state.activeEnergyKilocalories, energy > 0 else { return "--" }
         return "\(Int(energy.rounded()))"
+    }
+
+    private func displayElapsedSeconds(at date: Date) -> Int {
+        guard !state.isFinished else { return state.elapsedSeconds }
+        return max(state.elapsedSeconds, Int(date.timeIntervalSince(state.startedAt)))
+    }
+
+    private func displayRestRemainingSeconds(at date: Date = Date()) -> Int? {
+        guard let remaining = state.restRemainingSeconds, remaining > 0 else { return nil }
+        let elapsedSinceSync = max(0, Int(date.timeIntervalSince(state.updatedAt)))
+        return max(0, remaining - elapsedSinceSync)
     }
 }
 

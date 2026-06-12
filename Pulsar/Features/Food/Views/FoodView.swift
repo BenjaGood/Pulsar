@@ -6,8 +6,12 @@
 import SwiftUI
 
 struct FoodView: View {
-    @StateObject private var store = PulsarNutritionStore()
+    @ObservedObject private var store: PulsarNutritionStore
     @State private var activeSheet: NutritionSheet?
+
+    init(store: PulsarNutritionStore) {
+        self.store = store
+    }
 
     var body: some View {
         NavigationStack {
@@ -363,5 +367,5 @@ private struct NutritionDailyEntryRow: View {
 }
 
 #Preview {
-    FoodView()
+    FoodView(store: PulsarNutritionStore())
 }

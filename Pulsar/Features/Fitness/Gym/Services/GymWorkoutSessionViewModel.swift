@@ -66,6 +66,8 @@ final class GymWorkoutSessionViewModel: ObservableObject {
     private var restEndsAt: Date?
     private var pendingRestFocusTarget: GymWorkoutSetFocusTarget?
     private var didStartWorkoutSystems = false
+    private var lastElapsedOnlyStateSyncAt = Date.distantPast
+    private static let elapsedOnlyStateSyncInterval: TimeInterval = 10
 
     @MainActor
     init(
@@ -396,7 +398,7 @@ final class GymWorkoutSessionViewModel: ObservableObject {
                 guard let self else { return }
                 self.elapsedSeconds = Int(Date().timeIntervalSince(self.session.startedAt))
                 self.session.elapsedSeconds = self.elapsedSeconds
-                self.publishState(reason: "gymWorkoutTick")
+                self.publishElapsedTick()
             }
         }
     }
@@ -608,10 +610,21 @@ final class GymWorkoutSessionViewModel: ObservableObject {
     }
 
     private func applyHealthMetrics(_ metrics: GymHealthKitWorkoutMetrics) {
-        currentHeartRate = metrics.currentHeartRate ?? currentHeartRate
-        averageHeartRate = metrics.averageHeartRate ?? averageHeartRate
-        maxHeartRate = metrics.maxHeartRate ?? maxHeartRate
-        activeEnergyKilocalories = metrics.activeEnergyKilocalories ?? activeEnergyKilocalories
+        let nextCurrentHeartRate = metrics.currentHeartRate ?? currentHeartRate
+        let nextAverageHeartRate = metrics.averageHeartRate ?? averageHeartRate
+        let nextMaxHeartRate = metrics.maxHeartRate ?? maxHeartRate
+        let nextEnergy = metrics.activeEnergyKilocalories ?? activeEnergyKilocalories
+        guard nextCurrentHeartRate != currentHeartRate ||
+            nextAverageHeartRate != averageHeartRate ||
+            nextMaxHeartRate != maxHeartRate ||
+            nextEnergy != activeEnergyKilocalories else {
+            return
+        }
+
+        currentHeartRate = nextCurrentHeartRate
+        averageHeartRate = nextAverageHeartRate
+        maxHeartRate = nextMaxHeartRate
+        activeEnergyKilocalories = nextEnergy
         session.averageHeartRate = averageHeartRate
         session.maxHeartRate = maxHeartRate
         session.activeEnergyKilocalories = activeEnergyKilocalories
@@ -724,6 +737,20 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         if summary == nil {
             liveActivityManager.update(state: state)
         }
+    }
+
+    private func publishElapsedTick() {
+        let state = activeState(isFinished: false)
+        liveActivityManager.update(state: state)
+
+        guard restCountdownSeconds == nil else { return }
+
+        let now = Date()
+        guard now.timeIntervalSince(lastElapsedOnlyStateSyncAt) >= Self.elapsedOnlyStateSyncInterval else {
+            return
+        }
+        lastElapsedOnlyStateSyncAt = now
+        watchSyncStore.storeActiveGymState(state, broadcast: true, reason: "gymWorkoutElapsedTick")
     }
 
     private func activeState(isFinished: Bool) -> ActiveGymWorkoutState {

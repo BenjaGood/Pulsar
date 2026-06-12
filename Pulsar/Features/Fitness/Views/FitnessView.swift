@@ -13,7 +13,7 @@ struct FitnessView: View {
     @StateObject private var weekViewModel = FitnessWeekViewModel()
     @StateObject private var progressViewModel = ExerciseProgressViewModel()
     @StateObject private var gymSettingsStore = GymSettingsStore()
-    @StateObject private var watchSyncStore = PulsarWatchConnectivitySyncStore.shared
+    private let watchSyncStore = PulsarWatchConnectivitySyncStore.shared
     @State private var isShowingWorkoutPicker = false
     @State private var isShowingWeekHistory = false
     @State private var isActivityLogExpanded = false

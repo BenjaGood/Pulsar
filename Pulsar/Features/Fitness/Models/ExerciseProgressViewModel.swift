@@ -15,6 +15,11 @@ final class ExerciseProgressViewModel: ObservableObject {
 
     private let historyStore: PulsarGymWorkoutHistoryStore
     private let calendar: Calendar
+    private var didLoadSessions = false
+    private var cachedCountsKey: CountsCacheKey?
+    private var cachedExerciseCountsByDay: [Date: Int] = [:]
+    private var cachedDailySummaryKey: DailySummaryCacheKey?
+    private var cachedDailySummaries: [DailyExerciseSummary] = []
 
     init(
         historyStore: PulsarGymWorkoutHistoryStore? = nil,
@@ -27,7 +32,7 @@ final class ExerciseProgressViewModel: ObservableObject {
     }
 
     func load(displayUnit: PulsarWeightUnit, selectedWeek: WeekPeriod) async {
-        historyStore.reload()
+        reloadSessions()
         alignSelectedDate(to: selectedWeek, displayUnit: displayUnit)
         await refresh(displayUnit: displayUnit, selectedWeek: selectedWeek, reloadsHistory: false)
     }
@@ -39,34 +44,26 @@ final class ExerciseProgressViewModel: ObservableObject {
         reloadsHistory: Bool = true
     ) async {
         if reloadsHistory {
-            historyStore.reload()
+            reloadSessions()
+        } else {
+            ensureSessionsLoaded()
         }
         isLoading = true
         await Task.yield()
-        exerciseCountsByDay = ExerciseProgressService.exerciseCountsByDay(
-            sessions: historyStore.sessions,
-            week: selectedWeek,
-            displayUnit: displayUnit,
-            calendar: calendar
-        )
-        dailySummaries = ExerciseProgressService.getDailyExerciseSummary(
-            date: selectedDate,
-            sessions: historyStore.sessions,
-            displayUnit: displayUnit,
-            calendar: calendar
-        )
+        exerciseCountsByDay = cachedExerciseCounts(displayUnit: displayUnit, selectedWeek: selectedWeek, force: force)
+        dailySummaries = cachedDailySummary(displayUnit: displayUnit, force: force)
         isLoading = false
     }
 
     func selectDate(_ date: Date, displayUnit: PulsarWeightUnit, selectedWeek: WeekPeriod) async {
         selectedDate = calendar.startOfDay(for: date)
-        await refresh(displayUnit: displayUnit, selectedWeek: selectedWeek, force: true)
+        await refresh(displayUnit: displayUnit, selectedWeek: selectedWeek, reloadsHistory: false)
     }
 
     func selectWeek(_ week: WeekPeriod, displayUnit: PulsarWeightUnit) async {
-        historyStore.reload()
+        ensureSessionsLoaded()
         alignSelectedDate(to: week, displayUnit: displayUnit)
-        await refresh(displayUnit: displayUnit, selectedWeek: week, force: true, reloadsHistory: false)
+        await refresh(displayUnit: displayUnit, selectedWeek: week, reloadsHistory: false)
     }
 
     func days(in week: WeekPeriod) -> [Date] {
@@ -94,6 +91,69 @@ final class ExerciseProgressViewModel: ObservableObject {
             calendar: calendar
         )
         selectedDate = counts.keys.sorted().last ?? week.startDate
+    }
+
+    private func ensureSessionsLoaded() {
+        guard !didLoadSessions else { return }
+        reloadSessions()
+    }
+
+    private func reloadSessions() {
+        historyStore.reload()
+        didLoadSessions = true
+        cachedCountsKey = nil
+        cachedExerciseCountsByDay = [:]
+        cachedDailySummaryKey = nil
+        cachedDailySummaries = []
+    }
+
+    private func cachedExerciseCounts(
+        displayUnit: PulsarWeightUnit,
+        selectedWeek: WeekPeriod,
+        force: Bool
+    ) -> [Date: Int] {
+        let key = CountsCacheKey(weekID: selectedWeek.id, displayUnit: displayUnit)
+        if !force, cachedCountsKey == key {
+            return cachedExerciseCountsByDay
+        }
+        let counts = ExerciseProgressService.exerciseCountsByDay(
+            sessions: historyStore.sessions,
+            week: selectedWeek,
+            displayUnit: displayUnit,
+            calendar: calendar
+        )
+        cachedCountsKey = key
+        cachedExerciseCountsByDay = counts
+        return counts
+    }
+
+    private func cachedDailySummary(
+        displayUnit: PulsarWeightUnit,
+        force: Bool
+    ) -> [DailyExerciseSummary] {
+        let key = DailySummaryCacheKey(date: selectedDate, displayUnit: displayUnit)
+        if !force, cachedDailySummaryKey == key {
+            return cachedDailySummaries
+        }
+        let summaries = ExerciseProgressService.getDailyExerciseSummary(
+            date: selectedDate,
+            sessions: historyStore.sessions,
+            displayUnit: displayUnit,
+            calendar: calendar
+        )
+        cachedDailySummaryKey = key
+        cachedDailySummaries = summaries
+        return summaries
+    }
+
+    private struct CountsCacheKey: Equatable {
+        var weekID: String
+        var displayUnit: PulsarWeightUnit
+    }
+
+    private struct DailySummaryCacheKey: Equatable {
+        var date: Date
+        var displayUnit: PulsarWeightUnit
     }
 }
 

@@ -42,7 +42,7 @@ struct DailyExerciseProgressSection: View {
             }
         }
         .animation(.spring(response: 0.42, dampingFraction: 0.86), value: viewModel.selectedDate)
-        .animation(.spring(response: 0.42, dampingFraction: 0.86), value: viewModel.dailySummaries)
+        .animation(.spring(response: 0.42, dampingFraction: 0.86), value: viewModel.dailySummaries.count)
         .sheet(item: $selectedHistoryTarget) { target in
             ExerciseProgressHistorySheet(target: target, displayUnit: displayUnit)
         }
@@ -145,7 +145,7 @@ struct DailyExerciseProgressSection: View {
 
     private var dailyExerciseRail: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 12) {
+            LazyHStack(alignment: .top, spacing: 12) {
                 ForEach(viewModel.dailySummaries) { summary in
                     Button {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()

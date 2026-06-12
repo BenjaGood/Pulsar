@@ -17,6 +17,8 @@ struct PulsarLiveRunView: View {
     @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
     @State private var mapFirst = true
     @State private var isPreparingToClose = false
+    @State private var lastCameraUpdateAt = Date.distantPast
+    @State private var lastCameraCenter: CLLocationCoordinate2D?
     @StateObject private var musicManager = PulsarNowPlayingMusicManager()
 
     var body: some View {
@@ -326,7 +328,24 @@ struct PulsarLiveRunView: View {
     }
 
     private var routeCoordinates: [CLLocationCoordinate2D] {
-        coordinator.snapshot.route.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+        let route = coordinator.snapshot.route
+        let maxDisplayPoints = 700
+        guard route.count > maxDisplayPoints else {
+            return route.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+        }
+
+        let stride = max(1, route.count / maxDisplayPoints)
+        var coordinates = route.enumerated().compactMap { index, point -> CLLocationCoordinate2D? in
+            guard index.isMultiple(of: stride) else { return nil }
+            return CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
+        }
+        if let last = route.last {
+            let lastCoordinate = CLLocationCoordinate2D(latitude: last.latitude, longitude: last.longitude)
+            if coordinates.last.map({ $0.latitude != lastCoordinate.latitude || $0.longitude != lastCoordinate.longitude }) ?? true {
+                coordinates.append(lastCoordinate)
+            }
+        }
+        return coordinates
     }
 
     private var activeWorkoutKind: PulsarOutdoorWorkoutKind {
@@ -382,8 +401,18 @@ struct PulsarLiveRunView: View {
 
     private func updateCamera() {
         guard !isQuiescingMap else { return }
-        guard let last = routeCoordinates.last else { return }
-        withAnimation(.smooth(duration: 0.6)) {
+        guard let lastPoint = coordinator.snapshot.route.last else { return }
+        let last = CLLocationCoordinate2D(latitude: lastPoint.latitude, longitude: lastPoint.longitude)
+        let now = Date()
+        if let lastCameraCenter {
+            let previousLocation = CLLocation(latitude: lastCameraCenter.latitude, longitude: lastCameraCenter.longitude)
+            let nextLocation = CLLocation(latitude: last.latitude, longitude: last.longitude)
+            let movedMeters = nextLocation.distance(from: previousLocation)
+            guard movedMeters >= 35 || now.timeIntervalSince(lastCameraUpdateAt) >= 4 else { return }
+        }
+        lastCameraCenter = last
+        lastCameraUpdateAt = now
+        withAnimation(.smooth(duration: 0.45)) {
             cameraPosition = .region(MKCoordinateRegion(center: last, latitudinalMeters: 520, longitudinalMeters: 520))
         }
     }

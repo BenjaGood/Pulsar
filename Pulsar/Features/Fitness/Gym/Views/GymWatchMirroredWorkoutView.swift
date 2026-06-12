@@ -125,17 +125,19 @@ struct GymWatchMirroredWorkoutView: View {
 
             Spacer(minLength: 4)
 
-            Text(PulsarGymFormatters.duration(state.elapsedSeconds))
-                .font(.system(size: 20, weight: .black, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .background(.white.opacity(0.10), in: Capsule(style: .continuous))
-                .overlay {
-                    Capsule(style: .continuous)
-                        .stroke(.white.opacity(0.11), lineWidth: 1)
-                }
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                Text(PulsarGymFormatters.duration(displayElapsedSeconds(for: state, at: timeline.date)))
+                    .font(.system(size: 20, weight: .black, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .background(.white.opacity(0.10), in: Capsule(style: .continuous))
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .stroke(.white.opacity(0.11), lineWidth: 1)
+                    }
+            }
         }
     }
 
@@ -258,7 +260,7 @@ struct GymWatchMirroredWorkoutView: View {
 
     @ViewBuilder
     private func restCard(_ state: ActiveGymWorkoutState) -> some View {
-        if let remaining = state.restRemainingSeconds, remaining > 0 {
+        if let remaining = displayRestRemainingSeconds(for: state), remaining > 0 {
             GymWatchMirrorCard {
                 HStack(spacing: 12) {
                     Image(systemName: "timer")
@@ -268,10 +270,12 @@ struct GymWatchMirroredWorkoutView: View {
                         Text("Rest")
                             .font(.caption.weight(.black))
                             .foregroundStyle(.white.opacity(0.56))
-                        Text(PulsarGymFormatters.duration(remaining))
-                            .font(.system(size: 22, weight: .black, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundStyle(.white)
+                        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                            Text(PulsarGymFormatters.duration(displayRestRemainingSeconds(for: state, at: timeline.date) ?? remaining))
+                                .font(.system(size: 22, weight: .black, design: .rounded))
+                                .monospacedDigit()
+                                .foregroundStyle(.white)
+                        }
                     }
                     Spacer()
                     Button("Skip") {
@@ -332,6 +336,17 @@ struct GymWatchMirroredWorkoutView: View {
     private func progressFraction(for state: ActiveGymWorkoutState) -> Double {
         guard state.totalSets > 0 else { return 1 }
         return min(max(Double(state.completedSets) / Double(state.totalSets), 0), 1)
+    }
+
+    private func displayElapsedSeconds(for state: ActiveGymWorkoutState, at date: Date) -> Int {
+        guard !state.isFinished else { return state.elapsedSeconds }
+        return max(state.elapsedSeconds, Int(date.timeIntervalSince(state.startedAt)))
+    }
+
+    private func displayRestRemainingSeconds(for state: ActiveGymWorkoutState, at date: Date = Date()) -> Int? {
+        guard let remaining = state.restRemainingSeconds, remaining > 0 else { return nil }
+        let elapsedSinceSync = max(0, Int(date.timeIntervalSince(state.updatedAt)))
+        return max(0, remaining - elapsedSinceSync)
     }
 
     private func subtitle(for state: ActiveGymWorkoutState) -> String {

@@ -1,0 +1,11 @@
+// Shared Orion assistant settings.
+// Copy Orion.local.xcconfig.example to Orion.local.xcconfig for local development.
+//
+// Do not put an OpenAI API key in an iOS xcconfig or Info.plist. The app should
+// call a trusted backend/proxy endpoint that owns the OpenAI secret.
+
+ORION_BACKEND_BASE_URL = https:/$()/www.aetherial.tech
+ORION_CHAT_PATH = /api/orion/chat
+ORION_MOCK_MODE = NO
+
+#include? "Orion.local.xcconfig"

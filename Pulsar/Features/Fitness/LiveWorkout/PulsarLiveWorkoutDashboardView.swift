@@ -801,7 +801,7 @@ private struct PulsarPremiumHeartRateCard: View {
                     Image(systemName: "heart.fill")
                         .font(.headline.weight(.bold))
                         .foregroundStyle(.red)
-                        .symbolEffect(.pulse, options: .repeating, value: currentHeartRate)
+                        .symbolEffect(.pulse, options: .repeating, value: currentHeartRate > 0)
 
                     Text("bpm")
                         .font(.caption.weight(.medium))

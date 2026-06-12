@@ -56,6 +56,8 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
     private var routeBuilder: HKWorkoutRouteBuilder?
     private var locationManager: CLLocationManager?
     private var liveActivity: Activity<PulsarRunLiveActivityAttributes>?
+    private var lastLiveActivityContentState: PulsarRunLiveActivityAttributes.ContentState?
+    private var lastLiveActivityContentUpdateAt: Date?
     private var tickTask: Task<Void, Never>?
     private var mirrorFallbackTask: Task<Void, Never>?
     private var pendingMirroredSessionVerificationTask: Task<Void, Never>?
@@ -89,6 +91,7 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
     private var isFinishing = false
     private var didChooseIPhoneFallbackAfterWatchAttempt = false
     private var lastIPhoneMetricsPublishedAt = Date.distantPast
+    private static let liveActivityElapsedOnlyUpdateInterval: TimeInterval = 10
 
     override init() {
         super.init()
@@ -864,16 +867,18 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
 
     private func applyFallbackHeartRateSample(_ sample: WorkoutHeartRateFallbackSample) {
         guard snapshot.phase == .running || snapshot.phase == .paused || snapshot.phase == .finishing else { return }
-        snapshot.currentHeartRate = sample.beatsPerMinute
+        var next = snapshot
+        next.currentHeartRate = sample.beatsPerMinute
         heartRates.append(sample.beatsPerMinute)
         splitHeartRates.append(sample.beatsPerMinute)
-        snapshot.averageHeartRate = heartRates.isEmpty ? snapshot.averageHeartRate : heartRates.reduce(0, +) / Double(heartRates.count)
-        snapshot.maxHeartRate = max(snapshot.maxHeartRate ?? 0, sample.beatsPerMinute)
-        snapshot.activeEnergyKilocalories = fallbackEnergyEstimator.update(
+        next.averageHeartRate = heartRates.isEmpty ? next.averageHeartRate : heartRates.reduce(0, +) / Double(heartRates.count)
+        next.maxHeartRate = max(next.maxHeartRate ?? 0, sample.beatsPerMinute)
+        next.activeEnergyKilocalories = fallbackEnergyEstimator.update(
             heartRate: sample.beatsPerMinute,
             sampledAt: sample.sampledAt,
-            currentEnergyKilocalories: snapshot.activeEnergyKilocalories
+            currentEnergyKilocalories: next.activeEnergyKilocalories
         )
+        assignSnapshotIfChanged(next)
         recordAdaptiveWorkoutHeartRate(
             sample.beatsPerMinute,
             sampledAt: sample.sampledAt,
@@ -996,6 +1001,8 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
         pendingMirroredSessionVerificationTask = nil
         finishRetryTask?.cancel()
         finishRetryTask = nil
+        lastLiveActivityContentState = nil
+        lastLiveActivityContentUpdateAt = nil
         heartRateFallbackMonitor.stop()
         heartRateSourceBannerTask?.cancel()
         heartRateSourceBannerTask = nil
@@ -1042,10 +1049,14 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
         pedometer.startUpdates(from: start) { [weak self] data, _ in
             guard let data else { return }
             Task { @MainActor in
-                self?.snapshot.stepCount = data.numberOfSteps.intValue
+                guard let self else { return }
+                var next = self.snapshot
+                next.stepCount = data.numberOfSteps.intValue
                 if let currentCadence = data.currentCadence?.doubleValue, currentCadence > 0 {
-                    self?.snapshot.cadenceStepsPerMinute = currentCadence * 60
+                    next.cadenceStepsPerMinute = currentCadence * 60
                 }
+                self.assignSnapshotIfChanged(next)
+                self.publishIPhoneMetricsIfNeeded()
             }
         }
     }
@@ -1065,15 +1076,22 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
 
     private func updateTimeMetrics(date: Date) {
         guard let startDate else { return }
-        snapshot.elapsedTime = max(0, date.timeIntervalSince(startDate))
+        var next = snapshot
+        next.elapsedTime = max(0, date.timeIntervalSince(startDate))
         let activePausedTime = pauseBeganAt.map { date.timeIntervalSince($0) } ?? 0
-        if snapshot.source == .iPhone, activeWorkoutKind.isOutdoorDistanceWorkout {
-            snapshot.movingTime = gpsDistanceFilter.totalMovingTime
+        if next.source == .iPhone, activeWorkoutKind.isOutdoorDistanceWorkout {
+            next.movingTime = gpsDistanceFilter.totalMovingTime
         } else {
-            snapshot.movingTime = max(0, snapshot.elapsedTime - accumulatedPausedTime - activePausedTime)
+            next.movingTime = max(0, next.elapsedTime - accumulatedPausedTime - activePausedTime)
         }
-        snapshot.averagePaceSecondsPerKilometer = PulsarRunDerivedMetrics.averagePace(distanceMeters: snapshot.distanceMeters, movingTime: snapshot.movingTime)
-        snapshot.activeSplitIndex = PulsarRunDerivedMetrics.splitIndex(distanceMeters: snapshot.distanceMeters)
+        next.averagePaceSecondsPerKilometer = PulsarRunDerivedMetrics.averagePace(distanceMeters: next.distanceMeters, movingTime: next.movingTime)
+        next.activeSplitIndex = PulsarRunDerivedMetrics.splitIndex(distanceMeters: next.distanceMeters)
+        assignSnapshotIfChanged(next)
+    }
+
+    private func assignSnapshotIfChanged(_ next: PulsarRunMetricSnapshot) {
+        guard next != snapshot else { return }
+        snapshot = next
     }
 
     private func processLocations(_ locations: [CLLocation]) {
@@ -1261,6 +1279,9 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
 
     private func updateBuilderStatistics(for collectedTypes: Set<HKSampleType>) {
         guard let builder = workoutBuilder else { return }
+        var next = snapshot
+        let sampledAt = Date()
+        var adaptiveHeartRate: Double?
         for type in collectedTypes {
             guard let quantityType = type as? HKQuantityType else { continue }
             let statistics = builder.statistics(for: quantityType)
@@ -1270,34 +1291,42 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
                 let current = statistics?.mostRecentQuantity()?.doubleValue(for: unit)
                 let average = statistics?.averageQuantity()?.doubleValue(for: unit)
                 let max = statistics?.maximumQuantity()?.doubleValue(for: unit)
-                snapshot.currentHeartRate = current
-                snapshot.averageHeartRate = average
-                snapshot.maxHeartRate = max
+                next.currentHeartRate = current
+                next.averageHeartRate = average
+                next.maxHeartRate = max
                 if let current {
                     heartRates.append(current)
                     splitHeartRates.append(current)
-                    if snapshot.source == .appleWatch {
-                        heartRateFallbackMonitor.recordExternalPrimaryHeartRate(sourceKind: .appleWatch, sampledAt: Date())
+                    if next.source == .appleWatch {
+                        heartRateFallbackMonitor.recordExternalPrimaryHeartRate(sourceKind: .appleWatch, sampledAt: sampledAt)
                     }
-                    recordAdaptiveWorkoutHeartRate(current, sampledAt: Date(), workoutKind: activeWorkoutKind, reason: "liveWorkoutBuilder")
+                    adaptiveHeartRate = current
                 }
             case HKQuantityTypeIdentifier.activeEnergyBurned.rawValue:
-                snapshot.activeEnergyKilocalories = statistics?.sumQuantity()?.doubleValue(for: .kilocalorie())
+                next.activeEnergyKilocalories = statistics?.sumQuantity()?.doubleValue(for: .kilocalorie())
             case HKQuantityTypeIdentifier.stepCount.rawValue:
                 if let steps = statistics?.sumQuantity()?.doubleValue(for: .count()) {
-                    snapshot.stepCount = Int(steps.rounded())
+                    next.stepCount = Int(steps.rounded())
                 }
             case HKQuantityTypeIdentifier.runningPower.rawValue:
-                snapshot.runningPowerWatts = statistics?.mostRecentQuantity()?.doubleValue(for: .watt())
+                next.runningPowerWatts = statistics?.mostRecentQuantity()?.doubleValue(for: .watt())
             case HKQuantityTypeIdentifier.runningStrideLength.rawValue:
-                snapshot.strideLengthMeters = statistics?.mostRecentQuantity()?.doubleValue(for: .meter())
+                next.strideLengthMeters = statistics?.mostRecentQuantity()?.doubleValue(for: .meter())
             case HKQuantityTypeIdentifier.runningGroundContactTime.rawValue:
-                snapshot.groundContactTimeMilliseconds = statistics?.mostRecentQuantity()?.doubleValue(for: .secondUnit(with: .milli))
+                next.groundContactTimeMilliseconds = statistics?.mostRecentQuantity()?.doubleValue(for: .secondUnit(with: .milli))
             case HKQuantityTypeIdentifier.runningVerticalOscillation.rawValue:
-                snapshot.verticalOscillationCentimeters = statistics?.mostRecentQuantity()?.doubleValue(for: .meterUnit(with: .centi))
+                next.verticalOscillationCentimeters = statistics?.mostRecentQuantity()?.doubleValue(for: .meterUnit(with: .centi))
             default:
                 break
             }
+        }
+        let didChange = next != snapshot
+        assignSnapshotIfChanged(next)
+        if didChange, let adaptiveHeartRate {
+            recordAdaptiveWorkoutHeartRate(adaptiveHeartRate, sampledAt: sampledAt, workoutKind: activeWorkoutKind, reason: "liveWorkoutBuilder")
+        }
+        if didChange {
+            publishIPhoneMetricsIfNeeded()
         }
     }
 
@@ -1538,6 +1567,14 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
             let currentSessionId = snapshot.pulsarWorkoutSessionId
             let currentStartedFrom = activeWorkoutStartedFrom
             let incomingSessionId = metrics.pulsarWorkoutSessionId
+            if metrics.phase.isLiveRunPhase,
+               let currentSessionId,
+               let incomingSessionId,
+               currentSessionId != incomingSessionId,
+               currentStartedFrom != .iPhoneRequestedWatchStart {
+                PulsarSyncDebugLogger.log("Ignored remote run metrics for mismatched session current=\(currentSessionId.uuidString) incoming=\(incomingSessionId.uuidString) phase=\(metrics.phase.rawValue)")
+                return
+            }
             let preservedRoute = snapshot.route
             let preservedStatusMessage = snapshot.statusMessage
             snapshot = metrics
@@ -1704,6 +1741,9 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
             phase: snapshot.phase
         )
         liveActivity = try? Activity.request(attributes: attributes, content: .init(state: state, staleDate: nil))
+        if liveActivity != nil {
+            rememberLiveActivityContentState(state)
+        }
     }
 
     private func updateLiveActivity() {
@@ -1720,9 +1760,29 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
             heartRate: snapshot.currentHeartRate,
             phase: snapshot.phase
         )
+        guard shouldUpdateLiveActivity(state) else { return }
+        rememberLiveActivityContentState(state)
         Task {
             await liveActivity.update(.init(state: state, staleDate: nil))
         }
+    }
+
+    private func shouldUpdateLiveActivity(_ next: PulsarRunLiveActivityAttributes.ContentState) -> Bool {
+        guard let previous = lastLiveActivityContentState else { return true }
+        guard next != previous else { return false }
+
+        var previousWithUpdatedElapsed = previous
+        previousWithUpdatedElapsed.elapsedTime = next.elapsedTime
+        if previousWithUpdatedElapsed == next {
+            guard let lastLiveActivityContentUpdateAt else { return true }
+            return Date().timeIntervalSince(lastLiveActivityContentUpdateAt) >= Self.liveActivityElapsedOnlyUpdateInterval
+        }
+        return true
+    }
+
+    private func rememberLiveActivityContentState(_ state: PulsarRunLiveActivityAttributes.ContentState) {
+        lastLiveActivityContentState = state
+        lastLiveActivityContentUpdateAt = Date()
     }
 
     func endStaleLiveActivities(reason: String) async {
@@ -1734,6 +1794,8 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
         for activity in Activity<PulsarRunLiveActivityAttributes>.activities {
             await activity.end(.init(state: state, staleDate: nil), dismissalPolicy: .immediate)
         }
+        lastLiveActivityContentState = nil
+        lastLiveActivityContentUpdateAt = nil
         PulsarSyncDebugLogger.log("Live Activity ended because \(reason)")
     }
 
@@ -1758,6 +1820,8 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
             }
         }
         self.liveActivity = nil
+        lastLiveActivityContentState = nil
+        lastLiveActivityContentUpdateAt = nil
         PulsarSyncDebugLogger.log("Live Activity ended because \(reason)")
     }
 

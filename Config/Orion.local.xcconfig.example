@@ -1,0 +1,18 @@
+// Optional local Orion overrides for development.
+// Copy this file to Config/Orion.local.xcconfig only when you need an override.
+// The local file is git-ignored.
+//
+// Never add OPENAI_API_KEY or any OpenAI secret here. The iOS app should call
+// the hosted backend, and that backend should own OPENAI_API_KEY.
+
+// Hosted private Orion backend/proxy. Use this for physical iPhone builds.
+ORION_BACKEND_BASE_URL = https:/$()/www.aetherial.tech
+ORION_CHAT_PATH = /api/orion/chat
+
+// Optional simulator-only local backend. Do not use this for physical iPhone builds.
+// Start it with:
+// ./scripts/start-orion-backend.sh
+// ORION_BACKEND_BASE_URL[sdk=iphonesimulator*] = http:/$()/127.0.0.1:8788
+// ORION_CHAT_PATH[sdk=iphonesimulator*] = /orion/chat
+
+ORION_MOCK_MODE = NO

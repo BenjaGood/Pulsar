@@ -17,22 +17,30 @@ struct PulsarRootView: View {
     @State private var ignoredFailedSessionIDs = Set<UUID>()
     @State private var lastKnownActiveWorkoutDisplayStates: [UUID: PulsarWorkoutMiniPlayerState] = [:]
     @State private var presentedPlusDestination: PulsarPlusDestination?
+    @State private var isOrionChatPresented = false
     @State private var isPlusMenuMounted = false
     @State private var isPlusMenuExpanded = false
     @State private var plusMenuAnchorMetrics: PulsarTabBarMetrics?
     @StateObject private var homeViewModel = HomeViewModel()
     @StateObject private var homeBackgroundSettings = HomeBackgroundSettingsStore()
+    @StateObject private var nutritionStore = PulsarNutritionStore()
     @StateObject private var mindfulnessStore = PulsarMindfulnessStore()
     @StateObject private var mindfulnessRouter = PulsarMindfulnessRouter()
     @StateObject private var deepLinkRouter = PulsarDeepLinkRouter.shared
     @StateObject private var runCoordinator = PulsarRunCoordinator()
     @StateObject private var watchSyncStore = PulsarWatchConnectivitySyncStore.shared
     @StateObject private var activeWorkoutManager = PulsarActiveWorkoutManager()
+    @StateObject private var orionChatViewModel = OrionChatViewModel()
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
         rootShellWithLifecycle
+    }
+
+    private var runMiniPlayerProjection: PulsarRunMiniPlayerProjection {
+        let snapshot = runCoordinator.snapshot
+        return PulsarRunMiniPlayerProjection(snapshot: snapshot)
     }
 
     private var workoutFailureNoticeBinding: Binding<PulsarWorkoutFailureNotice?> {
@@ -78,6 +86,12 @@ struct PulsarRootView: View {
             .fullScreenCover(item: $presentedPlusDestination) { destination in
                 plusDestinationView(destination)
             }
+            .sheet(isPresented: $isOrionChatPresented) {
+                OrionChatView(viewModel: orionChatViewModel)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(.regularMaterial)
+            }
     }
 
     private var rootShellWithLifecycle: some View {
@@ -120,7 +134,7 @@ struct PulsarRootView: View {
             .onChange(of: runCoordinator.summary?.id) { _, _ in
                 presentRunSummaryIfAvailable(source: "runSummaryChanged")
             }
-            .onChange(of: runCoordinator.snapshot) { _, _ in
+            .onChange(of: runMiniPlayerProjection) { _, _ in
                 cacheActiveWorkoutDisplayStateIfAvailable(reason: "runSnapshotChanged")
             }
             .onChange(of: watchSyncStore.activeWorkoutState) { _, state in
@@ -167,6 +181,7 @@ struct PulsarRootView: View {
                 deepLinkRouter.open(url)
             }
             .onAppear {
+                configureOrion()
                 syncCurrentActiveWorkoutSessionContext(reason: "rootAppear")
                 handlePendingDeepLinkRouteIfNeeded()
                 PulsarArchitectureDebugLogger.log("Using MiniWorkoutHost placement=\(miniWorkoutPlacementDescription)")
@@ -188,6 +203,9 @@ struct PulsarRootView: View {
                 logMiniWorkoutVisibility()
             }
             .onChange(of: activeWorkoutManager.activeWorkout?.sessionID) { _, _ in
+                if activeWorkoutManager.activeWorkout != nil {
+                    isOrionChatPresented = false
+                }
                 syncCurrentActiveWorkoutSessionContext(reason: "activeWorkoutChanged")
                 activeWorkoutManager.reconcilePresentationIntegrity(reason: "activeWorkoutChanged")
                 pruneLastKnownWorkoutDisplayStates()
@@ -198,6 +216,17 @@ struct PulsarRootView: View {
                 logMiniWorkoutVisibility()
             }
             .animation(.spring(response: 0.42, dampingFraction: 0.88), value: activeWorkoutMiniPlayerState?.sessionID)
+            .animation(.spring(response: 0.36, dampingFraction: 0.88), value: shouldShowOrionBar)
+    }
+
+    private func configureOrion() {
+        orionChatViewModel.configure(
+            service: OrionService(configuration: .load()),
+            contextProvider: OrionContextProvider(
+                homeViewModel: homeViewModel,
+                nutritionStore: nutritionStore
+            )
+        )
     }
 
     private func handlePendingDeepLinkRouteIfNeeded() {
@@ -242,6 +271,7 @@ struct PulsarRootView: View {
                 )
 
             rootMiniWorkoutHost
+            rootOrionHost
 
             if isPlusMenuMounted {
                 PulsarPlusMorphingMenu(
@@ -265,6 +295,7 @@ struct PulsarRootView: View {
             selectedTab: $selectedTab,
             homeViewModel: homeViewModel,
             homeBackgroundSettings: homeBackgroundSettings,
+            nutritionStore: nutritionStore,
             activeWorkoutManager: activeWorkoutManager,
             runCoordinator: runCoordinator,
             mindfulnessStore: mindfulnessStore,
@@ -274,12 +305,38 @@ struct PulsarRootView: View {
             activeWorkoutMiniPlayerState: shouldShowMiniWorkoutBar ? activeWorkoutMiniPlayerState : nil,
             onOpenActiveWorkout: openActiveWorkoutMiniPlayer,
             onPrimaryActiveWorkoutAction: handleActiveWorkoutMiniPlayerAction,
+            isOrionBarVisible: shouldShowOrionBar,
+            onOpenOrion: openOrion,
             onMetricsChange: updateTabBarMetrics
         )
     }
 
     private var rootSyncStatusHost: some View {
         PulsarRootSyncStatusHost()
+    }
+
+    @ViewBuilder
+    private var rootOrionHost: some View {
+        if !usesNativeMiniWorkoutTabAccessory,
+           shouldShowOrionBar {
+            GeometryReader { proxy in
+                ZStack(alignment: .top) {
+                    Color.clear
+                        .allowsHitTesting(false)
+
+                    OrionBarView(onOpen: openOrion)
+                        .frame(maxWidth: rootMiniWorkoutMaxWidth)
+                        .padding(.horizontal, rootMiniWorkoutHorizontalPadding)
+                        .frame(width: proxy.size.width, height: rootOrionBarHeight)
+                        .position(
+                            x: proxy.size.width / 2,
+                            y: rootOrionCenterY(in: proxy)
+                        )
+                }
+            }
+            .zIndex(998)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
     }
 
     @ViewBuilder
@@ -334,6 +391,10 @@ struct PulsarRootView: View {
         return true
     }
 
+    private var shouldShowOrionBar: Bool {
+        activeWorkoutManager.activeWorkout == nil
+    }
+
     private var rootMiniWorkoutMaxWidth: CGFloat {
         horizontalSizeClass == .regular ? 720 : .infinity
     }
@@ -365,6 +426,10 @@ struct PulsarRootView: View {
         isMiniWorkoutCollapsed ? 48 : 60
     }
 
+    private var rootOrionBarHeight: CGFloat {
+        isMiniWorkoutCollapsed ? 48 : 54
+    }
+
     private var rootMiniWorkoutGap: CGFloat {
         8
     }
@@ -391,6 +456,30 @@ struct PulsarRootView: View {
             proxy.size.height - fallbackTabChromeHeight - rootMiniWorkoutGap - rootMiniWorkoutHeight / 2
         )
         return min(proposed, proxy.size.height - rootMiniWorkoutHeight / 2)
+    }
+
+    private func rootOrionCenterY(in proxy: GeometryProxy) -> CGFloat {
+        guard proxy.size.height > rootOrionBarHeight else {
+            return rootOrionBarHeight / 2
+        }
+        let rootFrame = proxy.frame(in: .global)
+        let tabTopY = tabBarMetrics.minY - rootFrame.minY
+
+        if tabTopY > rootOrionBarHeight,
+           tabTopY < proxy.size.height {
+            let proposed = max(
+                rootOrionBarHeight / 2 + rootMiniWorkoutGap,
+                tabTopY - rootMiniWorkoutGap - rootOrionBarHeight / 2
+            )
+            return min(proposed, proxy.size.height - rootOrionBarHeight / 2)
+        }
+
+        let fallbackTabChromeHeight = max(tabBarMetrics.visibleHeight, lastVisibleTabBarHeight, tabBarMetrics.bottomSafeAreaInset + 58, 72)
+        let proposed = max(
+            rootOrionBarHeight / 2 + rootMiniWorkoutGap,
+            proxy.size.height - fallbackTabChromeHeight - rootMiniWorkoutGap - rootOrionBarHeight / 2
+        )
+        return min(proposed, proxy.size.height - rootOrionBarHeight / 2)
     }
 
     private var activeWorkoutMiniPlayerState: PulsarWorkoutMiniPlayerState? {
@@ -585,6 +674,13 @@ struct PulsarRootView: View {
     private func dismissPlusDestination() {
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         presentedPlusDestination = nil
+    }
+
+    private func openOrion() {
+        guard shouldShowOrionBar else { return }
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        dismissPlusMenu()
+        isOrionChatPresented = true
     }
 
     private func playPlusMenuHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
@@ -2015,6 +2111,7 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
 
     let homeViewModel: HomeViewModel
     let homeBackgroundSettings: HomeBackgroundSettingsStore
+    let nutritionStore: PulsarNutritionStore
     let activeWorkoutManager: PulsarActiveWorkoutManager
     let runCoordinator: PulsarRunCoordinator
     let mindfulnessStore: PulsarMindfulnessStore
@@ -2024,6 +2121,8 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
     let activeWorkoutMiniPlayerState: PulsarWorkoutMiniPlayerState?
     let onOpenActiveWorkout: () -> Void
     let onPrimaryActiveWorkoutAction: () -> Void
+    let isOrionBarVisible: Bool
+    let onOpenOrion: () -> Void
     let onMetricsChange: (PulsarTabBarMetrics) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -2039,10 +2138,12 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
         context.coordinator.configure(controller)
         controller.installTabs(nativeTabs, selectedRootTab: selectedTab)
         controller.updatePlusActionVisibility(isHidden: isPlusActionHidden)
-        controller.updateMiniWorkoutAccessory(
-            state: activeWorkoutMiniPlayerState,
-            onOpen: onOpenActiveWorkout,
-            onPrimaryAction: onPrimaryActiveWorkoutAction
+        controller.updateGlobalBottomAccessory(
+            workoutState: activeWorkoutMiniPlayerState,
+            isOrionVisible: isOrionBarVisible,
+            onOpenWorkout: onOpenActiveWorkout,
+            onPrimaryWorkoutAction: onPrimaryActiveWorkoutAction,
+            onOpenOrion: onOpenOrion
         )
         return controller
     }
@@ -2058,10 +2159,12 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
         }
         uiViewController.updatePlusActionVisibility(isHidden: isPlusActionHidden)
         uiViewController.selectRootTab(selectedTab)
-        uiViewController.updateMiniWorkoutAccessory(
-            state: activeWorkoutMiniPlayerState,
-            onOpen: onOpenActiveWorkout,
-            onPrimaryAction: onPrimaryActiveWorkoutAction
+        uiViewController.updateGlobalBottomAccessory(
+            workoutState: activeWorkoutMiniPlayerState,
+            isOrionVisible: isOrionBarVisible,
+            onOpenWorkout: onOpenActiveWorkout,
+            onPrimaryWorkoutAction: onPrimaryActiveWorkoutAction,
+            onOpenOrion: onOpenOrion
         )
     }
 
@@ -2121,7 +2224,7 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
                 .environmentObject(activeWorkoutManager)
                 .environmentObject(runCoordinator)
         case .food:
-            FoodView()
+            FoodView(store: nutritionStore)
                 .environmentObject(activeWorkoutManager)
                 .environmentObject(runCoordinator)
         case .mindfulness:
@@ -2175,9 +2278,10 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
 
     private var lastSelectedRootTab: PulsarRootTab = .home
     private var lastMetrics = PulsarTabBarMetrics()
-    private var miniWorkoutAccessoryContentView: UIView?
-    private var miniWorkoutAccessoryHostingController: UIViewController?
-    private var miniWorkoutAccessoryPlacementStore: PulsarMiniWorkoutAccessoryPlacementStore?
+    private var bottomAccessoryContentView: UIView?
+    private var bottomAccessoryHostingController: UIViewController?
+    private var bottomAccessoryPlacementStore: PulsarMiniWorkoutAccessoryPlacementStore?
+    private var lastBottomAccessoryState: PulsarNativeBottomAccessoryState?
     private var plusActionToggleOverlay: UIButton?
 
     override func viewDidLoad() {
@@ -2231,29 +2335,44 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
         updatePlusActionToggleOverlay(isVisible: isHidden)
     }
 
-    func updateMiniWorkoutAccessory(
-        state: PulsarWorkoutMiniPlayerState?,
-        onOpen: @escaping () -> Void,
-        onPrimaryAction: @escaping () -> Void
+    func updateGlobalBottomAccessory(
+        workoutState: PulsarWorkoutMiniPlayerState?,
+        isOrionVisible: Bool,
+        onOpenWorkout: @escaping () -> Void,
+        onPrimaryWorkoutAction: @escaping () -> Void,
+        onOpenOrion: @escaping () -> Void
     ) {
         guard #available(iOS 26.0, *) else { return }
-        guard let state else {
-            removeMiniWorkoutAccessory(animated: true)
-            return
+
+        let nextState: PulsarNativeBottomAccessoryState?
+        if let workoutState {
+            nextState = .workout(workoutState)
+        } else if isOrionVisible {
+            nextState = .orion
+        } else {
+            nextState = nil
         }
 
-        let placementStore = miniWorkoutAccessoryPlacementStore ?? PulsarMiniWorkoutAccessoryPlacementStore()
-        miniWorkoutAccessoryPlacementStore = placementStore
-        let rootView = PulsarNativeWorkoutMiniAccessoryView(
-            placementStore: placementStore,
-            state: state,
-            onOpen: onOpen,
-            onPrimaryAction: onPrimaryAction
-        )
+        guard let nextState else {
+            removeGlobalBottomAccessory(animated: true)
+            return
+        }
+        guard nextState != lastBottomAccessoryState || bottomAccessoryHostingController == nil else { return }
+        lastBottomAccessoryState = nextState
 
-        if let hostingController = miniWorkoutAccessoryHostingController as? UIHostingController<PulsarNativeWorkoutMiniAccessoryView> {
+        let placementStore = bottomAccessoryPlacementStore ?? PulsarMiniWorkoutAccessoryPlacementStore()
+        bottomAccessoryPlacementStore = placementStore
+        let rootView = AnyView(PulsarNativeBottomAccessoryView(
+            placementStore: placementStore,
+            state: nextState,
+            onOpenWorkout: onOpenWorkout,
+            onPrimaryWorkoutAction: onPrimaryWorkoutAction,
+            onOpenOrion: onOpenOrion
+        ))
+
+        if let hostingController = bottomAccessoryHostingController as? UIHostingController<AnyView> {
             hostingController.rootView = rootView
-            miniWorkoutAccessoryContentView?.invalidateIntrinsicContentSize()
+            bottomAccessoryContentView?.invalidateIntrinsicContentSize()
             return
         }
 
@@ -2265,21 +2384,26 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
         contentView.install(hostingController.view)
         hostingController.didMove(toParent: self)
 
-        miniWorkoutAccessoryContentView = contentView
-        miniWorkoutAccessoryHostingController = hostingController
+        bottomAccessoryContentView = contentView
+        bottomAccessoryHostingController = hostingController
         setBottomAccessory(UITabAccessory(contentView: contentView), animated: true)
     }
 
-    private func removeMiniWorkoutAccessory(animated: Bool) {
+    private func removeGlobalBottomAccessory(animated: Bool) {
+        guard bottomAccessoryHostingController != nil || bottomAccessoryContentView != nil else {
+            lastBottomAccessoryState = nil
+            return
+        }
         if #available(iOS 26.0, *) {
             setBottomAccessory(nil, animated: animated)
         }
-        miniWorkoutAccessoryHostingController?.willMove(toParent: nil)
-        miniWorkoutAccessoryHostingController?.view.removeFromSuperview()
-        miniWorkoutAccessoryHostingController?.removeFromParent()
-        miniWorkoutAccessoryHostingController = nil
-        miniWorkoutAccessoryContentView = nil
-        miniWorkoutAccessoryPlacementStore = nil
+        bottomAccessoryHostingController?.willMove(toParent: nil)
+        bottomAccessoryHostingController?.view.removeFromSuperview()
+        bottomAccessoryHostingController?.removeFromParent()
+        bottomAccessoryHostingController = nil
+        bottomAccessoryContentView = nil
+        bottomAccessoryPlacementStore = nil
+        lastBottomAccessoryState = nil
     }
 
     func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
@@ -2457,21 +2581,42 @@ private final class PulsarMiniWorkoutAccessoryPlacementStore: ObservableObject {
     @Published var isInlinePlacement = false
 }
 
-private struct PulsarNativeWorkoutMiniAccessoryView: View {
+private enum PulsarNativeBottomAccessoryState: Equatable {
+    case workout(PulsarWorkoutMiniPlayerState)
+    case orion
+}
+
+private struct PulsarNativeBottomAccessoryView: View {
     @ObservedObject var placementStore: PulsarMiniWorkoutAccessoryPlacementStore
 
-    let state: PulsarWorkoutMiniPlayerState
-    let onOpen: () -> Void
-    let onPrimaryAction: () -> Void
+    let state: PulsarNativeBottomAccessoryState
+    let onOpenWorkout: () -> Void
+    let onPrimaryWorkoutAction: () -> Void
+    let onOpenOrion: () -> Void
 
     var body: some View {
-        PulsarMiniWorkoutBarHost(
-            state: state,
-            isInlinePlacement: placementStore.isInlinePlacement,
-            placement: placementStore.isInlinePlacement ? "tabAccessoryInline" : "tabAccessoryRegular",
-            onOpen: onOpen,
-            onPrimaryAction: onPrimaryAction
-        )
+        Group {
+            switch state {
+            case .workout(let workoutState):
+                PulsarMiniWorkoutBarHost(
+                    state: workoutState,
+                    isInlinePlacement: placementStore.isInlinePlacement,
+                    placement: placementStore.isInlinePlacement ? "tabAccessoryInline" : "tabAccessoryRegular",
+                    onOpen: onOpenWorkout,
+                    onPrimaryAction: onPrimaryWorkoutAction
+                )
+            case .orion:
+                OrionBarView(
+                    isInlinePlacement: placementStore.isInlinePlacement,
+                    onOpen: onOpenOrion
+                )
+                .padding(.horizontal, placementStore.isInlinePlacement ? 6 : 0)
+                .padding(.vertical, placementStore.isInlinePlacement ? 2 : 3)
+                .frame(height: placementStore.isInlinePlacement ? 48 : 60)
+                .frame(minWidth: 1, maxWidth: .infinity)
+                .accessibilitySortPriority(9)
+            }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.spring(response: 0.36, dampingFraction: 0.88), value: placementStore.isInlinePlacement)
     }
@@ -2561,6 +2706,30 @@ private struct PulsarWorkoutMiniPlayerState: Equatable {
     let detail: String
     let symbol: String
     let isPaused: Bool
+}
+
+private struct PulsarRunMiniPlayerProjection: Equatable {
+    var sessionID: UUID?
+    var phase: PulsarRunPhase
+    var source: PulsarRunRecordingSource
+    var workoutKind: PulsarOutdoorWorkoutKind
+    var elapsedSeconds: Int
+    var distanceMeters: Int
+    var movingSeconds: Int
+    var currentHeartRate: Int?
+    var paceSecondsPerKilometer: Int?
+
+    init(snapshot: PulsarRunMetricSnapshot) {
+        sessionID = snapshot.pulsarWorkoutSessionId
+        phase = snapshot.phase
+        source = snapshot.source
+        workoutKind = snapshot.workoutKind
+        elapsedSeconds = Int(snapshot.elapsedTime.rounded())
+        distanceMeters = Int(snapshot.distanceMeters.rounded())
+        movingSeconds = Int(snapshot.movingTime.rounded())
+        currentHeartRate = snapshot.currentHeartRate.map { Int($0.rounded()) }
+        paceSecondsPerKilometer = snapshot.currentPaceSecondsPerKilometer.map { Int($0.rounded()) }
+    }
 }
 
 private struct PulsarMiniWorkoutBarHost: View {
