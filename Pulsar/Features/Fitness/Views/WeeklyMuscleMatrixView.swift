@@ -14,8 +14,8 @@ struct WeeklyMuscleMatrixCard: View {
     @State private var hasAppeared = false
 
     var body: some View {
-        FitnessGlassCard {
-            VStack(alignment: .leading, spacing: 16) {
+        WeeklyMatrixGlassCard {
+            VStack(alignment: .leading, spacing: 10) {
                 header
                 MuscleMatrixSummaryStrip(summary: viewModel.weeklySummary)
                 MuscleMatrixGrid(
@@ -25,7 +25,6 @@ struct WeeklyMuscleMatrixCard: View {
                     onSelectRow: selectRow
                 )
                 MuscleMatrixLegend()
-                MuscleMatrixInsightCard(summary: viewModel.weeklySummary)
             }
         }
         .onAppear {
@@ -42,28 +41,45 @@ struct WeeklyMuscleMatrixCard: View {
     }
 
     private var header: some View {
-        FitnessSectionHeader(
-            title: "Weekly Muscle Matrix",
-            subtitle: "Training distribution by day"
-        ) {
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(viewModel.week.isCurrentWeek ? Color.green : PulsarTheme.fitnessTertiaryText(for: colorScheme).opacity(0.60))
-                    .frame(width: 8, height: 8)
-                    .shadow(color: (viewModel.week.isCurrentWeek ? Color.green : .clear).opacity(0.55), radius: 8)
-
-                Text(viewModel.week.isCurrentWeek ? "Active" : "Archived")
-                    .font(.caption.weight(.bold))
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Weekly Muscle Matrix")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+
+                Text("Training distribution by day")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .foregroundStyle(viewModel.week.isCurrentWeek ? Color.green : PulsarTheme.fitnessSecondaryText(for: colorScheme))
-            .padding(.horizontal, 11)
-            .padding(.vertical, 8)
-            .background(statusBackground, in: Capsule(style: .continuous))
-            .overlay {
-                Capsule(style: .continuous)
-                    .stroke(statusBorder, lineWidth: 1)
-            }
+
+            Spacer(minLength: 8)
+
+            statusBadge
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var statusBadge: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(viewModel.week.isCurrentWeek ? Color.green : PulsarTheme.fitnessTertiaryText(for: colorScheme).opacity(0.60))
+                .frame(width: 6, height: 6)
+                .shadow(color: (viewModel.week.isCurrentWeek ? Color.green : .clear).opacity(0.48), radius: 7)
+
+            Text(viewModel.week.isCurrentWeek ? "Active" : "Archived")
+                .font(.caption2.weight(.semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(viewModel.week.isCurrentWeek ? Color.green : PulsarTheme.fitnessSecondaryText(for: colorScheme))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(statusBackground, in: Capsule(style: .continuous))
+        .overlay {
+            Capsule(style: .continuous)
+                .stroke(statusBorder, lineWidth: 1)
         }
     }
 
@@ -103,49 +119,94 @@ struct WeeklyMuscleMatrixCard: View {
 
 }
 
+private struct WeeklyMatrixGlassCard<Content: View>: View {
+    var cornerRadius: CGFloat = 32
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        content()
+            .padding(12)
+            .modifier(
+                FitnessGlassSurfaceModifier(
+                    cornerRadius: cornerRadius,
+                    tint: Color(red: 0.72, green: 0.82, blue: 0.92),
+                    borderOpacity: 0.94
+                )
+            )
+    }
+}
+
 private struct MuscleMatrixSummaryStrip: View {
     var summary: WeeklyMuscleSummary
     @Environment(\.colorScheme) private var colorScheme
 
-    private var items: [(symbol: String, value: String)] {
-        var values = [
-            ("figure.strengthtraining.traditional", "\(summary.totalSessions) activities"),
-            ("checkmark.circle.fill", "\(summary.totalSets) sets")
+    private var items: [(symbol: String, value: String, label: String)] {
+        [
+            ("figure.strengthtraining.traditional", "\(summary.totalSessions)", summary.totalSessions == 1 ? "Activity" : "Activities"),
+            ("checkmark.circle.fill", "\(summary.totalSets)", "Sets logged"),
+            ("scope", focusPrimary, focusSecondary),
+            ("dial.low.fill", "\(summary.balanceScore)%", "Balance")
         ]
-        if summary.totalCardioMinutes > 0 {
-            values.append(("waveform.path.ecg", "\(summary.totalCardioMinutes) min cardio"))
-        }
-        values.append(contentsOf: [
-            ("scope", summary.focusArea),
-            ("dial.low.fill", "\(summary.balanceScore)% balance")
-        ])
-        return values
     }
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-            ForEach(items, id: \.value) { item in
-                HStack(spacing: 7) {
-                    Image(systemName: item.symbol)
-                        .font(.caption2.weight(.black))
-                        .foregroundStyle(Color(red: 0.58, green: 0.78, blue: 1.00))
-
-                    Text(item.value)
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(PulsarTheme.matrixPillBackground(for: colorScheme), in: Capsule(style: .continuous))
-                .overlay {
-                    Capsule(style: .continuous)
-                        .stroke(.white.opacity(colorScheme == .dark ? 0.10 : 0.72), lineWidth: 1)
-                }
+        HStack(spacing: 8) {
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                metricPill(item)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .padding(.vertical, 1)
+        .frame(height: 54)
+    }
+
+    private func metricPill(_ item: (symbol: String, value: String, label: String)) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 5) {
+                Image(systemName: item.symbol)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color(red: 0.62, green: 0.80, blue: 1.00))
+                    .frame(width: 17, height: 17)
+                    .background(.white.opacity(colorScheme == .dark ? 0.060 : 0.64), in: Circle())
+
+                Text(item.value)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.62)
+            }
+
+            Text(item.label)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
+                .lineLimit(1)
+                .minimumScaleFactor(0.58)
+                .allowsTightening(true)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 6)
+        .background(metricBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(.white.opacity(colorScheme == .dark ? 0.085 : 0.64), lineWidth: 1)
+        }
+    }
+
+    private var metricBackground: Color {
+        colorScheme == .dark
+            ? .white.opacity(0.045)
+            : .white.opacity(0.66)
+    }
+
+    private var focusPrimary: String {
+        let words = summary.focusArea.split(separator: " ", maxSplits: 1).map(String.init)
+        return words.first ?? summary.focusArea
+    }
+
+    private var focusSecondary: String {
+        let words = summary.focusArea.split(separator: " ", maxSplits: 1).map(String.init)
+        guard words.count > 1 else { return "Focus" }
+        return words[1].prefix(1).uppercased() + String(words[1].dropFirst())
     }
 }
 
@@ -159,14 +220,14 @@ private struct MuscleMatrixGrid: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let inset: CGFloat = 10
+            let inset: CGFloat = 8
             let contentWidth = max(0, proxy.size.width - inset * 2)
-            let labelWidth = min(max(contentWidth * 0.24, 66), 84)
+            let labelWidth = min(max(contentWidth * 0.30, 94), 116)
             let gap: CGFloat = contentWidth < 310 ? 2 : 3
-            let cellWidth = floor(max(18, (contentWidth - labelWidth - gap * 7) / 7))
+            let cellWidth = floor(max(15, (contentWidth - labelWidth - gap * 7) / 7))
             let usedWidth = labelWidth + cellWidth * 7 + gap * 7
 
-            VStack(spacing: 5) {
+            VStack(spacing: 2) {
                 MuscleMatrixHeaderRow(
                     days: viewModel.days,
                     currentDay: viewModel.currentDay,
@@ -190,20 +251,37 @@ private struct MuscleMatrixGrid: View {
                 }
             }
             .frame(width: usedWidth, alignment: .center)
-            .padding(inset)
+            .padding(.horizontal, inset)
+            .padding(.vertical, 8)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background(gridBackground, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .background(gridBackground, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .stroke(.white.opacity(colorScheme == .dark ? 0.12 : 0.76), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(.white.opacity(colorScheme == .dark ? 0.095 : 0.66), lineWidth: 1)
             }
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.18 : 0.06), radius: 18, y: 10)
         }
-        .frame(height: 380)
+        .frame(height: 258)
     }
 
     private var gridBackground: LinearGradient {
-        PulsarTheme.matrixPanelBackground(for: colorScheme)
+        LinearGradient(
+            colors: colorScheme == .dark
+                ? [
+                    Color.white.opacity(0.050),
+                    Color.black.opacity(0.16),
+                    Color(red: 0.06, green: 0.09, blue: 0.13).opacity(0.44)
+                ]
+                : [
+                    Color.white.opacity(0.82),
+                    Color(red: 0.94, green: 0.97, blue: 1.00).opacity(0.74),
+                    Color(red: 0.70, green: 0.82, blue: 1.00).opacity(0.12)
+                ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 }
 
@@ -217,26 +295,27 @@ private struct MuscleMatrixHeaderRow: View {
 
     var body: some View {
         HStack(spacing: gap) {
-            Text("Area")
-                .font(.caption2.weight(.black))
+            Text("Muscle Group")
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(PulsarTheme.fitnessTertiaryText(for: colorScheme))
                 .frame(width: labelWidth, alignment: .leading)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
 
             ForEach(days) { day in
                 Text(cellWidth < 26 ? String(day.shortTitle.prefix(1)) : day.shortTitle)
-                    .font(.caption2.weight(.black))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(currentDay == day ? Color.green : PulsarTheme.fitnessSecondaryText(for: colorScheme))
                     .frame(width: cellWidth)
-                    .padding(.vertical, 5)
+                    .padding(.vertical, 2)
                     .background {
                         if currentDay == day {
                             Capsule(style: .continuous)
                                 .fill(PulsarTheme.matrixSelectedDayBackground(for: colorScheme))
                                 .overlay {
                                     Capsule(style: .continuous)
-                                        .stroke(PulsarTheme.matrixSelectedDayBorder(for: colorScheme), lineWidth: 1)
+                                        .stroke(PulsarTheme.matrixSelectedDayBorder(for: colorScheme).opacity(0.78), lineWidth: 1)
                                 }
-                                .shadow(color: Color.green.opacity(0.22), radius: 10)
                         }
                     }
             }
@@ -265,12 +344,13 @@ private struct MuscleMatrixRow: View {
                     rowSymbol
 
                     Text(muscleGroup.compactName)
-                        .font(.caption.weight(.bold))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
                         .lineLimit(1)
                         .minimumScaleFactor(0.72)
                 }
                 .frame(width: labelWidth, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
@@ -287,7 +367,7 @@ private struct MuscleMatrixRow: View {
                         delay: Double(rowIndex * 7 + columnIndex) * 0.012,
                         hasAppeared: hasAppeared
                     )
-                    .frame(width: cellWidth, height: 24)
+                    .frame(width: cellWidth, height: 16)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(muscleGroup.displayName), \(day.fullTitle), \(cell.intensity.title)")
@@ -299,15 +379,15 @@ private struct MuscleMatrixRow: View {
     private var rowSymbol: some View {
         if muscleGroup == .cardio {
             Image(systemName: muscleGroup.symbolName)
-                .font(.caption2.weight(.black))
+                .font(.caption2.weight(.bold))
                 .foregroundStyle(muscleGroup.accent)
-                .frame(width: 12, height: 12)
-                .shadow(color: muscleGroup.accent.opacity(0.34), radius: 6)
+                .frame(width: 11, height: 11)
+                .shadow(color: muscleGroup.accent.opacity(0.22), radius: 5)
         } else {
             Circle()
                 .fill(muscleGroup.accent)
-                .frame(width: 7, height: 7)
-                .shadow(color: muscleGroup.accent.opacity(0.50), radius: 6)
+                .frame(width: 6, height: 6)
+                .shadow(color: muscleGroup.accent.opacity(0.34), radius: 5)
         }
     }
 }
@@ -322,66 +402,86 @@ private struct MuscleMatrixCellView: View {
 
     var body: some View {
         ZStack {
-            if isCurrentDay {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(PulsarTheme.matrixSelectedDayBackground(for: colorScheme))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .stroke(PulsarTheme.matrixSelectedDayBorder(for: colorScheme), lineWidth: 1)
-                    }
-            }
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(cellBackground)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(cellBorder, lineWidth: 1)
+                }
 
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: dotCornerRadius, style: .continuous)
                 .fill(fillColor)
                 .frame(width: dotSize, height: dotSize)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: dotCornerRadius, style: .continuous)
                         .stroke(strokeColor, lineWidth: cell.intensity == .none ? 0.7 : 1.0)
                 }
-                .shadow(color: cell.muscleGroup.accent.opacity(glowOpacity), radius: min(cell.intensity.glowRadius, 10))
+                .shadow(color: cell.muscleGroup.accent.opacity(glowOpacity), radius: min(cell.intensity.glowRadius, 8))
                 .scaleEffect(hasAppeared ? 1 : 0.42)
                 .opacity(hasAppeared ? 1 : 0)
                 .animation(.spring(response: 0.42, dampingFraction: 0.72).delay(delay), value: hasAppeared)
         }
     }
 
+    private var cellBackground: Color {
+        if isCurrentDay {
+            return PulsarTheme.matrixSelectedDayBackground(for: colorScheme).opacity(colorScheme == .dark ? 0.84 : 0.72)
+        }
+        return colorScheme == .dark
+            ? .white.opacity(0.030)
+            : .white.opacity(0.44)
+    }
+
+    private var cellBorder: Color {
+        if isCurrentDay {
+            return PulsarTheme.matrixSelectedDayBorder(for: colorScheme).opacity(0.74)
+        }
+        return colorScheme == .dark
+            ? .white.opacity(0.050)
+            : Color(red: 0.42, green: 0.50, blue: 0.62).opacity(0.12)
+    }
+
     private var fillColor: Color {
         if cell.intensity == .none {
             return PulsarTheme.matrixInactiveDot(for: colorScheme)
         }
-        return cell.muscleGroup.accent.opacity(cell.intensity.opacity)
+        return cell.muscleGroup.accent.opacity(min(cell.intensity.opacity * 0.86, 0.92))
     }
 
     private var dotBaseSize: CGFloat {
-        cell.muscleGroup == .cardio ? 20 : 18
+        cell.muscleGroup == .cardio ? 16 : 15
     }
 
     private var dotSize: CGFloat {
-        min(dotBaseSize * cell.intensity.dotScale, max(10, availableWidth - 5))
+        min(dotBaseSize * cell.intensity.dotScale, max(7, availableWidth - 9))
+    }
+
+    private var dotCornerRadius: CGFloat {
+        max(3.5, dotSize * 0.34)
     }
 
     private var strokeColor: Color {
         if cell.intensity == .none {
-            return colorScheme == .dark ? .white.opacity(0.13) : Color(red: 0.40, green: 0.46, blue: 0.56).opacity(0.24)
+            return colorScheme == .dark ? .white.opacity(0.10) : Color(red: 0.40, green: 0.46, blue: 0.56).opacity(0.20)
         }
-        return colorScheme == .dark ? .white.opacity(strokeOpacity) : cell.muscleGroup.accent.opacity(0.72)
+        return colorScheme == .dark ? .white.opacity(strokeOpacity) : cell.muscleGroup.accent.opacity(0.54)
     }
 
     private var strokeOpacity: Double {
         switch cell.intensity {
-        case .none: 0.10
-        case .light: 0.24
-        case .medium: 0.34
-        case .high: 0.48
+        case .none: 0.08
+        case .light: 0.18
+        case .medium: 0.26
+        case .high: 0.36
         }
     }
 
     private var glowOpacity: Double {
         switch cell.intensity {
         case .none: 0
-        case .light: 0.12
-        case .medium: 0.24
-        case .high: 0.38
+        case .light: 0.07
+        case .medium: 0.14
+        case .high: 0.24
         }
     }
 }
@@ -396,25 +496,26 @@ private struct MuscleMatrixLegend: View {
     ]
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 9) {
             Text("Intensity")
-                .font(.caption2.weight(.black))
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(PulsarTheme.fitnessTertiaryText(for: colorScheme))
 
             ForEach(items, id: \.0) { item in
-                HStack(spacing: 5) {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(Color(red: 0.56, green: 0.76, blue: 1.0).opacity(item.1.opacity))
-                        .frame(width: 12 * item.1.dotScale, height: 12 * item.1.dotScale)
+                HStack(spacing: 4) {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color(red: 0.58, green: 0.77, blue: 1.0).opacity(min(item.1.opacity * 0.78, 0.78)))
+                        .frame(width: 10 * item.1.dotScale, height: 10 * item.1.dotScale)
                     Text(item.0)
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(PulsarTheme.fitnessTertiaryText(for: colorScheme))
                 }
             }
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 3)
+        .padding(.horizontal, 2)
+        .opacity(0.82)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Intensity legend, low, medium, high")
     }
@@ -425,73 +526,57 @@ private struct MuscleMatrixInsightCard: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        HStack(alignment: .top, spacing: 13) {
-            ZStack {
-                Circle()
-                    .fill(Color(red: 0.72, green: 0.66, blue: 1.0).opacity(0.18))
-                    .frame(width: 46, height: 46)
-                    .shadow(color: Color(red: 0.72, green: 0.66, blue: 1.0).opacity(0.24), radius: 12)
+        VStack(alignment: .leading, spacing: 12) {
+            Rectangle()
+                .fill(.white.opacity(colorScheme == .dark ? 0.08 : 0.52))
+                .frame(height: 1)
 
-                Image(systemName: "sparkles")
-                    .font(.system(size: 18, weight: .black))
-                    .foregroundStyle(Color(red: 0.72, green: 0.66, blue: 1.0))
-            }
+            HStack(alignment: .top, spacing: 11) {
+                ZStack {
+                    Circle()
+                        .fill(Color(red: 0.72, green: 0.66, blue: 1.0).opacity(colorScheme == .dark ? 0.14 : 0.12))
+                        .frame(width: 32, height: 32)
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text(summary.insightTitle)
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
-
-                Text(summary.insight)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if !insightChips.isEmpty {
-                    MuscleMatrixFlowLayout(spacing: 7, rowSpacing: 7) {
-                        ForEach(Array(insightChips.enumerated()), id: \.offset) { _, chip in
-                            HStack(spacing: 5) {
-                                Image(systemName: chip.symbol)
-                                    .font(.caption2.weight(.black))
-                                Text(chip.label)
-                                    .font(.caption2.weight(.bold))
-                            }
-                            .foregroundStyle(chip.color)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .background(chip.color.opacity(colorScheme == .dark ? 0.12 : 0.10), in: Capsule(style: .continuous))
-                        }
-                    }
-                    .padding(.top, 3)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color(red: 0.72, green: 0.66, blue: 1.0).opacity(0.92))
                 }
+                .padding(.top, 1)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(summary.insightTitle)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
+
+                    Text(summary.insight)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if !insightChips.isEmpty {
+                        MuscleMatrixFlowLayout(spacing: 6, rowSpacing: 6) {
+                            ForEach(Array(insightChips.enumerated()), id: \.offset) { _, chip in
+                                HStack(spacing: 4) {
+                                    Image(systemName: chip.symbol)
+                                        .font(.caption2.weight(.semibold))
+                                    Text(chip.label)
+                                        .font(.caption2.weight(.semibold))
+                                }
+                                .foregroundStyle(chip.color.opacity(0.90))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(chip.color.opacity(colorScheme == .dark ? 0.090 : 0.075), in: Capsule(style: .continuous))
+                            }
+                        }
+                        .padding(.top, 2)
+                    }
+                }
+
+                Spacer(minLength: 0)
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(14)
-        .background(insightBackground, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(.white.opacity(colorScheme == .dark ? 0.12 : 0.72), lineWidth: 1)
-        }
-    }
-
-    private var insightBackground: LinearGradient {
-        LinearGradient(
-            colors: colorScheme == .dark
-                ? [
-                    Color.white.opacity(0.09),
-                    Color.white.opacity(0.035),
-                    Color(red: 0.36, green: 0.95, blue: 0.76).opacity(0.055)
-                ]
-                : [
-                    Color.white.opacity(0.92),
-                    Color(red: 0.94, green: 0.98, blue: 1.00).opacity(0.72),
-                    Color(red: 0.36, green: 0.95, blue: 0.76).opacity(0.10)
-                ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        .accessibilityElement(children: .combine)
     }
 
     private var insightChips: [(symbol: String, label: String, color: Color)] {

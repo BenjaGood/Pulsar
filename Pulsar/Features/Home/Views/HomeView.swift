@@ -13,17 +13,23 @@ struct HomeView: View {
     @State private var isShowingProfile = false
     @State private var isShowingCalendar = false
     @State private var isShowingMeasurementSource = false
+    @State private var lastReportedScrollOffset: CGFloat = 0
     #if DEBUG
     @State private var lastHomeRenderDiagnosticSignature = ""
     #endif
-    private static let floatingNavigationHeight: CGFloat = 76
-    private static let floatingNavigationExtraScrollSpacing: CGFloat = 28
-    private static let floatingNavigationEndOfContentBuffer: CGFloat = 168
-    private static let maximumSystemBottomInset: CGFloat = 44
+    private let onScrollOffsetChange: (CGFloat) -> Void
+    @ObservedObject private var bottomChromeLayoutStore: PulsarBottomChromeLayoutStore
 
-    init(viewModel: HomeViewModel, backgroundSettings: HomeBackgroundSettingsStore = HomeBackgroundSettingsStore()) {
+    init(
+        viewModel: HomeViewModel,
+        backgroundSettings: HomeBackgroundSettingsStore = HomeBackgroundSettingsStore(),
+        bottomChromeLayoutStore: PulsarBottomChromeLayoutStore = PulsarBottomChromeLayoutStore(),
+        onScrollOffsetChange: @escaping (CGFloat) -> Void = { _ in }
+    ) {
         self.viewModel = viewModel
         self._backgroundSettings = ObservedObject(wrappedValue: backgroundSettings)
+        self._bottomChromeLayoutStore = ObservedObject(wrappedValue: bottomChromeLayoutStore)
+        self.onScrollOffsetChange = onScrollOffsetChange
     }
 
     var body: some View {
@@ -39,9 +45,7 @@ struct HomeView: View {
 
     private func homeContent(backgroundStyle: HomeBackgroundStyle) -> some View {
         NavigationStack {
-            GeometryReader { proxy in
-                let bottomChromeClearance = Self.bottomChromeClearance(for: proxy.safeAreaInsets.bottom)
-
+            GeometryReader { _ in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         HomeHeaderView(
@@ -61,17 +65,18 @@ struct HomeView: View {
                         stressSection
                         sourceSummaryCards
                         healthMonitorSection
-                        Rectangle()
-                            .fill(Color.clear)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: bottomChromeClearance + Self.floatingNavigationEndOfContentBuffer)
-                            .accessibilityHidden(true)
+                        PulsarBottomChromeSpacer(layoutStore: bottomChromeLayoutStore)
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 4)
                     .padding(.bottom, 8)
                 }
-                .contentMargins(.bottom, bottomChromeClearance, for: .scrollContent)
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    max(0, geometry.contentOffset.y + geometry.contentInsets.top)
+                } action: { _, offset in
+                    reportHomeScrollOffset(offset)
+                }
+                .pulsarBottomChromeScrollContainer(layoutStore: bottomChromeLayoutStore)
                 .background(StaticTimeBackgroundView(style: backgroundStyle))
                 .scrollContentBackground(.hidden)
                 .ignoresSafeArea(edges: .bottom)
@@ -104,6 +109,9 @@ struct HomeView: View {
                 .onAppear {
                     logHomeRenderedStateIfNeeded()
                 }
+                .onDisappear {
+                    reportHomeScrollOffset(0)
+                }
                 .onChange(of: viewModel.selectedDate) { _, _ in
                     logHomeRenderedStateIfNeeded()
                 }
@@ -116,10 +124,11 @@ struct HomeView: View {
         }
     }
 
-    private static func bottomChromeClearance(for safeAreaBottom: CGFloat) -> CGFloat {
-        floatingNavigationHeight
-            + min(max(safeAreaBottom, 0), maximumSystemBottomInset)
-            + floatingNavigationExtraScrollSpacing
+    private func reportHomeScrollOffset(_ offset: CGFloat) {
+        let normalizedOffset = max(0, offset)
+        guard abs(lastReportedScrollOffset - normalizedOffset) > 0.5 else { return }
+        lastReportedScrollOffset = normalizedOffset
+        onScrollOffsetChange(normalizedOffset)
     }
 
     private var metricGlassCardStack: some View {

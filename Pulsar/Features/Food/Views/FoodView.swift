@@ -7,10 +7,15 @@ import SwiftUI
 
 struct FoodView: View {
     @ObservedObject private var store: PulsarNutritionStore
+    @ObservedObject private var bottomChromeLayoutStore: PulsarBottomChromeLayoutStore
     @State private var activeSheet: NutritionSheet?
 
-    init(store: PulsarNutritionStore) {
+    init(
+        store: PulsarNutritionStore,
+        bottomChromeLayoutStore: PulsarBottomChromeLayoutStore = PulsarBottomChromeLayoutStore()
+    ) {
         self.store = store
+        self._bottomChromeLayoutStore = ObservedObject(wrappedValue: bottomChromeLayoutStore)
     }
 
     var body: some View {
@@ -20,12 +25,16 @@ struct FoodView: View {
                     .ignoresSafeArea()
 
                 ScrollView {
-                    nutritionContent
-                        .padding(.horizontal, 18)
-                        .padding(.top, 30)
-                        .padding(.bottom, 34)
+                    LazyVStack(alignment: .leading, spacing: 22) {
+                        nutritionContent
+
+                        PulsarBottomChromeSpacer(layoutStore: bottomChromeLayoutStore)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.top, 30)
+                    .padding(.bottom, 34)
                 }
-                .safeAreaPadding(.bottom, 16)
+                .pulsarBottomChromeScrollContainer(layoutStore: bottomChromeLayoutStore)
                 .scrollContentBackground(.hidden)
                 .premiumScrollHeaderBlur()
                 .refreshable {

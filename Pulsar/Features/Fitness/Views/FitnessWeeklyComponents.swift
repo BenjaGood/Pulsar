@@ -18,134 +18,112 @@ struct FitnessWeekHeaderView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .center) {
-                Text("Weekly training rhythm")
-                    .pulsarTextStyle(.screenSubtitle)
-                    .foregroundStyle(secondaryText)
+        GeometryReader { proxy in
+            let isCompact = proxy.size.width < 360
+            let chartWidth = isCompact ? min(max(proxy.size.width * 0.34, 108), 126) : min(max(proxy.size.width * 0.38, 132), 220)
+            let contentSpacing: CGFloat = isCompact ? 12 : 18
 
-                Spacer(minLength: 12)
+            HStack(alignment: .bottom, spacing: contentSpacing) {
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack(spacing: 8) {
+                        Text("WEEKLY TRAINING RHYTHM")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(secondaryText.opacity(0.86))
+                            .tracking(1.0)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
 
-                if !week.isCurrentWeek {
-                    Button(action: onCurrent) {
-                        Text("Current Week")
-                            .pulsarTextStyle(.metricLabel)
-                            .foregroundStyle(.green)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(.green.opacity(colorScheme == .dark ? 0.16 : 0.12), in: Capsule(style: .continuous))
-                            .overlay {
-                                Capsule(style: .continuous)
-                                    .stroke(.green.opacity(0.28), lineWidth: 1)
-                            }
+                        if isRefreshing {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .tint(secondaryText)
+                        }
                     }
-                    .buttonStyle(.plain)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Week \(week.weekNumber)")
+                            .font(.system(size: 36, weight: .bold, design: .default))
+                            .monospacedDigit()
+                            .foregroundStyle(primaryText)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+
+                        Text(FitnessWeekFormatters.heroDateRange(for: week))
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(secondaryText)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                    }
+
+                    statusControl
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
+
+                VStack(alignment: .trailing, spacing: 12) {
+                    HStack(spacing: 9) {
+                        weekArrow(systemName: "chevron.left", action: onPrevious, isEnabled: true)
+                        weekArrow(systemName: "chevron.right", action: onNext, isEnabled: canMoveToNextWeek)
+                    }
+
+                    FitnessWeeklyRhythmChart(hasWorkout: week.hasWorkout)
+                        .frame(width: chartWidth, height: 68)
+                        .accessibilityHidden(true)
+                }
+                .frame(width: chartWidth, alignment: .trailing)
             }
-
-            HStack(alignment: .bottom, spacing: 14) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Week \(week.weekNumber)")
-                        .pulsarMonospacedMetric(.heroMetric)
-                        .foregroundStyle(primaryText)
-
-                    Text(FitnessWeekFormatters.dateRange(for: week))
-                        .pulsarTextStyle(.cardTitle)
-                        .foregroundStyle(secondaryText)
-                }
-
-                Spacer(minLength: 10)
-
-                HStack(spacing: 9) {
-                    weekArrow(systemName: "chevron.left", action: onPrevious, isEnabled: true)
-                    weekArrow(systemName: "chevron.right", action: onNext, isEnabled: canMoveToNextWeek)
-                }
-            }
-
-            HStack(spacing: 9) {
-                Circle()
-                    .fill(week.hasWorkout ? .green : secondaryText.opacity(0.42))
-                    .frame(width: 8, height: 8)
-                    .shadow(color: (week.hasWorkout ? Color.green : .clear).opacity(0.55), radius: 7)
-
-                Text(week.hasWorkout ? "Workout logged this week" : "No workout logged yet")
-                    .pulsarTextStyle(.caption)
-                    .foregroundStyle(week.hasWorkout ? Color.green.opacity(0.92) : secondaryText)
-
-                Spacer()
-
-                if isRefreshing {
-                    ProgressView()
-                        .controlSize(.mini)
-                        .tint(secondaryText)
-                }
-            }
+            .padding(18)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
-        .padding(20)
-        .background(headerGradient, in: RoundedRectangle(cornerRadius: 34, style: .continuous))
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 34, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 34, style: .continuous)
-                .stroke(borderGradient, lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.28 : 0.10), radius: 24, y: 14)
+        .frame(height: 164)
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 30, tint: Color(red: 0.70, green: 0.88, blue: 0.72)))
     }
 
     private func weekArrow(systemName: String, action: @escaping () -> Void, isEnabled: Bool) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .pulsarTextStyle(.cardTitle)
-                .foregroundStyle(isEnabled ? primaryText : secondaryText.opacity(0.45))
-                .frame(width: 40, height: 40)
-                .background(arrowBackground(isEnabled: isEnabled), in: Circle())
-                .overlay {
-                    Circle()
-                        .stroke(.white.opacity(colorScheme == .dark ? 0.14 : 0.60), lineWidth: 1)
-                }
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(isEnabled ? primaryText : secondaryText.opacity(0.42))
+                .frame(width: 34, height: 34)
+                .background(FitnessCircularGlassSurface(cornerRadius: 17, opacity: isEnabled ? 1 : 0.54))
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
         .accessibilityLabel(systemName == "chevron.left" ? "Previous week" : "Next week")
     }
 
-    private func arrowBackground(isEnabled: Bool) -> LinearGradient {
-        LinearGradient(
-            colors: isEnabled
-                ? [Color.white.opacity(colorScheme == .dark ? 0.16 : 0.82), Color.white.opacity(colorScheme == .dark ? 0.06 : 0.42)]
-                : [Color.white.opacity(colorScheme == .dark ? 0.07 : 0.36), Color.white.opacity(colorScheme == .dark ? 0.03 : 0.18)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+    @ViewBuilder
+    private var statusControl: some View {
+        if week.isCurrentWeek {
+            statusPill(text: week.hasWorkout ? "Workout logged this week" : "No workout logged yet")
+        } else {
+            Button(action: onCurrent) {
+                statusPill(text: "Current Week")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Return to current week")
+        }
     }
 
-    private var headerGradient: LinearGradient {
-        LinearGradient(
-            colors: colorScheme == .dark
-                ? [
-                    Color.white.opacity(0.11),
-                    Color(red: 0.07, green: 0.12, blue: 0.16).opacity(0.90),
-                    Color.green.opacity(0.10)
-                ]
-                : [
-                    Color.white.opacity(0.92),
-                    Color(red: 0.93, green: 0.98, blue: 0.96).opacity(0.82),
-                    Color.green.opacity(0.08)
-                ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
+    private func statusPill(text: String) -> some View {
+        HStack(spacing: 9) {
+            Circle()
+                .fill(week.hasWorkout ? Color.green : secondaryText.opacity(0.54))
+                .frame(width: 8, height: 8)
 
-    private var borderGradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                .white.opacity(colorScheme == .dark ? 0.24 : 0.86),
-                .green.opacity(colorScheme == .dark ? 0.18 : 0.24),
-                .black.opacity(colorScheme == .dark ? 0.24 : 0.05)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+            Text(text)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(week.hasWorkout ? Color.green.opacity(0.92) : secondaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.white.opacity(colorScheme == .dark ? 0.070 : 0.66), in: Capsule(style: .continuous))
+        .overlay {
+            Capsule(style: .continuous)
+                .stroke(.white.opacity(colorScheme == .dark ? 0.10 : 0.52), lineWidth: 0.7)
+        }
     }
 
     private var primaryText: Color {
@@ -154,6 +132,110 @@ struct FitnessWeekHeaderView: View {
 
     private var secondaryText: Color {
         colorScheme == .dark ? .white.opacity(0.62) : Color(red: 0.36, green: 0.40, blue: 0.48)
+    }
+}
+
+private struct FitnessWeeklyRhythmChart: View {
+    var hasWorkout: Bool
+
+    private let labels = ["M", "T", "W", "T", "F", "S", "S"]
+
+    var body: some View {
+        VStack(spacing: 6) {
+            GeometryReader { proxy in
+                let size = proxy.size
+                let points = rhythmPoints(in: size)
+
+                ZStack {
+                    verticalGuides()
+                    chartFill(points: points)
+                    chartLine(points: points)
+                    endpoint(points: points)
+                }
+            }
+            .frame(height: 46)
+
+            HStack {
+                ForEach(Array(labels.enumerated()), id: \.offset) { _, label in
+                    Text(label)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.50))
+                        .frame(maxWidth: .infinity)
+                }
+            }
+        }
+    }
+
+    private func verticalGuides() -> some View {
+        Canvas { context, canvasSize in
+            let step = canvasSize.width / 6
+            var path = Path()
+            for index in 0...6 {
+                let x = CGFloat(index) * step
+                path.move(to: CGPoint(x: x, y: 0))
+                path.addLine(to: CGPoint(x: x, y: canvasSize.height))
+            }
+            context.stroke(path, with: .color(.white.opacity(0.08)), lineWidth: 0.7)
+        }
+    }
+
+    private func chartFill(points: [CGPoint]) -> some View {
+        Canvas { context, canvasSize in
+            var area = Path()
+            guard let first = points.first, let last = points.last else { return }
+            area.move(to: CGPoint(x: first.x, y: canvasSize.height))
+            area.addLine(to: first)
+            for point in points.dropFirst() {
+                area.addLine(to: point)
+            }
+            area.addLine(to: CGPoint(x: last.x, y: canvasSize.height))
+            area.closeSubpath()
+            context.fill(
+                area,
+                with: .linearGradient(
+                    Gradient(colors: [
+                        Color.green.opacity(hasWorkout ? 0.30 : 0.16),
+                        Color.green.opacity(0.040)
+                    ]),
+                    startPoint: CGPoint(x: canvasSize.width, y: 0),
+                    endPoint: CGPoint(x: canvasSize.width, y: canvasSize.height)
+                )
+            )
+        }
+    }
+
+    private func chartLine(points: [CGPoint]) -> some View {
+        Canvas { context, _ in
+            guard let first = points.first else { return }
+            var path = Path()
+            path.move(to: first)
+            for point in points.dropFirst() {
+                path.addLine(to: point)
+            }
+            context.stroke(path, with: .color(Color.green.opacity(hasWorkout ? 0.42 : 0.20)), style: StrokeStyle(lineWidth: 7.0, lineCap: .round, lineJoin: .round))
+            context.stroke(path, with: .color(.white.opacity(0.78)), style: StrokeStyle(lineWidth: 2.0, lineCap: .round, lineJoin: .round))
+        }
+    }
+
+    private func endpoint(points: [CGPoint]) -> some View {
+        Canvas { context, _ in
+            guard let last = points.last else { return }
+            let color = hasWorkout ? Color.green : Color.white.opacity(0.54)
+            context.fill(Path(ellipseIn: CGRect(x: last.x - 7, y: last.y - 7, width: 14, height: 14)), with: .color(color.opacity(0.22)))
+            context.fill(Path(ellipseIn: CGRect(x: last.x - 4.5, y: last.y - 4.5, width: 9, height: 9)), with: .color(color))
+        }
+    }
+
+    private func rhythmPoints(in size: CGSize) -> [CGPoint] {
+        let values: [CGFloat] = hasWorkout
+            ? [0.68, 0.48, 0.36, 0.54, 0.22, 0.40, 0.16]
+            : [0.64, 0.56, 0.52, 0.58, 0.50, 0.57, 0.48]
+        return values.enumerated().map { index, value in
+            CGPoint(
+                x: CGFloat(index) / CGFloat(max(values.count - 1, 1)) * size.width,
+                y: value * size.height
+            )
+        }
     }
 }
 
@@ -1549,35 +1631,34 @@ struct FitnessWeeklyBackground: View {
 
     var body: some View {
         ZStack {
+            Color(red: 0.115, green: 0.125, blue: 0.140)
+
+            Image("FitnessBackground")
+                .resizable()
+                .scaledToFill()
+                .saturation(colorScheme == .dark ? 1.0 : 0.72)
+                .brightness(colorScheme == .dark ? 0.10 : 0.03)
+                .opacity(colorScheme == .dark ? 0.92 : 1)
+
+            Color.white
+                .opacity(colorScheme == .dark ? 0.035 : 0)
+
+            Color.black
+                .opacity(colorScheme == .dark ? 0.02 : 0.10)
+
             LinearGradient(
-                colors: colorScheme == .dark
-                    ? [
-                        Color(red: 0.025, green: 0.045, blue: 0.060),
-                        Color(red: 0.025, green: 0.030, blue: 0.055),
-                        Color.black
-                    ]
-                    : [
-                        Color(.systemBackground),
-                        Color(red: 0.91, green: 0.98, blue: 0.95),
-                        Color(red: 0.94, green: 0.96, blue: 1.00)
-                    ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+                colors: [
+                    Color.black.opacity(colorScheme == .dark ? 0.00 : 0.04),
+                    Color.black.opacity(colorScheme == .dark ? 0.08 : 0.10),
+                    Color.black.opacity(colorScheme == .dark ? 0.34 : 0.20)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
             )
 
-            RadialGradient(
-                colors: [.green.opacity(colorScheme == .dark ? 0.24 : 0.16), .clear],
-                center: .topTrailing,
-                startRadius: 20,
-                endRadius: 330
-            )
-
-            RadialGradient(
-                colors: [.cyan.opacity(colorScheme == .dark ? 0.13 : 0.10), .clear],
-                center: .bottomLeading,
-                startRadius: 40,
-                endRadius: 360
-            )
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .opacity(colorScheme == .dark ? 0.02 : 0.06)
         }
         .ignoresSafeArea()
     }
@@ -1640,23 +1721,140 @@ extension FitnessSectionHeader where Trailing == EmptyView {
 }
 
 struct FitnessGlassCard<Content: View>: View {
-    var cornerRadius: CGFloat = 34
+    var cornerRadius: CGFloat = 32
     var padding: CGFloat = 16
     @ViewBuilder var content: () -> Content
-
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         content()
             .padding(padding)
-            .background(PulsarTheme.glassCardBackground(for: colorScheme), in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(PulsarTheme.glassCardBorder(for: colorScheme), lineWidth: 1)
+            .modifier(FitnessGlassSurfaceModifier(cornerRadius: cornerRadius))
+    }
+}
+
+struct FitnessGlassSurfaceModifier: ViewModifier {
+    var cornerRadius: CGFloat
+    var tint: Color = Color(red: 0.68, green: 0.80, blue: 0.92)
+    var isInteractive = false
+    var borderOpacity: Double = 1
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        if #available(iOS 26.0, *) {
+            if isInteractive {
+                content
+                    .background(darkSurface, in: shape)
+                    .glassEffect(
+                        .regular.tint(tint.opacity(0.060)).interactive(),
+                        in: .rect(cornerRadius: cornerRadius, style: .continuous)
+                    )
+                    .clipShape(shape)
+                    .overlay {
+                        border(shape: shape)
+                    }
+                    .shadow(color: shadowColor, radius: 20, x: 0, y: 10)
+            } else {
+                content
+                    .background(darkSurface, in: shape)
+                    .glassEffect(
+                        .regular.tint(tint.opacity(0.045)),
+                        in: .rect(cornerRadius: cornerRadius, style: .continuous)
+                    )
+                    .clipShape(shape)
+                    .overlay {
+                        border(shape: shape)
+                    }
+                    .shadow(color: shadowColor, radius: 20, x: 0, y: 10)
             }
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.26 : 0.10), radius: 24, y: 14)
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+                .background(darkSurface, in: shape)
+                .clipShape(shape)
+                .overlay {
+                    border(shape: shape)
+                }
+                .shadow(color: shadowColor, radius: 18, x: 0, y: 10)
+        }
+    }
+
+    private var darkSurface: LinearGradient {
+        LinearGradient(
+            colors: colorScheme == .dark
+                ? [
+                    Color.white.opacity(0.095),
+                    Color(red: 0.055, green: 0.075, blue: 0.095).opacity(0.38),
+                    Color.black.opacity(0.14)
+                ]
+                : [
+                    Color.white.opacity(0.78),
+                    Color(red: 0.90, green: 0.95, blue: 0.98).opacity(0.48),
+                    Color.white.opacity(0.20)
+                ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var shadowColor: Color {
+        .black.opacity(colorScheme == .dark ? 0.20 : 0.08)
+    }
+
+    private func border(shape: RoundedRectangle) -> some View {
+        shape
+            .stroke(
+                LinearGradient(
+                    colors: [
+                        .white.opacity((colorScheme == .dark ? 0.22 : 0.82) * borderOpacity),
+                        tint.opacity((colorScheme == .dark ? 0.08 : 0.16) * borderOpacity),
+                        .white.opacity((colorScheme == .dark ? 0.045 : 0.38) * borderOpacity)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 0.65
+            )
+    }
+}
+
+struct FitnessCircularGlassSurface: View {
+    var cornerRadius: CGFloat
+    var tint: Color = Color(red: 0.68, green: 0.80, blue: 0.92)
+    var opacity: Double = 1
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        if #available(iOS 26.0, *) {
+            Color.clear
+                .background(.white.opacity((colorScheme == .dark ? 0.050 : 0.42) * opacity), in: shape)
+                .glassEffect(
+                    .regular.tint(tint.opacity(0.055 * opacity)).interactive(),
+                    in: .rect(cornerRadius: cornerRadius, style: .continuous)
+                )
+                .overlay {
+                    border(shape: shape)
+                }
+                .shadow(color: .black.opacity((colorScheme == .dark ? 0.20 : 0.08) * opacity), radius: 18, x: 0, y: 10)
+        } else {
+            Color.clear
+                .background(.ultraThinMaterial, in: shape)
+                .background(.white.opacity((colorScheme == .dark ? 0.055 : 0.45) * opacity), in: shape)
+                .overlay {
+                    border(shape: shape)
+                }
+                .shadow(color: .black.opacity((colorScheme == .dark ? 0.18 : 0.08) * opacity), radius: 16, x: 0, y: 9)
+        }
+    }
+
+    private func border(shape: RoundedRectangle) -> some View {
+        shape
+            .stroke(.white.opacity((colorScheme == .dark ? 0.20 : 0.70) * opacity), lineWidth: 0.65)
     }
 }
 
@@ -1758,6 +1956,15 @@ private struct FlowLayout: Layout {
 enum FitnessWeekFormatters {
     static func dateRange(for week: WeekPeriod) -> String {
         "\(monthDayYear.string(from: week.startDate)) - \(monthDayYear.string(from: week.endDate))"
+    }
+
+    static func heroDateRange(for week: WeekPeriod) -> String {
+        let calendar = Calendar.current
+        let sameYear = calendar.component(.year, from: week.startDate) == calendar.component(.year, from: week.endDate)
+        if sameYear {
+            return "\(monthDay.string(from: week.startDate)) - \(monthDayYear.string(from: week.endDate))"
+        }
+        return dateRange(for: week)
     }
 
     static func compactDateRange(for week: WeekPeriod) -> String {

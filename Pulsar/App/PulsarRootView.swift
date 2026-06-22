@@ -11,6 +11,7 @@ struct PulsarRootView: View {
     @State private var selectedTab: PulsarRootTab = .home
     @State private var lastPresentedWorkout: PulsarPresentedWorkout?
     @State private var tabBarMetrics = PulsarTabBarMetrics()
+    @State private var homeScrollOffset: CGFloat = 0
     @State private var lastVisibleTabBarHeight: CGFloat = 0
     @State private var workoutFailureNotice: PulsarWorkoutFailureNotice?
     @State private var lastFailedWorkoutSessionID: UUID?
@@ -31,8 +32,11 @@ struct PulsarRootView: View {
     @StateObject private var watchSyncStore = PulsarWatchConnectivitySyncStore.shared
     @StateObject private var activeWorkoutManager = PulsarActiveWorkoutManager()
     @StateObject private var orionChatViewModel = OrionChatViewModel()
+    @StateObject private var orionAudioManager = OrionAudioManager()
+    @StateObject private var bottomChromeLayoutStore = PulsarBottomChromeLayoutStore()
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         rootShellWithLifecycle
@@ -86,11 +90,15 @@ struct PulsarRootView: View {
             .fullScreenCover(item: $presentedPlusDestination) { destination in
                 plusDestinationView(destination)
             }
-            .sheet(isPresented: $isOrionChatPresented) {
+            .fullScreenCover(isPresented: $isOrionChatPresented) {
                 OrionChatView(viewModel: orionChatViewModel)
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
-                    .presentationBackground(.regularMaterial)
+                    .presentationBackground(.clear)
+                    .onAppear {
+                        orionAudioManager.setPresentationActive(true)
+                    }
+                    .onDisappear {
+                        orionAudioManager.setPresentationActive(false)
+                    }
             }
     }
 
@@ -106,6 +114,7 @@ struct PulsarRootView: View {
                 await reconcileRestoredActiveWorkoutOnAppEntry(source: "rootTask")
             }
             .onChange(of: scenePhase) { _, newPhase in
+                orionAudioManager.setAppIsActive(newPhase == .active)
                 guard newPhase == .active else {
                     homeViewModel.appDidResignActive()
                     return
@@ -182,6 +191,8 @@ struct PulsarRootView: View {
             }
             .onAppear {
                 configureOrion()
+                orionAudioManager.bind(to: orionChatViewModel)
+                orionAudioManager.setAppIsActive(scenePhase == .active)
                 syncCurrentActiveWorkoutSessionContext(reason: "rootAppear")
                 handlePendingDeepLinkRouteIfNeeded()
                 PulsarArchitectureDebugLogger.log("Using MiniWorkoutHost placement=\(miniWorkoutPlacementDescription)")
@@ -284,8 +295,14 @@ struct PulsarRootView: View {
                 .zIndex(1000)
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            rootSyncStatusHost
+        .overlay(alignment: .top) {
+            GeometryReader { proxy in
+                rootSyncStatusHost
+                    .padding(.top, rootSyncStatusTopPadding(fallback: proxy.safeAreaInsets.top))
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
         }
     }
 
@@ -305,8 +322,10 @@ struct PulsarRootView: View {
             activeWorkoutMiniPlayerState: shouldShowMiniWorkoutBar ? activeWorkoutMiniPlayerState : nil,
             onOpenActiveWorkout: openActiveWorkoutMiniPlayer,
             onPrimaryActiveWorkoutAction: handleActiveWorkoutMiniPlayerAction,
-            isOrionBarVisible: shouldShowOrionBar,
+            showsOrionAccessory: shouldShowOrionBar && usesNativeOrionTabAccessory,
             onOpenOrion: openOrion,
+            onHomeScrollOffsetChange: updateHomeScrollOffset,
+            bottomChromeLayoutStore: bottomChromeLayoutStore,
             onMetricsChange: updateTabBarMetrics
         )
     }
@@ -315,27 +334,58 @@ struct PulsarRootView: View {
         PulsarRootSyncStatusHost()
     }
 
+    private func rootSyncStatusTopPadding(fallback geometrySafeAreaTop: CGFloat) -> CGFloat {
+        let windowTopSafeArea = currentWindowTopSafeAreaInset
+        return windowTopSafeArea > 0 ? windowTopSafeArea : geometrySafeAreaTop
+    }
+
+    private var currentWindowTopSafeAreaInset: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }?
+            .safeAreaInsets.top ?? 0
+    }
+
     @ViewBuilder
     private var rootOrionHost: some View {
-        if !usesNativeMiniWorkoutTabAccessory,
-           shouldShowOrionBar {
+        if shouldShowRootOrionBar {
             GeometryReader { proxy in
+                let compactFrame = isOrionBarCompact ? rootOrionCompactFrame(in: proxy) : nil
+
                 ZStack(alignment: .top) {
                     Color.clear
                         .allowsHitTesting(false)
 
-                    OrionBarView(onOpen: openOrion)
-                        .frame(maxWidth: rootMiniWorkoutMaxWidth)
-                        .padding(.horizontal, rootMiniWorkoutHorizontalPadding)
-                        .frame(width: proxy.size.width, height: rootOrionBarHeight)
-                        .position(
-                            x: proxy.size.width / 2,
-                            y: rootOrionCenterY(in: proxy)
+                    if let compactFrame {
+                        OrionBarView(
+                            isInlinePlacement: true,
+                            onOpen: openOrion
                         )
+                            .frame(width: rootOrionWidth(in: proxy, compactFrame: compactFrame), height: rootOrionBarHeight)
+                            .position(
+                                x: rootOrionCenterX(in: proxy, compactFrame: compactFrame),
+                                y: rootOrionCenterY(in: proxy, compactFrame: compactFrame)
+                            )
+                            .transition(rootOrionModeTransition)
+                    } else {
+                        OrionBarView(
+                            isInlinePlacement: false,
+                            onOpen: openOrion
+                        )
+                            .frame(width: rootOrionWidth(in: proxy, compactFrame: nil), height: rootOrionBarHeight)
+                            .position(
+                                x: rootOrionCenterX(in: proxy, compactFrame: nil),
+                                y: rootOrionCenterY(in: proxy, compactFrame: nil)
+                            )
+                            .transition(rootOrionModeTransition)
+                    }
                 }
             }
+            .ignoresSafeArea(edges: .bottom)
             .zIndex(998)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .transition(rootOrionTransition)
+            .animation(rootOrionModeAnimation, value: isOrionBarCompact)
         }
     }
 
@@ -395,6 +445,22 @@ struct PulsarRootView: View {
         activeWorkoutManager.activeWorkout == nil
     }
 
+    private var shouldShowRootOrionBar: Bool {
+        shouldShowOrionBar && !usesNativeOrionTabAccessory
+    }
+
+    private var rootOrionTransition: AnyTransition {
+        reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity)
+    }
+
+    private var rootOrionModeTransition: AnyTransition {
+        reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.985))
+    }
+
+    private var rootOrionModeAnimation: Animation? {
+        reduceMotion ? .easeOut(duration: 0.16) : .smooth(duration: 0.24)
+    }
+
     private var rootMiniWorkoutMaxWidth: CGFloat {
         horizontalSizeClass == .regular ? 720 : .infinity
     }
@@ -413,6 +479,10 @@ struct PulsarRootView: View {
         return false
     }
 
+    private var usesNativeOrionTabAccessory: Bool {
+        return false
+    }
+
 
     private var rootMiniWorkoutHorizontalPadding: CGFloat {
         horizontalSizeClass == .regular ? 56 : 16
@@ -422,12 +492,19 @@ struct PulsarRootView: View {
         tabBarMetrics.isMinimized
     }
 
+    private var isOrionBarCompact: Bool {
+        if #available(iOS 26.0, *) {
+            return false
+        }
+        return selectedTab == .home && homeScrollOffset > 10 && tabBarMetrics.hasCompactControlLayout
+    }
+
     private var rootMiniWorkoutHeight: CGFloat {
         isMiniWorkoutCollapsed ? 48 : 60
     }
 
     private var rootOrionBarHeight: CGFloat {
-        isMiniWorkoutCollapsed ? 48 : 54
+        isOrionBarCompact ? 48 : 54
     }
 
     private var rootMiniWorkoutGap: CGFloat {
@@ -458,9 +535,12 @@ struct PulsarRootView: View {
         return min(proposed, proxy.size.height - rootMiniWorkoutHeight / 2)
     }
 
-    private func rootOrionCenterY(in proxy: GeometryProxy) -> CGFloat {
+    private func rootOrionCenterY(in proxy: GeometryProxy, compactFrame: CGRect?) -> CGFloat {
         guard proxy.size.height > rootOrionBarHeight else {
             return rootOrionBarHeight / 2
+        }
+        if let compactFrame {
+            return compactFrame.midY
         }
         let rootFrame = proxy.frame(in: .global)
         let tabTopY = tabBarMetrics.minY - rootFrame.minY
@@ -480,6 +560,123 @@ struct PulsarRootView: View {
             proxy.size.height - fallbackTabChromeHeight - rootMiniWorkoutGap - rootOrionBarHeight / 2
         )
         return min(proposed, proxy.size.height - rootOrionBarHeight / 2)
+    }
+
+    private func rootOrionCenterX(in proxy: GeometryProxy, compactFrame: CGRect?) -> CGFloat {
+        if let compactFrame {
+            return compactFrame.midX
+        }
+        return proxy.size.width / 2
+    }
+
+    private func rootOrionWidth(in proxy: GeometryProxy, compactFrame: CGRect?) -> CGFloat {
+        if let compactFrame {
+            return max(1, compactFrame.width)
+        }
+
+        let availableWidth = max(1, proxy.size.width - rootMiniWorkoutHorizontalPadding * 2)
+        return min(availableWidth, rootMiniWorkoutMaxWidth)
+    }
+
+    private func rootOrionCompactFrame(in proxy: GeometryProxy) -> CGRect? {
+        let rootFrame = proxy.frame(in: .global)
+        guard tabBarMetrics.hasCompactControlLayout else { return nil }
+
+        let tabControlFrame = CGRect(
+            x: tabBarMetrics.selectedControlFrame.minX - rootFrame.minX,
+            y: tabBarMetrics.selectedControlFrame.minY - rootFrame.minY,
+            width: tabBarMetrics.selectedControlFrame.width,
+            height: tabBarMetrics.selectedControlFrame.height
+        )
+        let plusFrame = CGRect(
+            x: tabBarMetrics.plusControlFrame.minX - rootFrame.minX,
+            y: tabBarMetrics.plusControlFrame.minY - rootFrame.minY,
+            width: tabBarMetrics.plusControlFrame.width,
+            height: tabBarMetrics.plusControlFrame.height
+        )
+        let sidePadding: CGFloat = 12
+        let compactGap: CGFloat = 10
+
+        let leadingBound = max(proxy.safeAreaInsets.leading + sidePadding, tabControlFrame.maxX + compactGap)
+        let trailingBound = min(proxy.size.width - proxy.safeAreaInsets.trailing - sidePadding, plusFrame.minX - compactGap)
+        let availableWidth = trailingBound - leadingBound
+        guard availableWidth > 120 else { return nil }
+
+        let controlCenterY = (tabControlFrame.midY + plusFrame.midY) / 2
+        let midY = min(max(controlCenterY, rootOrionBarHeight / 2), proxy.size.height - rootOrionBarHeight / 2)
+
+        return CGRect(
+            x: leadingBound,
+            y: midY - rootOrionBarHeight / 2,
+            width: availableWidth,
+            height: rootOrionBarHeight
+        )
+    }
+
+    private func rootPlusActionFrame(in proxy: GeometryProxy, tabFrame: CGRect) -> CGRect {
+        let tabHeight = max(tabFrame.height, 58)
+        let sideLength = min(60, max(56, tabHeight * 0.82))
+        let originX = max(
+            proxy.safeAreaInsets.leading + 12,
+            proxy.size.width - proxy.safeAreaInsets.trailing - sideLength - 12
+        )
+
+        return CGRect(
+            x: originX,
+            y: tabFrame.midY - sideLength / 2,
+            width: sideLength,
+            height: sideLength
+        )
+    }
+
+    private func rootLeadingTabControlFrame(in proxy: GeometryProxy, rootFrame: CGRect, centerY: CGFloat) -> CGRect {
+        let hasValidTabMetrics = tabBarMetrics.width > 0 &&
+            tabBarMetrics.height > 0 &&
+            tabBarMetrics.minY > 0 &&
+            tabBarMetrics.minY < proxy.size.height
+        let tabFrame = hasValidTabMetrics
+            ? CGRect(
+                x: tabBarMetrics.minX - rootFrame.minX,
+                y: tabBarMetrics.minY - rootFrame.minY,
+                width: tabBarMetrics.width,
+                height: tabBarMetrics.height
+            )
+            : CGRect(
+                x: proxy.safeAreaInsets.leading + 12,
+                y: proxy.size.height - max(tabBarMetrics.visibleHeight, proxy.safeAreaInsets.bottom + 58, 86),
+                width: 60,
+                height: 60
+            )
+        let tabHeight = max(tabFrame.height, 58)
+        let sideLength = min(60, max(56, tabHeight * 0.82))
+        let horizontalInset = max(0, (tabHeight - sideLength) / 2)
+        let originX = max(proxy.safeAreaInsets.leading + 12, tabFrame.minX + horizontalInset)
+        let originY = centerY - sideLength / 2
+
+        return CGRect(
+            x: originX,
+            y: originY,
+            width: sideLength,
+            height: sideLength
+        )
+    }
+
+    private func rootBottomControlCenterY(in proxy: GeometryProxy, rootFrame: CGRect) -> CGFloat {
+        let tabHeight = max(tabBarMetrics.height, 58)
+        let sideLength = min(60, max(56, tabHeight * 0.82))
+        let safeAreaBottom = max(proxy.safeAreaInsets.bottom, tabBarMetrics.bottomSafeAreaInset, 0)
+        let bottomGap: CGFloat = safeAreaBottom > 0 ? 14 : 8
+        let fallbackCenterY = proxy.size.height - safeAreaBottom - bottomGap - sideLength / 2
+
+        guard tabBarMetrics.minY > 0,
+              tabBarMetrics.minY < proxy.size.height,
+              tabBarMetrics.height > 0 else {
+            return min(max(fallbackCenterY, sideLength / 2), proxy.size.height - sideLength / 2)
+        }
+
+        let metricsCenterY = tabBarMetrics.minY - rootFrame.minY + tabBarMetrics.height / 2
+        let alignedCenterY = max(metricsCenterY, fallbackCenterY)
+        return min(max(alignedCenterY, sideLength / 2), proxy.size.height - sideLength / 2)
     }
 
     private var activeWorkoutMiniPlayerState: PulsarWorkoutMiniPlayerState? {
@@ -680,6 +877,7 @@ struct PulsarRootView: View {
         guard shouldShowOrionBar else { return }
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         dismissPlusMenu()
+        orionChatViewModel.startNewConversation()
         isOrionChatPresented = true
     }
 
@@ -1306,6 +1504,7 @@ struct PulsarRootView: View {
     }
 
     private func updateTabBarMetrics(_ metrics: PulsarTabBarMetrics) {
+        bottomChromeLayoutStore.update(safeAreaBottom: metrics.bottomSafeAreaInset)
         guard tabBarMetrics != metrics else { return }
         tabBarMetrics = metrics
         if metrics.visibleHeight > 1 {
@@ -1315,6 +1514,12 @@ struct PulsarRootView: View {
         if shouldShowMiniWorkoutBar, let sessionID = activeWorkoutMiniPlayerState?.sessionID {
             PulsarUIDebugLogger.log("MiniWorkout preserved during scroll session=\(sessionID.uuidString)")
         }
+    }
+
+    private func updateHomeScrollOffset(_ offset: CGFloat) {
+        let normalizedOffset = max(0, offset)
+        guard abs(homeScrollOffset - normalizedOffset) > 0.5 else { return }
+        homeScrollOffset = normalizedOffset
     }
 
     private var activeWorkoutPhaseDescription: String {
@@ -1507,8 +1712,20 @@ private struct PulsarTabBarMetrics: Equatable {
     var maxY: CGFloat = 0
     var visibleHeight: CGFloat = 0
     var bottomSafeAreaInset: CGFloat = 0
+    var selectedControlFrame: CGRect = .zero
+    var plusControlFrame: CGRect = .zero
+    var visibleControlCount = 0
     var isMinimized = false
     var isHidden = false
+
+    var hasCompactControlLayout: Bool {
+        selectedControlFrame.width > 1 &&
+            selectedControlFrame.height > 1 &&
+            plusControlFrame.width > 1 &&
+            plusControlFrame.height > 1 &&
+            plusControlFrame.minX > selectedControlFrame.maxX + 80 &&
+            visibleControlCount <= 2
+    }
 }
 
 private struct PulsarTabBarMetricsReader: UIViewRepresentable {
@@ -1554,6 +1771,7 @@ private struct PulsarTabBarMetricsReader: UIViewRepresentable {
             let windowHeight = windowBounds.height
             let bottomSafeAreaInset = tabBar.window?.safeAreaInsets.bottom ?? 0
             let tabFrameInWindow = tabBar.superview?.convert(tabBar.frame, to: tabBar.window) ?? tabBar.frame
+            let controlMetrics = tabBar.pulsarVisibleControlMetrics(in: tabBar.window)
             let tabBarHeight = max(tabBar.bounds.height, tabFrameInWindow.height)
             let rawVisibleHeight = tabBar.isHidden || windowHeight <= 0 ? 0 : max(0, windowHeight - tabFrameInWindow.minY)
             let maximumChromeHeight = max(tabBarHeight + bottomSafeAreaInset + 24, 86)
@@ -1572,7 +1790,10 @@ private struct PulsarTabBarMetricsReader: UIViewRepresentable {
                     maxY: tabFrameInWindow.maxY,
                     visibleHeight: visibleHeight,
                     bottomSafeAreaInset: bottomSafeAreaInset,
-                    isMinimized: isMinimized,
+                    selectedControlFrame: controlMetrics.selectedFrame,
+                    plusControlFrame: controlMetrics.plusFrame,
+                    visibleControlCount: controlMetrics.visibleCount,
+                    isMinimized: isMinimized || controlMetrics.isCompact,
                     isHidden: tabBar.isHidden
                 )
             )
@@ -1646,6 +1867,69 @@ private extension UIView {
             responder = currentResponder.next
         }
         return nil
+    }
+}
+
+private struct PulsarTabBarControlMetrics {
+    var selectedFrame: CGRect = .zero
+    var plusFrame: CGRect = .zero
+    var visibleCount = 0
+
+    var isCompact: Bool {
+        visibleCount <= 2 &&
+            selectedFrame.width > 1 &&
+            plusFrame.width > 1 &&
+            plusFrame.minX > selectedFrame.maxX + 80
+    }
+}
+
+private extension UITabBar {
+    func pulsarVisibleControlMetrics(in window: UIWindow?) -> PulsarTabBarControlMetrics {
+        var controls: [UIControl] = []
+        pulsarCollectVisibleControls(in: self, into: &controls)
+
+        let frames = controls
+            .map { control in
+                control.superview?.convert(control.frame, to: window) ?? control.frame
+            }
+            .filter { frame in
+                frame.width > 1 && frame.height > 1
+            }
+            .sorted { lhs, rhs in
+                if abs(lhs.minX - rhs.minX) > 0.5 {
+                    return lhs.minX < rhs.minX
+                }
+                return lhs.minY < rhs.minY
+            }
+
+        guard let selectedFrame = frames.first,
+              let plusFrame = frames.last,
+              selectedFrame != plusFrame else {
+            return PulsarTabBarControlMetrics(visibleCount: frames.count)
+        }
+
+        return PulsarTabBarControlMetrics(
+            selectedFrame: selectedFrame,
+            plusFrame: plusFrame,
+            visibleCount: frames.count
+        )
+    }
+
+    private func pulsarCollectVisibleControls(in view: UIView, into controls: inout [UIControl]) {
+        for subview in view.subviews {
+            guard !subview.isHidden,
+                  subview.alpha > 0.05,
+                  subview.bounds.width > 1,
+                  subview.bounds.height > 1 else {
+                continue
+            }
+
+            if let control = subview as? UIControl {
+                controls.append(control)
+            }
+
+            pulsarCollectVisibleControls(in: subview, into: &controls)
+        }
     }
 }
 
@@ -2121,8 +2405,10 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
     let activeWorkoutMiniPlayerState: PulsarWorkoutMiniPlayerState?
     let onOpenActiveWorkout: () -> Void
     let onPrimaryActiveWorkoutAction: () -> Void
-    let isOrionBarVisible: Bool
+    let showsOrionAccessory: Bool
     let onOpenOrion: () -> Void
+    let onHomeScrollOffsetChange: (CGFloat) -> Void
+    let bottomChromeLayoutStore: PulsarBottomChromeLayoutStore
     let onMetricsChange: (PulsarTabBarMetrics) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -2140,9 +2426,9 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
         controller.updatePlusActionVisibility(isHidden: isPlusActionHidden)
         controller.updateGlobalBottomAccessory(
             workoutState: activeWorkoutMiniPlayerState,
-            isOrionVisible: isOrionBarVisible,
             onOpenWorkout: onOpenActiveWorkout,
             onPrimaryWorkoutAction: onPrimaryActiveWorkoutAction,
+            showsOrion: showsOrionAccessory,
             onOpenOrion: onOpenOrion
         )
         return controller
@@ -2161,9 +2447,9 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
         uiViewController.selectRootTab(selectedTab)
         uiViewController.updateGlobalBottomAccessory(
             workoutState: activeWorkoutMiniPlayerState,
-            isOrionVisible: isOrionBarVisible,
             onOpenWorkout: onOpenActiveWorkout,
             onPrimaryWorkoutAction: onPrimaryActiveWorkoutAction,
+            showsOrion: showsOrionAccessory,
             onOpenOrion: onOpenOrion
         )
     }
@@ -2216,22 +2502,34 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
     private func rootView(for tab: PulsarRootTab) -> some View {
         switch tab {
         case .home:
-            HomeView(viewModel: homeViewModel, backgroundSettings: homeBackgroundSettings)
+            HomeView(
+                viewModel: homeViewModel,
+                backgroundSettings: homeBackgroundSettings,
+                bottomChromeLayoutStore: bottomChromeLayoutStore,
+                onScrollOffsetChange: onHomeScrollOffsetChange
+            )
                 .environmentObject(activeWorkoutManager)
                 .environmentObject(runCoordinator)
         case .fitness:
-            FitnessView(profileStore: homeViewModel.profileStore)
+            FitnessView(
+                profileStore: homeViewModel.profileStore,
+                bottomChromeLayoutStore: bottomChromeLayoutStore
+            )
                 .environmentObject(activeWorkoutManager)
                 .environmentObject(runCoordinator)
         case .food:
-            FoodView(store: nutritionStore)
+            FoodView(
+                store: nutritionStore,
+                bottomChromeLayoutStore: bottomChromeLayoutStore
+            )
                 .environmentObject(activeWorkoutManager)
                 .environmentObject(runCoordinator)
         case .mindfulness:
             InsightsView(
                 homeViewModel: homeViewModel,
                 mindfulnessStore: mindfulnessStore,
-                mindfulnessRouter: mindfulnessRouter
+                mindfulnessRouter: mindfulnessRouter,
+                bottomChromeLayoutStore: bottomChromeLayoutStore
             )
                 .environmentObject(activeWorkoutManager)
                 .environmentObject(runCoordinator)
@@ -2283,6 +2581,10 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
     private var bottomAccessoryPlacementStore: PulsarMiniWorkoutAccessoryPlacementStore?
     private var lastBottomAccessoryState: PulsarNativeBottomAccessoryState?
     private var plusActionToggleOverlay: UIButton?
+    private weak var observedContentScrollView: UIScrollView?
+    private weak var observedContentViewController: UIViewController?
+    private var canonicalHomeFloatingTabBarControlCenterY: CGFloat?
+    private var canonicalFloatingTabBarBoundsSize: CGSize = .zero
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -2297,12 +2599,33 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        lowerFloatingTabBarIfNeeded()
+        reconcileBottomChromeLayout()
+    }
+
+    private func reconcileBottomChromeLayout(forcePendingTabBarLayout: Bool = false) {
+        if forcePendingTabBarLayout {
+            tabBar.setNeedsLayout()
+            tabBar.layoutIfNeeded()
+        }
+
         updateFloatingTabBarChrome()
         updateSelectedContentBottomSafeArea()
         extendSelectedContentBehindBottomChrome()
+        updateSelectedContentScrollViewObservation()
+        alignFloatingTabBarToHomeAnchor()
         reportMetrics(for: tabBar.frame)
         positionPlusActionToggleOverlay()
+    }
+
+    private func scheduleBottomChromeLayoutReconciliation() {
+        DispatchQueue.main.async { [weak self] in
+            self?.reconcileBottomChromeLayout(forcePendingTabBarLayout: true)
+        }
+
+        let coordinator = transitionCoordinator ?? selectedViewController?.transitionCoordinator
+        coordinator?.animate(alongsideTransition: nil) { [weak self] _ in
+            self?.reconcileBottomChromeLayout(forcePendingTabBarLayout: true)
+        }
     }
 
     func installTabs(_ tabs: [UITab], selectedRootTab: PulsarRootTab) {
@@ -2320,6 +2643,7 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
 
     func selectRootTab(_ rootTab: PulsarRootTab) {
         lastSelectedRootTab = rootTab
+        defer { scheduleBottomChromeLayoutReconciliation() }
         guard selectedTab?.identifier != rootTab.identifier,
               let tab = tab(forIdentifier: rootTab.identifier) else { return }
         selectedTab = tab
@@ -2337,9 +2661,9 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
 
     func updateGlobalBottomAccessory(
         workoutState: PulsarWorkoutMiniPlayerState?,
-        isOrionVisible: Bool,
         onOpenWorkout: @escaping () -> Void,
         onPrimaryWorkoutAction: @escaping () -> Void,
+        showsOrion: Bool,
         onOpenOrion: @escaping () -> Void
     ) {
         guard #available(iOS 26.0, *) else { return }
@@ -2347,7 +2671,7 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
         let nextState: PulsarNativeBottomAccessoryState?
         if let workoutState {
             nextState = .workout(workoutState)
-        } else if isOrionVisible {
+        } else if showsOrion {
             nextState = .orion
         } else {
             nextState = nil
@@ -2372,11 +2696,15 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
 
         if let hostingController = bottomAccessoryHostingController as? UIHostingController<AnyView> {
             hostingController.rootView = rootView
+            (bottomAccessoryContentView as? PulsarMiniWorkoutAccessoryContentView)?.state = nextState
             bottomAccessoryContentView?.invalidateIntrinsicContentSize()
             return
         }
 
-        let contentView = PulsarMiniWorkoutAccessoryContentView(placementStore: placementStore)
+        let contentView = PulsarMiniWorkoutAccessoryContentView(
+            placementStore: placementStore,
+            state: nextState
+        )
         let hostingController = UIHostingController(rootView: rootView)
         hostingController.view.backgroundColor = .clear
         hostingController.view.isOpaque = false
@@ -2417,6 +2745,14 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
         guard let selectedRootTab = PulsarRootTab(identifier: selectedTab.identifier) else { return }
         lastSelectedRootTab = selectedRootTab
         onTabSelected?(selectedRootTab)
+        scheduleBottomChromeLayoutReconciliation()
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
+        guard let selectedRootTab = selectedTab.flatMap({ PulsarRootTab(identifier: $0.identifier) }) else { return }
+        lastSelectedRootTab = selectedRootTab
+        onTabSelected?(selectedRootTab)
+        scheduleBottomChromeLayoutReconciliation()
     }
 
     private func isPlusActionTab(_ tab: UITab) -> Bool {
@@ -2490,6 +2826,7 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
         guard let window = view.window else { return }
         let frameInWindow = view.convert(controlsFrame, to: window)
         let windowBounds = window.bounds
+        let controlMetrics = tabBar.pulsarVisibleControlMetrics(in: window)
         let rawVisibleHeight = max(0, windowBounds.height - frameInWindow.minY)
         let maximumChromeHeight = max(controlsFrame.height + window.safeAreaInsets.bottom + 24, 86)
         let visibleHeight = min(rawVisibleHeight, maximumChromeHeight)
@@ -2502,25 +2839,15 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
             maxY: frameInWindow.maxY,
             visibleHeight: visibleHeight,
             bottomSafeAreaInset: window.safeAreaInsets.bottom,
-            isMinimized: frameInWindow.width > 0 && frameInWindow.width < windowBounds.width * 0.72,
+            selectedControlFrame: controlMetrics.selectedFrame,
+            plusControlFrame: controlMetrics.plusFrame,
+            visibleControlCount: controlMetrics.visibleCount,
+            isMinimized: frameInWindow.width > 0 && frameInWindow.width < windowBounds.width * 0.72 || controlMetrics.isCompact,
             isHidden: false
         )
         guard metrics != lastMetrics else { return }
         lastMetrics = metrics
         onMetricsChange?(metrics)
-    }
-
-    private func lowerFloatingTabBarIfNeeded() {
-        let isFloating = tabBar.frame.width > 0 && tabBar.frame.width < view.bounds.width * 0.90
-        guard isFloating else { return }
-
-        let safeAreaBottom = max(view.safeAreaInsets.bottom, 0)
-        let bottomGap: CGFloat = safeAreaBottom > 0 ? 14 : 8
-        let targetMaxY = view.bounds.height - safeAreaBottom - bottomGap
-        let offsetY = targetMaxY - tabBar.frame.maxY
-        guard abs(offsetY) > 0.5 else { return }
-
-        tabBar.frame = tabBar.frame.offsetBy(dx: 0, dy: offsetY)
     }
 
     private func updateFloatingTabBarChrome() {
@@ -2537,13 +2864,11 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
         tabBar.layer.cornerCurve = .continuous
         tabBar.layer.cornerRadius = radius
         tabBar.layer.masksToBounds = false
-        tabBar.layer.backgroundColor = UIColor(red: 0.014, green: 0.027, blue: 0.052, alpha: 0.18).cgColor
-        tabBar.layer.borderColor = UIColor.white.withAlphaComponent(0.12).cgColor
-        tabBar.layer.borderWidth = 0.6
-        tabBar.layer.shadowPath = UIBezierPath(
-            roundedRect: tabBar.bounds.insetBy(dx: 1, dy: 1),
-            cornerRadius: radius
-        ).cgPath
+        tabBar.layer.backgroundColor = nil
+        tabBar.layer.borderColor = nil
+        tabBar.layer.borderWidth = 0
+        tabBar.layer.shadowOpacity = 0
+        tabBar.layer.shadowPath = nil
     }
 
     private func updateSelectedContentBottomSafeArea() {
@@ -2552,6 +2877,60 @@ private final class PulsarNativeTabBarController: UITabBarController, UITabBarCo
         guard abs(selectedViewController.additionalSafeAreaInsets.bottom - targetInset) > 0.5 else { return }
 
         selectedViewController.additionalSafeAreaInsets.bottom = targetInset
+    }
+
+    private func updateSelectedContentScrollViewObservation() {
+        guard let selectedViewController else { return }
+        let scrollView = selectedViewController.view.pulsarPrimaryBottomChromeScrollView
+            ?? selectedViewController.view.pulsarBestVerticalContentScrollView
+
+        guard observedContentViewController !== selectedViewController ||
+                observedContentScrollView !== scrollView else { return }
+
+        selectedViewController.setContentScrollView(scrollView, for: .bottom)
+        observedContentViewController = selectedViewController
+        observedContentScrollView = scrollView
+    }
+
+    private func alignFloatingTabBarToHomeAnchor() {
+        guard let window = view.window else {
+            canonicalHomeFloatingTabBarControlCenterY = nil
+            canonicalFloatingTabBarBoundsSize = .zero
+            return
+        }
+        let controlMetrics = tabBar.pulsarVisibleControlMetrics(in: window)
+        let hasVisibleBottomControls = controlMetrics.plusFrame.height > 1 &&
+            controlMetrics.plusFrame.width > 1 &&
+            controlMetrics.plusFrame.midY > window.bounds.height * 0.60
+        let isFloating = tabBar.frame.width > 0 &&
+            (tabBar.frame.width < view.bounds.width * 0.90 || hasVisibleBottomControls)
+        guard isFloating else {
+            canonicalHomeFloatingTabBarControlCenterY = nil
+            canonicalFloatingTabBarBoundsSize = .zero
+            return
+        }
+
+        if canonicalFloatingTabBarBoundsSize != window.bounds.size {
+            canonicalHomeFloatingTabBarControlCenterY = nil
+            canonicalFloatingTabBarBoundsSize = window.bounds.size
+        }
+
+        let currentControlCenterY = controlMetrics.plusFrame.height > 1
+            ? controlMetrics.plusFrame.midY
+            : controlMetrics.selectedFrame.midY
+        guard currentControlCenterY > 0 else { return }
+
+        if lastSelectedRootTab == .home {
+            canonicalHomeFloatingTabBarControlCenterY = currentControlCenterY
+            return
+        }
+
+        guard let canonicalControlCenterY = canonicalHomeFloatingTabBarControlCenterY else { return }
+
+        let offsetY = canonicalControlCenterY - currentControlCenterY
+        guard abs(offsetY) > 0.5 else { return }
+
+        tabBar.frame = tabBar.frame.offsetBy(dx: 0, dy: offsetY)
     }
 
     private func extendSelectedContentBehindBottomChrome() {
@@ -2582,8 +2961,8 @@ private final class PulsarMiniWorkoutAccessoryPlacementStore: ObservableObject {
 }
 
 private enum PulsarNativeBottomAccessoryState: Equatable {
-    case workout(PulsarWorkoutMiniPlayerState)
     case orion
+    case workout(PulsarWorkoutMiniPlayerState)
 }
 
 private struct PulsarNativeBottomAccessoryView: View {
@@ -2597,6 +2976,12 @@ private struct PulsarNativeBottomAccessoryView: View {
     var body: some View {
         Group {
             switch state {
+            case .orion:
+                OrionBarView(
+                    isInlinePlacement: placementStore.isInlinePlacement,
+                    usesNativeAccessoryChrome: true,
+                    onOpen: onOpenOrion
+                )
             case .workout(let workoutState):
                 PulsarMiniWorkoutBarHost(
                     state: workoutState,
@@ -2605,16 +2990,6 @@ private struct PulsarNativeBottomAccessoryView: View {
                     onOpen: onOpenWorkout,
                     onPrimaryAction: onPrimaryWorkoutAction
                 )
-            case .orion:
-                OrionBarView(
-                    isInlinePlacement: placementStore.isInlinePlacement,
-                    onOpen: onOpenOrion
-                )
-                .padding(.horizontal, placementStore.isInlinePlacement ? 6 : 0)
-                .padding(.vertical, placementStore.isInlinePlacement ? 2 : 3)
-                .frame(height: placementStore.isInlinePlacement ? 48 : 60)
-                .frame(minWidth: 1, maxWidth: .infinity)
-                .accessibilitySortPriority(9)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2625,9 +3000,15 @@ private struct PulsarNativeBottomAccessoryView: View {
 @available(iOS 26.0, *)
 private final class PulsarMiniWorkoutAccessoryContentView: UIView {
     private let placementStore: PulsarMiniWorkoutAccessoryPlacementStore
+    var state: PulsarNativeBottomAccessoryState {
+        didSet {
+            invalidateIntrinsicContentSize()
+        }
+    }
 
-    init(placementStore: PulsarMiniWorkoutAccessoryPlacementStore) {
+    init(placementStore: PulsarMiniWorkoutAccessoryPlacementStore, state: PulsarNativeBottomAccessoryState) {
         self.placementStore = placementStore
+        self.state = state
         super.init(frame: .zero)
         backgroundColor = .clear
         isOpaque = false
@@ -2647,9 +3028,23 @@ private final class PulsarMiniWorkoutAccessoryContentView: UIView {
         let horizontalSafeArea = (window?.safeAreaInsets.left ?? 0) + (window?.safeAreaInsets.right ?? 0)
         let availableWidth = max(0, windowWidth - horizontalSafeArea)
         if placementStore.isInlinePlacement {
+            switch state {
+            case .orion:
+                return CGSize(
+                    width: max(220, min(820, availableWidth - 168)),
+                    height: 48
+                )
+            case .workout:
+                return CGSize(
+                    width: max(220, min(320, availableWidth - 168)),
+                    height: 48
+                )
+            }
+        }
+        if case .orion = state {
             return CGSize(
-                width: max(220, min(320, availableWidth - 168)),
-                height: 48
+                width: min(max(0, availableWidth - 32), 720),
+                height: 54
             )
         }
         return CGSize(

@@ -12,6 +12,7 @@ struct MindfulnessView: View {
     @ObservedObject private var homeViewModel: HomeViewModel
     @ObservedObject private var store: PulsarMindfulnessStore
     @ObservedObject private var router: PulsarMindfulnessRouter
+    @ObservedObject private var bottomChromeLayoutStore: PulsarBottomChromeLayoutStore
     @State private var activeSheet: MindfulnessSheet?
     @State private var activeTemplate: PulsarMeditationTemplate?
     @State private var activeRewind: PulsarDailyRewind?
@@ -23,11 +24,13 @@ struct MindfulnessView: View {
         homeViewModel: HomeViewModel,
         store: PulsarMindfulnessStore,
         router: PulsarMindfulnessRouter,
+        bottomChromeLayoutStore: PulsarBottomChromeLayoutStore = PulsarBottomChromeLayoutStore(),
         rewindBuilder: DailyRewindBuilder = DailyRewindBuilder()
     ) {
         self.homeViewModel = homeViewModel
         self.store = store
         self.router = router
+        self._bottomChromeLayoutStore = ObservedObject(wrappedValue: bottomChromeLayoutStore)
         self.rewindBuilder = rewindBuilder
     }
 
@@ -56,12 +59,14 @@ struct MindfulnessView: View {
                         if let latestSession = store.dashboard.latestSession {
                             recentSessionCard(latestSession)
                         }
+
+                        PulsarBottomChromeSpacer(layoutStore: bottomChromeLayoutStore)
                     }
                     .padding(.horizontal, 18)
                     .padding(.top, 34)
                     .padding(.bottom, 34)
                 }
-                .safeAreaPadding(.bottom, 16)
+                .pulsarBottomChromeScrollContainer(layoutStore: bottomChromeLayoutStore)
                 .scrollContentBackground(.hidden)
                 .premiumScrollHeaderBlur()
             }

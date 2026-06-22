@@ -15,23 +15,31 @@ struct FitnessView: View {
     @StateObject private var gymSettingsStore = GymSettingsStore()
     private let watchSyncStore = PulsarWatchConnectivitySyncStore.shared
     @State private var isShowingWorkoutPicker = false
-    @State private var isShowingWeekHistory = false
     @State private var isActivityLogExpanded = false
     @State private var selectedPersonalizedWorkout: PersonalizedWorkoutKind?
     @State private var selectedOutdoorWorkoutKind: PulsarOutdoorWorkoutKind?
     @State private var selectedHistoricalActivity: WeeklyActivity?
+    @ObservedObject private var bottomChromeLayoutStore: PulsarBottomChromeLayoutStore
 
     @MainActor
-    init(profileStore: ProfileStore) {
+    init(
+        profileStore: ProfileStore,
+        bottomChromeLayoutStore: PulsarBottomChromeLayoutStore
+    ) {
         self.profileStore = profileStore
+        self._bottomChromeLayoutStore = ObservedObject(wrappedValue: bottomChromeLayoutStore)
     }
 
     var body: some View {
         NavigationStack {
-            ZStack {
+            GeometryReader { proxy in
+                let topChromeClearance = Self.topChromeClearance(for: proxy.safeAreaInsets.top)
+
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        FitnessPageTitleHeader()
+                    VStack(alignment: .leading, spacing: 14) {
+                        FitnessPageTitleHeader {
+                            presentWorkoutPicker()
+                        }
 
                         FitnessWeekHeaderView(
                             week: weekViewModel.selectedWeek,
@@ -47,16 +55,6 @@ struct FitnessView: View {
                                 Task { await weekViewModel.selectCurrentWeek() }
                             }
                         )
-
-                        FitnessWeekSelectorView(
-                            weeks: weekViewModel.focusedWeeks,
-                            selectedWeek: weekViewModel.selectedWeek,
-                            onShowHistory: {
-                                isShowingWeekHistory = true
-                            }
-                        ) { week in
-                            Task { await weekViewModel.selectWeek(week) }
-                        }
 
                         WeeklyMuscleMatrixCard(viewModel: weekViewModel.muscleMatrixViewModel)
 
@@ -85,13 +83,17 @@ struct FitnessView: View {
                                 selectedHistoricalActivity = activity
                             }
                         )
+
+                        PulsarBottomChromeSpacer(layoutStore: bottomChromeLayoutStore)
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 34)
-                    .padding(.bottom, 34)
+                    .padding(.horizontal, 22)
+                    .padding(.top, topChromeClearance)
+                    .padding(.bottom, 8)
                 }
-                .safeAreaPadding(.bottom, 16)
+                .pulsarBottomChromeScrollContainer(layoutStore: bottomChromeLayoutStore)
+                .background(FitnessWeeklyBackground())
                 .scrollContentBackground(.hidden)
+                .ignoresSafeArea(edges: .bottom)
                 .refreshable {
                     await weekViewModel.refresh()
                     await progressViewModel.refresh(
@@ -100,26 +102,11 @@ struct FitnessView: View {
                         force: true
                     )
                 }
-
             }
-            .background(FitnessWeeklyBackground())
             .navigationTitle("")
             .toolbarTitleDisplayMode(.inline)
             .navigationDestination(item: $selectedHistoricalActivity) { activity in
                 FitnessWorkoutDetailView(activity: activity)
-            }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-                        withAnimation(.spring(response: 0.44, dampingFraction: 0.82)) {
-                            isShowingWorkoutPicker = true
-                        }
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel("Add workout")
-                }
             }
             .task {
                 weekViewModel.startWeekRolloverMonitoring()
@@ -161,21 +148,6 @@ struct FitnessView: View {
                 isActivityLogExpanded = false
                 Task {
                     await progressViewModel.selectWeek(weekViewModel.selectedWeek, displayUnit: resolvedGymWeightUnit)
-                }
-            }
-            .sheet(isPresented: $isShowingWeekHistory) {
-                FitnessWeekHistorySheet(
-                    weeks: weekViewModel.historyWeeks,
-                    selectedWeek: weekViewModel.selectedWeek,
-                    isLoading: weekViewModel.isLoadingWeekHistory
-                ) { week in
-                    isShowingWeekHistory = false
-                    Task { await weekViewModel.selectWeek(week) }
-                }
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-                .task {
-                    await weekViewModel.prepareWeekHistory()
                 }
             }
             .overlay {
@@ -231,28 +203,58 @@ struct FitnessView: View {
                 )
             }
         }
-        .background(FitnessWeeklyBackground())
+        .toolbar(.hidden, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
-    }
+        }
 
     private var resolvedGymWeightUnit: PulsarWeightUnit {
         gymSettingsStore.resolvedWeightUnit(appUnits: profileStore.profile.preferredUnits)
     }
+
+    private func presentWorkoutPicker() {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        withAnimation(.spring(response: 0.44, dampingFraction: 0.82)) {
+            isShowingWorkoutPicker = true
+        }
+    }
+
+    private static func topChromeClearance(for safeAreaTop: CGFloat) -> CGFloat {
+        safeAreaTop > 0 ? 16 : 64
+    }
+
 }
 
 private struct FitnessPageTitleHeader: View {
+    var onAddWorkout: () -> Void
+
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .center, spacing: 14) {
             RunningGlyphView()
-                .frame(width: 32, height: 28)
-                .alignmentGuide(.firstTextBaseline) { dimensions in
-                    dimensions[VerticalAlignment.center] + 7
-                }
+                .frame(width: 52, height: 52)
+                .background(FitnessCircularGlassSurface(cornerRadius: 26))
                 .accessibilityHidden(true)
 
-            Text("Fitness")
-                .pulsarTextStyle(.screenTitle)
-                .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Fitness")
+                    .font(.system(size: 28, weight: .bold, design: .default))
+                    .foregroundStyle(.white.opacity(0.96))
+
+                Text("Train smarter. Every day.")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.62))
+            }
+
+            Spacer(minLength: 12)
+
+            Button(action: onAddWorkout) {
+                Image(systemName: "plus")
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.94))
+                    .frame(width: 52, height: 52)
+                    .background(FitnessCircularGlassSurface(cornerRadius: 26))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Add workout")
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Fitness")
@@ -261,19 +263,22 @@ private struct FitnessPageTitleHeader: View {
 }
 
 struct RunningGlyphView: View {
-    var tint: Color = .primary
+    var tint: Color = .white.opacity(0.96)
 
     var body: some View {
         Image(systemName: "figure.run")
-            .font(.system(size: 27, weight: .semibold))
+            .font(.system(size: 28, weight: .semibold))
             .symbolRenderingMode(.hierarchical)
             .foregroundStyle(tint)
-            .frame(width: 32, height: 28)
+            .frame(width: 32, height: 32)
     }
 }
 
 #Preview {
-    FitnessView(profileStore: ProfileStore(sideEffectsEnabled: false))
+    FitnessView(
+        profileStore: ProfileStore(sideEffectsEnabled: false),
+        bottomChromeLayoutStore: PulsarBottomChromeLayoutStore()
+    )
         .environmentObject(PulsarRunCoordinator())
         .environmentObject(PulsarActiveWorkoutManager())
 }
