@@ -21,9 +21,9 @@ struct BodyCheckInSheet: View {
                     PulsarNutritionGlassCard(cornerRadius: 28) {
                         VStack(alignment: .leading, spacing: 12) {
                             Label("Body Check-In", systemImage: "figure.stand")
-                                .font(.headline.weight(.bold))
+                                .pulsarTextStyle(.cardTitle)
                             Text("Weekly-first nutrition context. This stays focused on nourishment signals, not profile management.")
-                                .font(.subheadline)
+                                .pulsarTextStyle(.label)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -48,7 +48,7 @@ struct BodyCheckInSheet: View {
 
                     Button(action: save) {
                         Text("Save Check-In")
-                            .font(.headline.weight(.bold))
+                            .pulsarTextStyle(.cardTitle)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 15)
                     }
@@ -104,9 +104,9 @@ struct MealTemplateComposerSheet: View {
                     PulsarNutritionGlassCard(cornerRadius: 28) {
                         VStack(alignment: .leading, spacing: 12) {
                             Label("Save Meal Template", systemImage: "rectangle.stack.badge.plus")
-                                .font(.headline.weight(.bold))
+                                .pulsarTextStyle(.cardTitle)
                             Text("Turn a meal moment from today into a reusable private template.")
-                                .font(.subheadline)
+                                .pulsarTextStyle(.label)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -132,16 +132,16 @@ struct MealTemplateComposerSheet: View {
                             )
                             if entries.isEmpty {
                                 Text("Add food to this meal moment first, then come back to save it as a template.")
-                                    .font(.subheadline)
+                                    .pulsarTextStyle(.label)
                                     .foregroundStyle(.secondary)
                             } else {
                                 ForEach(entries) { entry in
                                     HStack {
                                         Text(entry.food.name)
-                                            .font(.subheadline.weight(.semibold))
+                                            .pulsarTextStyle(.label)
                                         Spacer()
                                         Text(PulsarNutritionFormatters.grams(entry.nutrition.protein))
-                                            .font(.caption.weight(.bold))
+                                            .pulsarTextStyle(.captionEmphasis)
                                             .foregroundStyle(.secondary)
                                     }
                                     .padding(.vertical, 5)
@@ -152,7 +152,7 @@ struct MealTemplateComposerSheet: View {
 
                     Button(action: save) {
                         Text("Save Template")
-                            .font(.headline.weight(.bold))
+                            .pulsarTextStyle(.cardTitle)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 15)
                     }
@@ -208,9 +208,9 @@ struct RecipeStudioSheet: View {
                     PulsarNutritionGlassCard(cornerRadius: 28) {
                         VStack(alignment: .leading, spacing: 12) {
                             Label("Recipe Studio", systemImage: "book.closed.fill")
-                                .font(.headline.weight(.bold))
+                                .pulsarTextStyle(.cardTitle)
                             Text("Build a private recipe from searchable foods and save one serving as reusable nutrition memory.")
-                                .font(.subheadline)
+                                .pulsarTextStyle(.label)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -223,7 +223,7 @@ struct RecipeStudioSheet: View {
 
                     Button(action: save) {
                         Text("Save Recipe")
-                            .font(.headline.weight(.bold))
+                            .pulsarTextStyle(.cardTitle)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 15)
                     }
@@ -255,10 +255,10 @@ struct RecipeStudioSheet: View {
                 Stepper(value: $servings, in: 1...12, step: 1) {
                     HStack {
                         Text("Servings")
-                            .font(.subheadline.weight(.semibold))
+                            .pulsarTextStyle(.label)
                         Spacer()
                         Text("\(Int(servings))")
-                            .font(.headline.weight(.bold))
+                            .pulsarTextStyle(.cardTitle)
                             .monospacedDigit()
                     }
                 }
@@ -266,7 +266,7 @@ struct RecipeStudioSheet: View {
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(2...4)
                 Toggle("Save one serving to Private Foods", isOn: $saveAsPrivateFood)
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.label)
             }
         }
     }
@@ -286,9 +286,9 @@ struct RecipeStudioSheet: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(food.name)
-                                        .font(.subheadline.weight(.bold))
+                                        .pulsarTextStyle(.label)
                                     Text(food.serving.title)
-                                        .font(.caption)
+                                        .pulsarTextStyle(.caption)
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -315,16 +315,16 @@ struct RecipeStudioSheet: View {
 
                 if ingredients.isEmpty {
                     Text("Add ingredients above to preview per-serving nutrition.")
-                        .font(.subheadline)
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach($ingredients) { $ingredient in
                         HStack(spacing: 10) {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(ingredient.food.name)
-                                    .font(.subheadline.weight(.semibold))
+                                    .pulsarTextStyle(.label)
                                 Text("\(PulsarNutritionFormatters.decimal(ingredient.servingMultiplier))x \(ingredient.food.serving.title)")
-                                    .font(.caption)
+                                    .pulsarTextStyle(.caption)
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -378,10 +378,10 @@ private struct RecipePreviewMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(value)
-                .font(.headline.weight(.bold))
+                .pulsarTextStyle(.cardTitle)
                 .monospacedDigit()
             Text(title)
-                .font(.caption2.weight(.semibold))
+                .pulsarTextStyle(.overline)
                 .foregroundStyle(.secondary)
         }
         .padding(12)

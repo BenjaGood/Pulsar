@@ -454,9 +454,9 @@ struct FitnessActivityLogSection: View {
                         Button(action: onToggleExpanded) {
                             HStack(spacing: 8) {
                                 Text(isExpanded ? "Show less" : "Show all \(activities.count) activities")
-                                    .font(.subheadline.weight(.bold))
+                                    .pulsarTextStyle(.label)
                                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                                    .font(.caption.weight(.bold))
+                                    .pulsarTextStyle(.captionEmphasis)
                             }
                             .foregroundStyle(primaryText)
                             .frame(maxWidth: .infinity)
@@ -528,18 +528,18 @@ private struct FitnessActivityRow: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(activity.displayName)
-                            .font(.headline.weight(.bold))
+                            .pulsarTextStyle(.cardTitle)
                             .foregroundStyle(primaryText)
 
                         Text(FitnessWeekFormatters.activityDateTime(activity.startDate))
-                            .font(.caption.weight(.semibold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(secondaryText)
                     }
 
                     Spacer(minLength: 8)
 
                     Text(activity.sourceName)
-                        .font(.caption2.weight(.bold))
+                        .pulsarTextStyle(.overline)
                         .foregroundStyle(secondaryText)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
@@ -572,7 +572,7 @@ private struct FitnessActivityRow: View {
             }
 
             Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(secondaryText.opacity(0.72))
                 .padding(.top, 17)
         }
@@ -622,9 +622,9 @@ private struct FitnessActivityMetricChip: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: symbolName)
-                .font(.caption2.weight(.bold))
+                .pulsarTextStyle(.overline)
             Text(value)
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .monospacedDigit()
         }
         .foregroundStyle(colorScheme == .dark ? .white.opacity(0.74) : Color(red: 0.20, green: 0.24, blue: 0.30))
@@ -689,17 +689,17 @@ struct FitnessWorkoutDetailView: View {
 
                 VStack(alignment: .leading, spacing: 7) {
                     Text(activity.displayName)
-                        .font(.system(size: 30, weight: .black, design: .rounded))
+                        .font(.system(size: 30, weight: .semibold, design: .rounded))
                         .foregroundStyle(primaryText)
                         .lineLimit(2)
                         .minimumScaleFactor(0.72)
 
                     Text(activity.startDate.formatted(.dateTime.weekday(.wide).month(.abbreviated).day().hour().minute()))
-                        .font(.subheadline.weight(.semibold))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(secondaryText)
 
                     Label(activity.effectiveSourceDeviceName, systemImage: sourceSymbolName)
-                        .font(.caption.weight(.bold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(primaryText)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
@@ -717,7 +717,7 @@ struct FitnessWorkoutDetailView: View {
             FitnessGlassCard(cornerRadius: 30, padding: 12) {
                 VStack(alignment: .leading, spacing: 12) {
                     Label("Route", systemImage: "map.fill")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(primaryText)
                         .padding(.horizontal, 4)
 
@@ -744,11 +744,11 @@ struct FitnessWorkoutDetailView: View {
             FitnessGlassCard(cornerRadius: 30) {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Route", systemImage: "map")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(primaryText)
 
                     Text("No route data is attached to this workout.")
-                        .font(.subheadline.weight(.semibold))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(secondaryText)
                 }
             }
@@ -769,14 +769,14 @@ struct FitnessWorkoutDetailView: View {
             FitnessGlassCard(cornerRadius: 30) {
                 VStack(alignment: .leading, spacing: 14) {
                     Label("Completed Sets", systemImage: "list.bullet.rectangle.fill")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(primaryText)
 
                     VStack(spacing: 12) {
                         ForEach(activity.gymSetSummaries) { exercise in
                             VStack(alignment: .leading, spacing: 9) {
                                 Text(exercise.exerciseName)
-                                    .font(.subheadline.weight(.black))
+                                    .pulsarTextStyle(.label)
                                     .foregroundStyle(primaryText)
                                     .lineLimit(2)
 
@@ -790,7 +790,8 @@ struct FitnessWorkoutDetailView: View {
                                             Text("\(set.weight.formattedGymDecimal) \(exercise.weightUnit.displayName)")
                                                 .foregroundStyle(primaryText)
                                         }
-                                        .font(.caption.weight(.black).monospacedDigit())
+                                        .pulsarTextStyle(.captionEmphasis)
+                                .monospacedDigit()
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 8)
                                         .background(activity.category.accent.opacity(colorScheme == .dark ? 0.16 : 0.10), in: Capsule(style: .continuous))
@@ -811,22 +812,24 @@ struct FitnessWorkoutDetailView: View {
             FitnessGlassCard(cornerRadius: 30) {
                 VStack(alignment: .leading, spacing: 12) {
                     Label("Splits", systemImage: "chart.bar.fill")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(primaryText)
 
                     ForEach(activity.splits) { split in
                         HStack(spacing: 12) {
                             Text("\(split.index)")
-                                .font(.headline.weight(.black).monospacedDigit())
+                                .pulsarTextStyle(.cardTitle)
+                                .monospacedDigit()
                                 .frame(width: 30, alignment: .leading)
 
                             Text(FitnessWeekFormatters.distance(split.distanceMeters))
-                                .font(.subheadline.weight(.semibold))
+                                .pulsarTextStyle(.label)
 
                             Spacer()
 
                             Text(PulsarRunFormatters.pace(split.paceSecondsPerKilometer))
-                                .font(.subheadline.weight(.bold).monospacedDigit())
+                                .pulsarTextStyle(.label)
+                                .monospacedDigit()
                         }
                         .foregroundStyle(primaryText)
                     }
@@ -841,14 +844,14 @@ struct FitnessWorkoutDetailView: View {
             FitnessGlassCard(cornerRadius: 30) {
                 VStack(alignment: .leading, spacing: 14) {
                     Label("Training", systemImage: activity.category.symbolName)
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(primaryText)
 
                     if !activity.mainMuscleGroups.isEmpty {
                         FlowLayout(spacing: 8, rowSpacing: 8) {
                             ForEach(activity.mainMuscleGroups, id: \.self) { muscleGroup in
                                 Text(muscleGroup)
-                                    .font(.caption.weight(.bold))
+                                    .pulsarTextStyle(.captionEmphasis)
                                     .foregroundStyle(primaryText)
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 7)
@@ -861,7 +864,7 @@ struct FitnessWorkoutDetailView: View {
                         VStack(alignment: .leading, spacing: 9) {
                             ForEach(activity.notes, id: \.self) { note in
                                 Label(note, systemImage: "note.text")
-                                    .font(.subheadline.weight(.semibold))
+                                    .pulsarTextStyle(.label)
                                     .foregroundStyle(secondaryText)
                             }
                         }
@@ -877,13 +880,13 @@ struct FitnessWorkoutDetailView: View {
             FitnessGlassCard(cornerRadius: 30) {
                 VStack(alignment: .leading, spacing: 12) {
                     Label("Details", systemImage: "info.circle.fill")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(primaryText)
 
                     ForEach(activity.metadata) { item in
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
                             Text(item.title)
-                                .font(.caption.weight(.bold))
+                                .pulsarTextStyle(.captionEmphasis)
                                 .foregroundStyle(secondaryText)
                                 .frame(width: 118, alignment: .leading)
 
@@ -906,7 +909,7 @@ struct FitnessWorkoutDetailView: View {
             renderShareImage()
         } label: {
             Label(activity.shareActionTitle, systemImage: "square.and.arrow.up")
-                .font(.headline.weight(.bold))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
@@ -1048,17 +1051,17 @@ private struct FitnessWorkoutDetailMetricTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             Image(systemName: metric.symbolName)
-                .font(.headline.weight(.bold))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(metric.tint)
 
             Text(metric.value)
-                .font(.headline.weight(.black))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(primaryText)
                 .lineLimit(2)
                 .minimumScaleFactor(0.72)
 
             Text(metric.title)
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(secondaryText)
         }
         .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
@@ -1105,7 +1108,7 @@ private struct FitnessWorkoutHistoryShareCard: View {
                     .padding(94)
             } else {
                 Image(systemName: activity.category.symbolName)
-                    .font(.system(size: 270, weight: .black))
+                    .font(.system(size: 270, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.12))
             }
 
@@ -1298,7 +1301,7 @@ private enum FitnessWorkoutFallbackShareRenderer {
             context.fill(CGRect(x: 0, y: 0, width: size.width, height: 18))
 
             let titleAttributes: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 72, weight: .black),
+                .font: UIFont.systemFont(ofSize: 72, weight: .semibold),
                 .foregroundColor: UIColor.white
             ]
             let bodyAttributes: [NSAttributedString.Key: Any] = [
@@ -1361,11 +1364,11 @@ private struct FitnessWeeklyEmptyState: View {
 
             VStack(spacing: 5) {
                 Text("No activities this week")
-                    .font(.headline.weight(.bold))
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(primaryText)
 
                 Text("Start a workout to build your weekly log.")
-                    .font(.subheadline.weight(.medium))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(secondaryText)
                     .multilineTextAlignment(.center)
             }
@@ -1404,7 +1407,7 @@ private struct FitnessActivityLoadingCard: View {
         VStack(spacing: 14) {
             ProgressView()
             Text("Loading weekly activities")
-                .font(.headline.weight(.semibold))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, minHeight: 180)
@@ -1432,7 +1435,7 @@ struct FitnessWeekHistorySheet: View {
                     VStack(spacing: 14) {
                         ProgressView()
                         Text("Loading week history")
-                            .font(.headline.weight(.semibold))
+                            .pulsarTextStyle(.cardTitle)
                             .foregroundStyle(secondaryText)
                     }
                     .frame(maxWidth: .infinity, minHeight: 260)
@@ -1463,11 +1466,11 @@ struct FitnessWeekHistorySheet: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Week History")
-                        .font(.title.bold())
+                        .pulsarTextStyle(.displayMedium)
                         .foregroundStyle(primaryText)
 
                     Text("Choose a week to review your training rhythm.")
-                        .font(.subheadline.weight(.medium))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(secondaryText)
                 }
 
@@ -1477,7 +1480,7 @@ struct FitnessWeekHistorySheet: View {
                     dismiss()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.caption.weight(.bold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(secondaryText)
                         .frame(width: 34, height: 34)
                         .background(closeButtonBackground, in: Circle())
@@ -1491,7 +1494,7 @@ struct FitnessWeekHistorySheet: View {
             }
 
             Text("\(selectedWeek.year)")
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.green)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -1563,13 +1566,13 @@ private struct FitnessWeekHistoryRow: View {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 8) {
                         Text("Week \(week.weekNumber)")
-                            .font(.headline.weight(.bold))
+                            .pulsarTextStyle(.cardTitle)
                             .monospacedDigit()
                             .foregroundStyle(primaryText)
 
                         if week.isCurrentWeek {
                             Text("Current")
-                                .font(.caption2.weight(.bold))
+                                .pulsarTextStyle(.overline)
                                 .foregroundStyle(.green)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 4)
@@ -1578,14 +1581,14 @@ private struct FitnessWeekHistoryRow: View {
                     }
 
                     Text(FitnessWeekFormatters.dateRange(for: week))
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(secondaryText)
                 }
 
                 Spacer()
 
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "chevron.right")
-                    .font(.headline.weight(.bold))
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(isSelected ? Color.green : secondaryText.opacity(0.55))
             }
             .padding(14)
@@ -1630,35 +1633,29 @@ struct FitnessWeeklyBackground: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        ZStack {
-            Color(red: 0.115, green: 0.125, blue: 0.140)
+        GeometryReader { proxy in
+            ZStack {
+                Color(red: 0.115, green: 0.125, blue: 0.140)
 
-            Image("FitnessBackground")
-                .resizable()
-                .scaledToFill()
-                .saturation(colorScheme == .dark ? 1.0 : 0.72)
-                .brightness(colorScheme == .dark ? 0.10 : 0.03)
-                .opacity(colorScheme == .dark ? 0.92 : 1)
+                Image("FitnessBackground")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .clipped()
+                    .saturation(colorScheme == .dark ? 1.0 : 0.78)
+                    .brightness(colorScheme == .dark ? 0.02 : 0.06)
 
-            Color.white
-                .opacity(colorScheme == .dark ? 0.035 : 0)
-
-            Color.black
-                .opacity(colorScheme == .dark ? 0.02 : 0.10)
-
-            LinearGradient(
-                colors: [
-                    Color.black.opacity(colorScheme == .dark ? 0.00 : 0.04),
-                    Color.black.opacity(colorScheme == .dark ? 0.08 : 0.10),
-                    Color.black.opacity(colorScheme == .dark ? 0.34 : 0.20)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .opacity(colorScheme == .dark ? 0.02 : 0.06)
+                LinearGradient(
+                    colors: [
+                        Color.black.opacity(colorScheme == .dark ? 0.00 : 0.03),
+                        Color.black.opacity(colorScheme == .dark ? 0.05 : 0.08),
+                        Color.black.opacity(colorScheme == .dark ? 0.18 : 0.16)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .ignoresSafeArea()
     }

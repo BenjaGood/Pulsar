@@ -205,7 +205,7 @@ struct NutritionProteinFocusPanel: View {
             ZStack {
                 NutritionRing(progress: progress, tint: .green, lineWidth: 8)
                 Image(systemName: "figure.strengthtraining.traditional")
-                    .font(.headline.weight(.black))
+                    .pulsarTextStyle(.cardTitle)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.green)
             }
@@ -216,17 +216,17 @@ struct NutritionProteinFocusPanel: View {
                 HStack(alignment: .lastTextBaseline) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(PulsarNutritionFormatters.grams(consumed))
-                            .font(.title2.weight(.black))
+                            .pulsarTextStyle(.title)
                             .monospacedDigit()
                         Text("protein consumed")
-                            .font(.caption.weight(.bold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(.secondary)
                     }
 
                     Spacer(minLength: 8)
 
                     Text("\(Int((min(max(progress, 0), 1) * 100).rounded()))%")
-                        .font(.headline.weight(.black))
+                        .pulsarTextStyle(.cardTitle)
                         .monospacedDigit()
                         .foregroundStyle(.green)
                 }
@@ -234,7 +234,7 @@ struct NutritionProteinFocusPanel: View {
                 NutritionLinearProgressBar(progress: progress, tint: .green, height: 7)
 
                 Text("Daily anchor \(PulsarNutritionFormatters.grams(goal))")
-                    .font(.caption2.weight(.semibold))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
@@ -263,20 +263,20 @@ struct NutritionMacroSummaryBar: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
                 Image(systemName: symbolName)
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(tint)
                     .frame(width: 24, height: 24)
                     .background(tint.opacity(0.13), in: Circle())
 
                 Text(title)
-                    .font(.caption.weight(.bold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.secondary)
 
                 Spacer(minLength: 0)
             }
 
             Text(value)
-                .font(.headline.weight(.black))
+                .pulsarTextStyle(.cardTitle)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.76)
@@ -284,7 +284,7 @@ struct NutritionMacroSummaryBar: View {
             HStack(spacing: 6) {
                 NutritionLinearProgressBar(progress: progress, tint: tint, height: 5)
                 Text(caption)
-                    .font(.caption2.weight(.semibold))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
@@ -348,10 +348,10 @@ struct NutritionNourishmentHalo: View {
 
             VStack(spacing: 0) {
                 Text("\(Int((min(max(proteinProgress, 0), 1) * 100).rounded()))%")
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                     .monospacedDigit()
                 Text("protein")
-                    .font(.caption2.weight(.bold))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(.green)
             }
         }
@@ -399,7 +399,7 @@ struct NutritionMetricTile: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Image(systemName: symbolName)
-                    .font(.caption.weight(.bold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(tint)
                     .frame(width: 28, height: 28)
                     .background(tint.opacity(0.13), in: Circle())
@@ -408,15 +408,15 @@ struct NutritionMetricTile: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(value)
-                    .font(.headline.weight(.bold))
+                    .pulsarTextStyle(.cardTitle)
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
                 Text(title)
-                    .font(.caption.weight(.semibold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.secondary)
                 Text(caption)
-                    .font(.caption2.weight(.semibold))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.74)
@@ -453,17 +453,17 @@ struct NutritionSectionHeader: View {
         HStack(alignment: .lastTextBaseline) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.title3.weight(.bold))
+                    .pulsarTextStyle(.sectionHeader)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 8)
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
-                    .font(.caption.weight(.bold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .buttonStyle(.borderless)
             }
         }
@@ -489,22 +489,22 @@ struct NutritionMealMomentCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 12) {
                     Image(systemName: moment.symbolName)
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(moment.tint)
                         .frame(width: 38, height: 38)
                         .background(moment.tint.opacity(0.13), in: Circle())
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(moment.title)
-                            .font(.headline.weight(.bold))
+                            .pulsarTextStyle(.cardTitle)
                         Text(entries.isEmpty ? moment.subtitle : "\(PulsarNutritionFormatters.calories(totals.calories)) cal · \(PulsarNutritionFormatters.grams(totals.protein)) protein")
-                            .font(.caption.weight(.semibold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
                     Button(action: onAdd) {
                         Image(systemName: "plus")
-                            .font(.subheadline.weight(.bold))
+                            .pulsarTextStyle(.label)
                             .frame(width: 34, height: 34)
                     }
                     .buttonStyle(NutritionIconButtonStyle(tint: moment.tint, size: 34))
@@ -513,7 +513,7 @@ struct NutritionMealMomentCard: View {
 
                 if entries.isEmpty {
                     Text(emptyCopy)
-                        .font(.subheadline)
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.vertical, 4)
@@ -558,11 +558,11 @@ struct NutritionEntryRow: View {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(entry.food.name)
-                        .font(.subheadline.weight(.bold))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     Text("\(entry.servingText) · \(entry.source.title)")
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.82)
@@ -572,10 +572,10 @@ struct NutritionEntryRow: View {
 
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(PulsarNutritionFormatters.calories(entry.nutrition.calories))
-                        .font(.subheadline.weight(.bold))
+                        .pulsarTextStyle(.label)
                         .monospacedDigit()
                     Text(PulsarNutritionFormatters.grams(entry.nutrition.protein))
-                        .font(.caption2.weight(.semibold))
+                        .pulsarTextStyle(.overline)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -610,21 +610,21 @@ struct RecoveryAwareTargetsCard: View {
             VStack(alignment: .leading, spacing: 15) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "arrow.clockwise.heart.fill")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(.pink)
                         .frame(width: 40, height: 40)
                         .background(.pink.opacity(0.13), in: Circle())
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Recovery-aware targets")
-                            .font(.headline.weight(.bold))
+                            .pulsarTextStyle(.cardTitle)
                         Text(dashboard.target.rationale)
-                            .font(.subheadline)
+                            .pulsarTextStyle(.label)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 0)
                     Text("\(dashboard.target.recoveryScore)")
-                        .font(.title3.weight(.bold))
+                        .pulsarTextStyle(.sectionHeader)
                         .monospacedDigit()
                         .foregroundStyle(.pink)
                 }
@@ -659,11 +659,11 @@ struct NutritionTargetPill: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
-                .font(.caption.weight(.black))
+                .pulsarTextStyle(.captionEmphasis)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
             Text(title)
-                .font(.caption2.weight(.semibold))
+                .pulsarTextStyle(.overline)
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 11)
@@ -685,16 +685,16 @@ struct NutritionHydrationCard: View {
                     ZStack {
                         NutritionRing(progress: dashboard.hydrationProgress, tint: .blue, lineWidth: 9)
                         Image(systemName: "drop.fill")
-                            .font(.headline.weight(.bold))
+                            .pulsarTextStyle(.cardTitle)
                             .foregroundStyle(.blue)
                     }
                     .frame(width: 58, height: 58)
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Hydration")
-                            .font(.headline.weight(.bold))
+                            .pulsarTextStyle(.cardTitle)
                         Text("\(PulsarNutritionFormatters.milliliters(dashboard.hydrationTotal)) of \(PulsarNutritionFormatters.milliliters(dashboard.target.hydrationTargetMilliliters))")
-                            .font(.caption.weight(.semibold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -705,7 +705,7 @@ struct NutritionHydrationCard: View {
                         Button("+\(amount)ml") {
                             onAddWater(Double(amount))
                         }
-                        .font(.caption.weight(.bold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .buttonStyle(.bordered)
                         .tint(.blue)
                     }
@@ -716,16 +716,16 @@ struct NutritionHydrationCard: View {
                     ForEach(dashboard.hydrationEntries.prefix(4)) { entry in
                         HStack {
                             Text(PulsarNutritionFormatters.milliliters(entry.amountMilliliters))
-                                .font(.caption.weight(.bold))
+                                .pulsarTextStyle(.captionEmphasis)
                             Spacer()
                             Text(entry.loggedAt.formatted(date: .omitted, time: .shortened))
-                                .font(.caption2.weight(.semibold))
+                                .pulsarTextStyle(.overline)
                                 .foregroundStyle(.secondary)
                             Button(role: .destructive) {
                                 onDeleteWater(entry)
                             } label: {
                                 Image(systemName: "xmark")
-                                    .font(.caption2.weight(.bold))
+                                    .pulsarTextStyle(.overline)
                             }
                             .buttonStyle(.plain)
                             .foregroundStyle(.secondary)
@@ -747,16 +747,16 @@ struct NutritionInsightCard: View {
         PulsarNutritionGlassCard(cornerRadius: 22, padding: 15) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: insight.symbolName)
-                    .font(.subheadline.weight(.bold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(insight.kind.tint)
                     .frame(width: 34, height: 34)
                     .background(insight.kind.tint.opacity(0.12), in: Circle())
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(insight.title)
-                        .font(.subheadline.weight(.bold))
+                        .pulsarTextStyle(.label)
                     Text(insight.message)
-                        .font(.caption)
+                        .pulsarTextStyle(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -779,14 +779,14 @@ struct WeeklyNutritionRewindCard: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Weekly Nutrition Rewind")
-                            .font(.headline.weight(.bold))
+                            .pulsarTextStyle(.cardTitle)
                         Text("Protein, hydration, fiber, and consistency")
-                            .font(.caption.weight(.semibold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
                     Text("\(Int((averageConsistency * 100).rounded()))%")
-                        .font(.title3.weight(.bold))
+                        .pulsarTextStyle(.sectionHeader)
                         .monospacedDigit()
                         .foregroundStyle(.green)
                 }
@@ -826,7 +826,7 @@ struct WeeklyNutritionBars: View {
                         }
                     }
                     Text(point.date.formatted(.dateTime.weekday(.narrow)))
-                        .font(.caption2.weight(.bold))
+                        .pulsarTextStyle(.overline)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
@@ -854,15 +854,15 @@ struct EatingWindowCard: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Eating rhythm")
-                            .font(.headline.weight(.bold))
+                            .pulsarTextStyle(.cardTitle)
                         Text(window.isEnabled ? rhythmCopy : "Hidden for now")
-                            .font(.caption.weight(.semibold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
                     Button(action: onToggle) {
                         Image(systemName: window.isEnabled ? "eye.fill" : "eye.slash.fill")
-                            .font(.subheadline.weight(.bold))
+                            .pulsarTextStyle(.label)
                             .frame(width: 38, height: 38)
                     }
                     .buttonStyle(NutritionIconButtonStyle(tint: .purple, size: 38))
@@ -933,7 +933,7 @@ struct EatingWindowTimeline: View {
                     Spacer()
                     Text("Midnight")
                 }
-                .font(.caption2.weight(.semibold))
+                .pulsarTextStyle(.overline)
                 .foregroundStyle(.secondary)
                 .offset(y: 30)
             }

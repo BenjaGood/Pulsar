@@ -542,7 +542,7 @@ private struct GymSavedRoutinesView: View {
         HStack(alignment: .top, spacing: 12) {
             Button(action: onBack) {
                 Image(systemName: "chevron.left")
-                    .font(.subheadline.weight(.black))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(.white.opacity(0.78))
                     .frame(width: 38, height: 38)
                     .background(.white.opacity(0.08), in: Circle())
@@ -566,7 +566,7 @@ private struct GymSavedRoutinesView: View {
 
             Button(action: onCreateRoutine) {
                 Image(systemName: "plus")
-                    .font(.subheadline.weight(.black))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
                     .frame(width: 38, height: 38)
                     .background(.white.opacity(0.96), in: Circle())
@@ -673,7 +673,7 @@ private struct GymSavedRoutineCard: View {
                     Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.subheadline.weight(.black))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(.white.opacity(0.72))
                         .frame(width: 34, height: 34)
                         .background(.white.opacity(0.08), in: Circle())
@@ -691,7 +691,7 @@ private struct GymSavedRoutineCard: View {
             HStack(spacing: 10) {
                 Button(action: onEdit) {
                     Text("Edit")
-                        .font(.subheadline.weight(.bold))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(.white.opacity(0.82))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
@@ -704,7 +704,7 @@ private struct GymSavedRoutineCard: View {
                         Text("Start")
                         Image(systemName: "arrow.right")
                     }
-                    .font(.subheadline.weight(.bold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
@@ -759,9 +759,9 @@ private struct GymSavedRoutineChip: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: symbol)
-                .font(.caption2.weight(.black))
+                .pulsarTextStyle(.overline)
             Text(text)
-                .font(.caption2.weight(.black))
+                .pulsarTextStyle(.overline)
                 .lineLimit(1)
         }
         .foregroundStyle(.white.opacity(0.68))
@@ -790,7 +790,7 @@ private struct GymChoiceActionButton: View {
         } label: {
             HStack(spacing: 14) {
                 Image(systemName: symbolName)
-                    .font(.headline.weight(.bold))
+                    .pulsarTextStyle(.cardTitle)
                     .frame(width: 42, height: 42)
                     .background(iconBackground, in: Circle())
 
@@ -810,7 +810,7 @@ private struct GymChoiceActionButton: View {
                 Spacer(minLength: 6)
 
                 Image(systemName: "chevron.right")
-                    .font(.subheadline.weight(.bold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(chevronColor)
             }
             .padding(16)

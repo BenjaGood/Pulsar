@@ -108,11 +108,11 @@ struct DailyRewindView: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Daily Rewind")
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                         .textCase(.uppercase)
                         .foregroundStyle(.secondary)
                     Text(rewind.date.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                        .font(.subheadline.weight(.semibold))
+                        .pulsarTextStyle(.label)
                 }
 
                 Spacer()
@@ -125,7 +125,7 @@ struct DailyRewindView: View {
                         UISelectionFeedbackGenerator().selectionChanged()
                     } label: {
                         Image(systemName: isPaused ? "play.fill" : "pause.fill")
-                            .font(.footnote.weight(.bold))
+                            .pulsarTextStyle(.metadata)
                             .frame(width: 34, height: 34)
                     }
                     .buttonStyle(PulsarMindfulnessIconButtonStyle(tint: phaseTint.color))
@@ -134,7 +134,7 @@ struct DailyRewindView: View {
 
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
-                        .font(.footnote.weight(.bold))
+                        .pulsarTextStyle(.metadata)
                         .frame(width: 34, height: 34)
                 }
                 .buttonStyle(PulsarMindfulnessIconButtonStyle(tint: .secondary))
@@ -164,7 +164,7 @@ struct DailyRewindView: View {
                 showSummary(source: .manual)
             } label: {
                 Label("View summary", systemImage: "rectangle.stack.fill")
-                    .font(.headline.weight(.bold))
+                    .pulsarTextStyle(.cardTitle)
                     .padding(.vertical, 15)
                     .frame(maxWidth: .infinity)
             }
@@ -200,12 +200,12 @@ struct DailyRewindView: View {
 
             VStack(spacing: 10) {
                 Text(phaseTitle)
-                    .font(.largeTitle.weight(.bold))
+                    .pulsarTextStyle(.displayLarge)
                     .multilineTextAlignment(.center)
                     .contentTransition(.opacity)
 
                 Text(phaseSubtitle)
-                    .font(.callout.weight(.medium))
+                    .pulsarTextStyle(.bodyEmphasis)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -251,11 +251,11 @@ struct DailyRewindView: View {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(rewind.headline)
-                        .font(.largeTitle.weight(.bold))
+                        .pulsarTextStyle(.displayLarge)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Text(rewind.subtitle)
-                        .font(.body.weight(.medium))
+                        .pulsarTextStyle(.bodyEmphasis)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -279,7 +279,7 @@ struct DailyRewindView: View {
 
                 Button(action: onDismiss) {
                     Text("Done")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -299,19 +299,19 @@ struct DailyRewindView: View {
                 PulsarMindfulnessGlassCard(cornerRadius: 26) {
                     HStack(alignment: .top, spacing: 14) {
                         Image(systemName: "checkmark.seal.fill")
-                            .font(.title3.weight(.bold))
+                            .pulsarTextStyle(.sectionHeader)
                             .foregroundStyle(.green)
                             .frame(width: 44, height: 44)
                             .background(.green.opacity(0.13), in: Circle())
 
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Your day is complete.")
-                                .font(.title3.weight(.bold))
+                                .pulsarTextStyle(.sectionHeader)
                             Text("Thanks for taking a moment to reflect.")
-                                .font(.subheadline)
+                                .pulsarTextStyle(.label)
                                 .foregroundStyle(.secondary)
                             Text("Today feels \(entry.moodTitle.lowercased()). Pulsar folded this into your mindfulness insights.")
-                                .font(.footnote.weight(.medium))
+                                .pulsarTextStyle(.metadata)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
 
@@ -332,17 +332,17 @@ struct DailyRewindView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(alignment: .top, spacing: 14) {
                             Image(systemName: "heart.text.square.fill")
-                                .font(.title3.weight(.bold))
+                                .pulsarTextStyle(.sectionHeader)
                                 .foregroundStyle(.purple)
                                 .frame(width: 44, height: 44)
                                 .background(.purple.opacity(0.13), in: Circle())
 
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("Before the day ends, how did you feel today?")
-                                    .font(.title3.weight(.bold))
+                                    .pulsarTextStyle(.sectionHeader)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Text("Add mood, energy, stress, gratitude, and optional notes so Rewind can connect your emotional signal over time.")
-                                    .font(.subheadline)
+                                    .pulsarTextStyle(.label)
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -353,7 +353,7 @@ struct DailyRewindView: View {
                             isJournalPresented = true
                         } label: {
                             Label("Add check-in", systemImage: "square.and.pencil")
-                                .font(.headline.weight(.bold))
+                                .pulsarTextStyle(.cardTitle)
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
@@ -794,7 +794,7 @@ private struct DailyRewindHighlightPanel: View {
         PulsarMindfulnessGlassCard(cornerRadius: 28) {
             HStack(alignment: .center, spacing: 16) {
                 Image(systemName: highlight.symbolName)
-                    .font(.title3.weight(.bold))
+                    .pulsarTextStyle(.sectionHeader)
                     .foregroundStyle(highlight.tint.color)
                     .frame(width: 48, height: 48)
                     .background(highlight.tint.color.opacity(0.14), in: Circle())
@@ -802,16 +802,16 @@ private struct DailyRewindHighlightPanel: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(highlight.title)
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.secondary)
                         .contentTransition(.opacity)
                     Text(highlight.value)
-                        .font(.title2.weight(.bold))
+                        .pulsarTextStyle(.title)
                         .lineLimit(1)
                         .minimumScaleFactor(0.74)
                         .contentTransition(.opacity)
                     Text(highlight.caption)
-                        .font(.footnote.weight(.medium))
+                        .pulsarTextStyle(.metadata)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .contentTransition(.opacity)
@@ -914,28 +914,28 @@ private struct DailyRewindInsightCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: insight.symbolName)
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(insight.tint.color)
                         .frame(width: 40, height: 40)
                         .background(insight.tint.color.opacity(0.13), in: Circle())
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Insight")
-                            .font(.caption.weight(.black))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(.secondary)
                         Text(insight.title)
-                            .font(.title3.weight(.bold))
+                            .pulsarTextStyle(.sectionHeader)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
                 Text(insight.body)
-                    .font(.subheadline)
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(insight.evidence)
-                    .font(.caption.weight(.bold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(insight.tint.color)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
@@ -952,7 +952,7 @@ private struct DailyRewindSummaryCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: card.symbolName)
-                    .font(.subheadline.weight(.bold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(card.tint.color)
                     .frame(width: 34, height: 34)
                     .background(card.tint.color.opacity(0.13), in: Circle())
@@ -961,14 +961,14 @@ private struct DailyRewindSummaryCard: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(card.title)
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.secondary)
                 Text(card.value)
-                    .font(.title3.weight(.bold))
+                    .pulsarTextStyle(.sectionHeader)
                     .lineLimit(1)
                     .minimumScaleFactor(0.68)
                 Text(card.subtitle)
-                    .font(.caption.weight(.medium))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)

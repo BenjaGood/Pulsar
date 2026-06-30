@@ -135,7 +135,7 @@ struct OrionChatView: View {
             HStack(alignment: .bottom, spacing: 10) {
                 TextField("Ask Orion", text: $viewModel.draft, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 17, weight: .medium))
+                    .pulsarTextStyle(.bodyEmphasis)
                     .foregroundStyle(.white.opacity(0.94))
                     .lineLimit(1...4)
                     .focused($isInputFocused)
@@ -248,7 +248,7 @@ private struct OrionMessageBlock: View {
 
     private var assistantText: some View {
         Text(message.content)
-            .font(.system(size: 26, weight: .regular))
+            .pulsarTextStyle(.title)
             .lineSpacing(3.5)
             .foregroundStyle(.white.opacity(0.92))
             .textSelection(.enabled)
@@ -275,7 +275,7 @@ private struct OrionMessageBlock: View {
                 .padding(.top, 5)
 
             Text(message.content)
-                .font(.system(size: 24, weight: .regular))
+                .pulsarTextStyle(.sectionHeader)
                 .lineSpacing(3)
                 .foregroundStyle(.white.opacity(0.76))
                 .textSelection(.enabled)
@@ -293,7 +293,7 @@ private struct OrionWorkingRow: View {
             OrionWorkingGlyph(size: 30)
 
             Text("Working…")
-                .font(.system(size: 22, weight: .semibold))
+                .pulsarTextStyle(.sectionHeader)
                 .foregroundStyle(.white.opacity(0.92))
         }
         .padding(.vertical, 4)
@@ -353,13 +353,13 @@ private struct OrionErrorRow: View {
                 .padding(.top, 1)
 
             Text(message)
-                .font(.footnote.weight(.medium))
+                .pulsarTextStyle(.metadata)
                 .foregroundStyle(.white.opacity(0.86))
                 .layoutPriority(1)
 
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
-                    .font(.caption.weight(.bold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.white.opacity(0.76))
             }
             .buttonStyle(.plain)
@@ -422,11 +422,11 @@ private struct OrionChatHistoryView: View {
         HStack(alignment: .top, spacing: 14) {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Orion")
-                    .font(.system(size: 15, weight: .semibold))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(.white.opacity(0.58))
 
                 Text("History")
-                    .font(.system(size: 34, weight: .bold))
+                    .pulsarTextStyle(.displayLarge)
                     .foregroundStyle(.white.opacity(0.96))
             }
 
@@ -447,7 +447,7 @@ private struct OrionChatHistoryView: View {
 
             TextField("Search Orion chats", text: $searchText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 17, weight: .medium))
+                .pulsarTextStyle(.bodyEmphasis)
                 .foregroundStyle(.white.opacity(0.92))
                 .focused($isSearchFocused)
                 .submitLabel(.search)
@@ -578,7 +578,7 @@ private struct OrionHistoryCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 Text(Self.startTimeText(for: conversation))
-                    .font(.system(size: 11, weight: .semibold))
+                    .pulsarTextStyle(.metadata)
                     .foregroundStyle(.white.opacity(0.50))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -589,13 +589,13 @@ private struct OrionHistoryCard: View {
             }
 
             Text(conversation.displayTitle)
-                .font(.system(size: titleSize, weight: .bold))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(.white.opacity(0.92))
                 .lineLimit(3)
                 .minimumScaleFactor(0.84)
 
             Text(conversation.previewText)
-                .font(.system(size: 13, weight: .semibold))
+                .pulsarTextStyle(.captionEmphasis)
                 .lineSpacing(1.5)
                 .foregroundStyle(.white.opacity(0.56))
                 .lineLimit(isOffset ? 5 : 4)
@@ -761,11 +761,11 @@ private struct OrionHistoryEmptyState: View {
                 .opacity(0.84)
 
             Text(isSearching ? "No matching chats" : "No Orion chats yet")
-                .font(.system(size: 20, weight: .bold))
+                .pulsarTextStyle(.emptyStateTitle)
                 .foregroundStyle(.white.opacity(0.9))
 
             Text(isSearching ? "Try a different title, summary, or message preview." : "Start a conversation and it will appear here.")
-                .font(.system(size: 14, weight: .medium))
+                .pulsarTextStyle(.label)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.white.opacity(0.52))
                 .frame(maxWidth: 260)

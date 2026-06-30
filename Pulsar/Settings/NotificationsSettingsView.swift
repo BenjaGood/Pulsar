@@ -116,13 +116,13 @@ struct NotificationsSettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Permission")
-                        .font(.headline)
+                        .pulsarTextStyle(.cardTitle)
                     Spacer()
                     HealthStatusBadge(text: store.permissionStatusTitle, tint: permissionTint)
                 }
 
                 Text(permissionMessage)
-                    .font(.footnote)
+                    .pulsarTextStyle(.metadata)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -211,9 +211,9 @@ private struct ToggleSettingsRow: View {
             SettingsIcon(symbol: symbol, tint: tint)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.body.weight(.medium))
+                    .pulsarTextStyle(.bodyEmphasis)
                 Text(subtitle)
-                    .font(.footnote)
+                    .pulsarTextStyle(.metadata)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }

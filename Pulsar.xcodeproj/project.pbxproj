@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		8ECDB2DB49274C60A0998571 /* Shared/PulsarTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ECDB2DB49274C60A0998570 /* Shared/PulsarTypography.swift */; };
 		EDF329D42FA7FABD00359606 /* Pulsar Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = EDF329CA2FA7FABC00359606 /* Pulsar Watch App.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		EDF33A102FA9000000000001 /* PulsarWidgetsExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = EDF33A132FA9000000000004 /* PulsarWidgetsExtension.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
@@ -61,6 +62,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		8ECDB2DB49274C60A0998570 /* Shared/PulsarTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/PulsarTypography.swift; sourceTree = "<group>"; };
 		EDF329B82FA7FA4B00359606 /* Pulsar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pulsar.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EDF329CA2FA7FABC00359606 /* Pulsar Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Pulsar Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		EDF329E12FA8000000000001 /* PulsarTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PulsarTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -136,6 +138,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		EDEADB7B2FE9E0B90026BF2C /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				8ECDB2DB49274C60A0998570 /* Shared/PulsarTypography.swift */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
 		EDF329AF2FA7FA4B00359606 = {
 			isa = PBXGroup;
 			children = (
@@ -149,6 +159,7 @@
 				EDF329CB2FA7FABC00359606 /* Pulsar Watch App Watch App */,
 				EDF329E22FA8000000000002 /* PulsarTests */,
 				EDF329B92FA7FA4B00359606 /* Products */,
+				EDEADB7B2FE9E0B90026BF2C /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -376,6 +387,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8ECDB2DB49274C60A0998571 /* Shared/PulsarTypography.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

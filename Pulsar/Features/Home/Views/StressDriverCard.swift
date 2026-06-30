@@ -20,11 +20,11 @@ struct StressDriverCard: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(driver.title)
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(primaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(driver.detail)
-                    .font(.caption.weight(.medium))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }

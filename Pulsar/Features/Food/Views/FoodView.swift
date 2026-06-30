@@ -9,6 +9,7 @@ struct FoodView: View {
     @ObservedObject private var store: PulsarNutritionStore
     @ObservedObject private var bottomChromeLayoutStore: PulsarBottomChromeLayoutStore
     @State private var activeSheet: NutritionSheet?
+    @State private var isMealScannerPresented = false
 
     init(
         store: PulsarNutritionStore,
@@ -58,6 +59,10 @@ struct FoodView: View {
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
+            .fullScreenCover(isPresented: $isMealScannerPresented) {
+                MealScannerView(nutritionStore: store)
+                    .presentationBackground(.clear)
+            }
         }
         .background(PulsarSectionBackground())
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -87,6 +92,11 @@ struct FoodView: View {
                 onAddFood: { activeSheet = .capture(.lunch) }
             )
 
+            MealScannerEntryCard {
+                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                isMealScannerPresented = true
+            }
+
             NutritionQuickCaptureCard(
                 meals: NutritionDailyMeal.primaryMeals,
                 onQuickAdd: { activeSheet = .capture($0) }
@@ -115,7 +125,7 @@ struct FoodView: View {
     private func nutritionErrorCard(_ message: String) -> some View {
         PulsarNutritionGlassCard(cornerRadius: 22) {
             Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.subheadline.weight(.semibold))
+                .pulsarTextStyle(.label)
                 .foregroundStyle(.orange)
         }
     }
@@ -219,7 +229,7 @@ private struct NutritionQuickAddGrid: View {
                 } label: {
                     HStack(spacing: 9) {
                         Image(systemName: meal.symbolName)
-                            .font(.caption.weight(.bold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .frame(width: 24, height: 24)
                         Text(meal.title)
                             .pulsarTextStyle(.appBodyEmphasis)
@@ -227,7 +237,7 @@ private struct NutritionQuickAddGrid: View {
                             .minimumScaleFactor(0.78)
                         Spacer(minLength: 0)
                         Image(systemName: "plus")
-                            .font(.caption.weight(.black))
+                            .pulsarTextStyle(.captionEmphasis)
                     }
                     .foregroundStyle(meal.tint)
                     .padding(.horizontal, 12)
@@ -269,7 +279,7 @@ private struct NutritionDailyMealCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 12) {
                     Image(systemName: meal.symbolName)
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(meal.tint)
                         .frame(width: 38, height: 38)
                         .background(meal.tint.opacity(0.13), in: Circle())
@@ -288,7 +298,7 @@ private struct NutritionDailyMealCard: View {
 
                     Button(action: onAdd) {
                         Image(systemName: "plus")
-                            .font(.subheadline.weight(.bold))
+                            .pulsarTextStyle(.label)
                             .frame(width: 34, height: 34)
                     }
                     .buttonStyle(NutritionIconButtonStyle(tint: meal.tint, size: 34))
@@ -354,7 +364,7 @@ private struct NutritionDailyEntryRow: View {
                 Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.subheadline.weight(.bold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(tint)
                     .frame(width: 30, height: 30)
                     .background(tint.opacity(0.10), in: Circle())

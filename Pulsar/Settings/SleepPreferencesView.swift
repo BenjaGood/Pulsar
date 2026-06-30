@@ -44,7 +44,7 @@ struct SleepPreferencesView: View {
                             .frame(maxWidth: 420)
 
                         Text("Drag the handles for a fast adjustment, or tap the rows below for exact times.")
-                            .font(.footnote)
+                            .pulsarTextStyle(.metadata)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 10)
@@ -223,9 +223,9 @@ private struct SleepPersonalizationHeaderCard: View {
             SettingsIcon(symbol: "moon.zzz.fill", tint: .indigo)
             VStack(alignment: .leading, spacing: 5) {
                 Text("Sleep Personalization")
-                    .font(.title3.weight(.semibold))
+                    .pulsarTextStyle(.sectionHeader)
                 Text("Used for sleep consistency, sleep performance, and recovery insights.")
-                    .font(.footnote)
+                    .pulsarTextStyle(.metadata)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -244,7 +244,7 @@ private struct SleepPreferenceSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title.uppercased())
-                .font(.caption.weight(.semibold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 4)
 
@@ -257,7 +257,7 @@ private struct SleepPreferenceSection<Content: View>: View {
 
             if let footer {
                 Text(footer)
-                    .font(.footnote)
+                    .pulsarTextStyle(.metadata)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)
             }
@@ -273,10 +273,10 @@ private struct SleepScheduleSummaryPill: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.headline.weight(.semibold))
+                .pulsarTextStyle(.cardTitle)
                 .monospacedDigit()
                 .foregroundStyle(.primary)
         }
@@ -305,19 +305,19 @@ private struct SleepActionRow: View {
             HStack(spacing: 14) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.body.weight(.medium))
+                        .pulsarTextStyle(.bodyEmphasis)
                         .foregroundStyle(.primary)
                     Text(subtitle)
-                        .font(.footnote)
+                        .pulsarTextStyle(.metadata)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 12)
                 Text(value)
-                    .font(.body.weight(.semibold))
+                    .pulsarTextStyle(.bodyEmphasis)
                     .monospacedDigit()
                     .foregroundStyle(.primary)
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 16)
@@ -338,10 +338,10 @@ private struct SleepGoalDayChip: View {
         Button(action: action) {
             VStack(spacing: 5) {
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.label)
                 if let badge {
                     Text(badge)
-                        .font(.caption2.weight(.bold))
+                        .pulsarTextStyle(.overline)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
                         .background(.white.opacity(0.10), in: Capsule())
@@ -375,14 +375,14 @@ private struct AlarmStatusCard: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Alarm On")
-                            .font(.title3.weight(.semibold))
+                            .pulsarTextStyle(.sectionHeader)
                         Text(formattedTime(schedule.resolvedAlarmTimeMinutesFromMidnight))
-                            .font(.system(size: 32, weight: .semibold, design: .rounded))
+                            .pulsarTextStyle(.metricMedium)
                             .monospacedDigit()
                     }
                     Spacer(minLength: 10)
                     Image(systemName: "alarm.fill")
-                        .font(.title2.weight(.semibold))
+                        .pulsarTextStyle(.title)
                         .foregroundStyle(.orange)
                         .frame(width: 48, height: 48)
                         .background(.orange.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -405,10 +405,10 @@ private struct AlarmDetailPill: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.subheadline.weight(.semibold))
+                .pulsarTextStyle(.label)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
@@ -454,7 +454,7 @@ private struct AlarmSettingsCard: View {
                         Button("Match Wake Time") {
                             schedule.resetAlarmToWakeTime()
                         }
-                        .font(.footnote.weight(.semibold))
+                        .pulsarTextStyle(.metadata)
                         .foregroundStyle(.cyan)
                         Spacer()
                     }
@@ -507,9 +507,9 @@ private struct AlarmSettingsCard: View {
         return HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.body.weight(.medium))
+                    .pulsarTextStyle(.bodyEmphasis)
                 Text(subtitle)
-                    .font(.footnote)
+                    .pulsarTextStyle(.metadata)
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)
@@ -532,14 +532,14 @@ private struct AlarmSettingsCard: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Wake Window")
-                        .font(.body.weight(.medium))
+                        .pulsarTextStyle(.bodyEmphasis)
                     Text("Pulsar will use sleep data to help wake you at a better moment.")
-                        .font(.footnote)
+                        .pulsarTextStyle(.metadata)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 10)
                 Text("Coming soon")
-                    .font(.caption.weight(.semibold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(.white.opacity(0.10), in: Capsule())
@@ -559,10 +559,10 @@ private struct NotificationPermissionCard: View {
         SleepPreferenceSection(title: "Permission Needed") {
             VStack(alignment: .leading, spacing: 12) {
                 Label("Allow notifications to use Pulsar alarms.", systemImage: "bell.badge.fill")
-                    .font(.headline)
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(.primary)
                 Text("Pulsar only asks when you turn the alarm on. You can enable notifications in Settings whenever you’re ready.")
-                    .font(.footnote)
+                    .pulsarTextStyle(.metadata)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Open Settings", action: openSettings)

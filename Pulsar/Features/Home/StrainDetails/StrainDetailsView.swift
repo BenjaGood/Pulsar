@@ -253,7 +253,7 @@ private struct HeartLoadCalloutRow: View {
             ForEach(callouts) { callout in
                 VStack(alignment: .leading, spacing: 5) {
                     Image(systemName: callout.symbol)
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.orange)
                     Text(callout.title)
                         .pulsarTextStyle(.caption)
@@ -497,7 +497,7 @@ private struct HeartLoadPlotBackground: View {
                     Text("\(Int(reference.bpm.rounded()))")
                         .monospacedDigit()
                 }
-                    .font(.caption2.weight(.medium))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .frame(width: layout.leftGutter - 8, alignment: .trailing)
@@ -540,13 +540,13 @@ private struct HeartLoadPartialState: View {
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: symbol)
-                .font(.title3.weight(.semibold))
+                .pulsarTextStyle(.sectionHeader)
                 .foregroundStyle(.orange)
             Text(title)
-                .font(.footnote.weight(.semibold))
+                .pulsarTextStyle(.metadata)
                 .multilineTextAlignment(.center)
             Text(message)
-                .font(.caption)
+                .pulsarTextStyle(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 18)
@@ -560,10 +560,10 @@ private struct HeartLoadMovementState: View {
     var body: some View {
         VStack(spacing: 14) {
             Image(systemName: "figure.walk.motion")
-                .font(.title2.weight(.semibold))
+                .pulsarTextStyle(.title)
                 .foregroundStyle(.orange)
             Text("Movement recorded without workout heart rate")
-                .font(.footnote.weight(.semibold))
+                .pulsarTextStyle(.metadata)
             HStack(spacing: 10) {
                 movementMetric("Steps", chart.steps > 0 ? chart.steps.formatted() : "--")
                 movementMetric("Exercise", StrainDetailsViewModel.durationText(minutes: chart.exerciseMinutes))
@@ -576,10 +576,10 @@ private struct HeartLoadMovementState: View {
     private func movementMetric(_ title: String, _ value: String) -> some View {
         VStack(spacing: 4) {
             Text(value)
-                .font(.caption.weight(.semibold))
+                .pulsarTextStyle(.captionEmphasis)
                 .monospacedDigit()
             Text(title)
-                .font(.caption2)
+                .pulsarTextStyle(.metadata)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -599,7 +599,7 @@ private struct HeartLoadLegend: View {
             if hasWorkouts { legendItem(color: .orange, title: "Workout") }
             if hasMovement { legendItem(color: .cyan, title: "Active effort") }
         }
-        .font(.caption2.weight(.medium))
+        .pulsarTextStyle(.overline)
         .foregroundStyle(.secondary)
     }
 
@@ -631,19 +631,19 @@ private struct StrainMetricTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Image(systemName: metric.symbol)
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.orange)
             Text(metric.title)
-                .font(.caption.weight(.medium))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.secondary)
             Text(metric.value)
-                .font(.headline.weight(.semibold))
+                .pulsarTextStyle(.cardTitle)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
             if let subtitle = metric.subtitle {
                 Text(subtitle)
-                    .font(.caption2)
+                    .pulsarTextStyle(.metadata)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
@@ -661,7 +661,7 @@ private struct StrainWorkoutSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Workouts")
-                .font(.title3.weight(.semibold))
+                .pulsarTextStyle(.sectionHeader)
             if workouts.isEmpty {
                 StrainEmptySection(symbol: "figure.run", title: emptyTitle, message: "Movement and heart-rate signals can still contribute to strain.")
             } else {
@@ -670,17 +670,17 @@ private struct StrainWorkoutSection: View {
                         VStack(alignment: .leading, spacing: 7) {
                             HStack {
                                 Text(workout.workoutType)
-                                    .font(.headline.weight(.semibold))
+                                    .pulsarTextStyle(.cardTitle)
                                 Spacer()
                                 Text(workout.startDate, style: .time)
-                                    .font(.caption)
+                                    .pulsarTextStyle(.caption)
                                     .foregroundStyle(.secondary)
                             }
                             Text("\(workout.startDate.formatted(.dateTime.hour().minute())) · \(StrainDetailsViewModel.durationText(minutes: workout.durationMinutes))")
-                                .font(.subheadline)
+                                .pulsarTextStyle(.label)
                                 .foregroundStyle(.secondary)
                             Text(workoutDetailText(workout))
-                                .font(.caption)
+                                .pulsarTextStyle(.caption)
                                 .foregroundStyle(.tertiary)
                         }
                         .padding(15)
@@ -708,7 +708,7 @@ private struct StrainHeartSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Heart Signal")
-                .font(.title3.weight(.semibold))
+                .pulsarTextStyle(.sectionHeader)
             HStack(spacing: 10) {
                 heartTile("Avg Active", summary.averageActiveHeartRate)
                 heartTile("Peak", summary.peakHeartRate)
@@ -717,7 +717,7 @@ private struct StrainHeartSection: View {
             if !summary.timeInZones.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Training Zones")
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.secondary)
                     HStack(spacing: 5) {
                         let total = max(1, summary.timeInZones.reduce(0) { $0 + $1.minutes })
@@ -738,13 +738,13 @@ private struct StrainHeartSection: View {
     private func heartTile(_ title: String, _ value: Double?) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
-                .font(.caption)
+                .pulsarTextStyle(.caption)
                 .foregroundStyle(.secondary)
             Text(value.map { "\(Int($0.rounded()))" } ?? "--")
-                .font(.title3.weight(.semibold))
+                .pulsarTextStyle(.sectionHeader)
                 .monospacedDigit()
             Text("bpm")
-                .font(.caption2)
+                .pulsarTextStyle(.metadata)
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -771,15 +771,15 @@ private struct StrainStepsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Movement")
-                .font(.title3.weight(.semibold))
+                .pulsarTextStyle(.sectionHeader)
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text(steps > 0 ? steps.formatted() : "--")
-                        .font(.title2.weight(.semibold))
+                        .pulsarTextStyle(.title)
                         .monospacedDigit()
                     Spacer()
                     Text("Goal \(goal.formatted())")
-                        .font(.caption)
+                        .pulsarTextStyle(.caption)
                         .foregroundStyle(.secondary)
                 }
                 GeometryReader { proxy in
@@ -792,7 +792,7 @@ private struct StrainStepsSection: View {
                 }
                 .frame(height: 12)
                 Text(steps > 0 ? "\(StrainDetailsViewModel.percentText(progress)) of your step goal" : "Not enough step data")
-                    .font(.caption)
+                    .pulsarTextStyle(.caption)
                     .foregroundStyle(.secondary)
             }
             .padding(16)
@@ -807,7 +807,7 @@ private struct StrainInsightsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Insights")
-                .font(.title3.weight(.semibold))
+                .pulsarTextStyle(.sectionHeader)
             ForEach(insights) { insight in
                 StrainInsightCard(text: insight.text)
             }
@@ -821,10 +821,10 @@ private struct StrainInsightCard: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "bolt.badge.checkmark")
-                .font(.subheadline.weight(.semibold))
+                .pulsarTextStyle(.label)
                 .foregroundStyle(.orange)
             Text(text)
-                .font(.callout)
+                .pulsarTextStyle(.body)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -848,7 +848,7 @@ private struct StrainDataQualitySection: View {
             .padding(.top, 8)
         } label: {
             Text("Data Quality")
-                .font(.headline)
+                .pulsarTextStyle(.cardTitle)
         }
         .padding(16)
         .pulsarLiquidGlass(cornerRadius: 24)
@@ -862,7 +862,7 @@ private struct StrainDataQualitySection: View {
             Text(value)
                 .multilineTextAlignment(.trailing)
         }
-        .font(.footnote)
+        .pulsarTextStyle(.metadata)
     }
 }
 
@@ -874,12 +874,12 @@ private struct StrainEmptySection: View {
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: symbol)
-                .font(.title3.weight(.semibold))
+                .pulsarTextStyle(.sectionHeader)
                 .foregroundStyle(.orange)
             Text(title)
-                .font(.headline)
+                .pulsarTextStyle(.cardTitle)
             Text(message)
-                .font(.callout)
+                .pulsarTextStyle(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
@@ -894,7 +894,7 @@ private struct StrainDetailsLoadingView: View {
         VStack(spacing: 14) {
             ProgressView()
             Text("Loading strain details")
-                .font(.headline)
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, minHeight: 280)
@@ -913,9 +913,9 @@ private struct StrainDetailsStateView: View {
                 .font(.system(size: 34, weight: .semibold))
                 .foregroundStyle(.orange)
             Text(title)
-                .font(.title3.weight(.semibold))
+                .pulsarTextStyle(.sectionHeader)
             Text(message)
-                .font(.callout)
+                .pulsarTextStyle(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }

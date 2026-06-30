@@ -106,7 +106,7 @@ struct WorkoutPickerSheet: View {
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.caption.weight(.bold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(secondaryText)
                     .frame(width: 32, height: 32)
                     .background(closeButtonBackground, in: Circle())
@@ -140,16 +140,16 @@ struct WorkoutPickerSheet: View {
                     .frame(width: 62, height: 62)
 
                 Image(systemName: "sparkle.magnifyingglass")
-                    .font(.title2.weight(.semibold))
+                    .pulsarTextStyle(.title)
                     .foregroundStyle(.secondary)
             }
 
             Text("No workouts found")
-                .font(.headline.weight(.bold))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(primaryText)
 
             Text("Try another search")
-                .font(.subheadline.weight(.medium))
+                .pulsarTextStyle(.label)
                 .foregroundStyle(secondaryText)
         }
         .frame(maxWidth: .infinity)

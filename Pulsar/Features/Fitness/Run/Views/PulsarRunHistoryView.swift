@@ -53,23 +53,23 @@ private struct RunHistoryRow: View {
                 Circle()
                     .fill(run.workoutKind.accentColor.opacity(0.14))
                 Image(systemName: run.workoutKind.systemImageName)
-                    .font(.headline.weight(.bold))
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(run.workoutKind.accentColor)
             }
             .frame(width: 44, height: 44)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(run.startedAt.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
-                    .font(.headline.weight(.bold))
+                    .pulsarTextStyle(.cardTitle)
                 Text("\(PulsarRunFormatters.distance(run.distanceMeters)) · \(PulsarRunFormatters.duration(run.movingTime)) · \(PulsarRunFormatters.paceOrSpeed(workoutKind: run.workoutKind, paceSecondsPerKilometer: run.averagePaceSecondsPerKilometer, speedMetersPerSecond: run.averageSpeedMetersPerSecond))")
-                    .font(.caption.weight(.semibold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.secondary)
             }
 
             Spacer()
 
             Text(run.source == .appleWatch ? "Watch" : "iPhone")
-                .font(.caption2.weight(.black))
+                .pulsarTextStyle(.overline)
                 .foregroundStyle(run.workoutKind.accentColor)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)

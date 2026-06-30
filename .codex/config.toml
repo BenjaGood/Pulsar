@@ -1,0 +1,21 @@
+# Project-scoped Codex configuration for Pulsar.
+# Keep secrets out of this file. Use environment variables for tokens.
+
+[mcp_servers.openaiDeveloperDocs]
+url = "https://developers.openai.com/mcp"
+required = false
+tool_timeout_sec = 120
+default_tools_approval_mode = "approve"
+
+[mcp_servers.context7]
+url = "https://mcp.context7.com/mcp"
+required = false
+tool_timeout_sec = 120
+default_tools_approval_mode = "approve"
+
+[mcp_servers.github]
+url = "https://api.githubcopilot.com/mcp/"
+bearer_token_env_var = "GITHUB_PAT_TOKEN"
+required = false
+tool_timeout_sec = 120
+default_tools_approval_mode = "prompt"

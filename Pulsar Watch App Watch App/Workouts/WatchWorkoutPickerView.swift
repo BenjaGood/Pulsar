@@ -78,7 +78,7 @@ struct WatchWorkoutFloatingAddButton: View {
             action()
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 21, weight: .black, design: .rounded))
+                .font(.system(size: 21, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white)
                 .frame(width: 46, height: 46)
                 .background(.ultraThinMaterial, in: Circle())
@@ -178,10 +178,10 @@ struct WatchWorkoutPickerView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Choose training")
-                .font(.headline.weight(.black))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(.white)
             Text("Add a workout or jump into Run or Walk.")
-                .font(.caption2.weight(.semibold))
+                .pulsarTextStyle(.overline)
                 .foregroundStyle(.white.opacity(0.60))
                 .lineLimit(2)
         }
@@ -193,7 +193,7 @@ struct WatchWorkoutPickerView: View {
     private func workoutSection(title: String, workouts: [WatchWorkoutOption], isFeatured: Bool) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title.uppercased())
-                .font(.system(size: 9, weight: .black, design: .rounded))
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
                 .tracking(0.55)
                 .foregroundStyle(isFeatured ? .white.opacity(0.78) : .white.opacity(0.52))
                 .padding(.horizontal, 2)
@@ -260,7 +260,7 @@ private struct WatchWorkoutOptionCard: View {
             Spacer(minLength: 0)
 
             Image(systemName: workout.outdoorWorkoutKind != nil ? "bolt.heart.fill" : "chevron.right")
-                .font(.caption2.weight(.black))
+                .pulsarTextStyle(.overline)
                 .foregroundStyle(workout.outdoorWorkoutKind != nil ? workout.tint : .white.opacity(0.36))
         }
         .padding(.horizontal, 10)
@@ -321,23 +321,23 @@ private struct WatchWorkoutPlaceholderView: View {
                         .fill(.thinMaterial)
                         .frame(width: 62, height: 62)
                     Image(systemName: workout.symbolName)
-                        .font(.system(size: 28, weight: .black))
+                        .font(.system(size: 28, weight: .semibold))
                         .foregroundStyle(workout.tint)
                 }
                 .shadow(color: workout.tint.opacity(0.24), radius: 14)
 
                 VStack(spacing: 3) {
                     Text(workout.name)
-                        .font(.headline.weight(.black))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(.white)
                         .lineLimit(1)
                     Text("Workout mode")
-                        .font(.caption2.weight(.bold))
+                        .pulsarTextStyle(.overline)
                         .foregroundStyle(.white.opacity(0.62))
                 }
 
                 Text("Dedicated recording for this workout is coming soon. Running and Walking are ready today.")
-                    .font(.caption2.weight(.medium))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(.white.opacity(0.70))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)

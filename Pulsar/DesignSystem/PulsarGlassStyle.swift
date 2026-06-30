@@ -7,9 +7,20 @@ import SwiftUI
 
 extension View {
     @ViewBuilder
-    func pulsarLiquidGlass(cornerRadius: CGFloat = 28) -> some View {
+    func pulsarLiquidGlass(
+        cornerRadius: CGFloat = 28,
+        tint: Color? = nil,
+        interactive: Bool = false,
+        isClear: Bool = false
+    ) -> some View {
         if #available(iOS 26.0, *) {
-            self.glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            let glass = isClear ? Glass.clear : .regular
+            self.glassEffect(
+                glass
+                    .tint(tint)
+                    .interactive(interactive),
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
         } else {
             self
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -33,6 +44,27 @@ extension View {
                 fadeEnd: fadeEnd
             )
         )
+    }
+}
+
+struct PulsarGlassEffectGroup<Content: View>: View {
+    private let spacing: CGFloat
+    private let content: () -> Content
+
+    init(spacing: CGFloat = 20, @ViewBuilder content: @escaping () -> Content) {
+        self.spacing = spacing
+        self.content = content
+    }
+
+    @ViewBuilder
+    var body: some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing) {
+                content()
+            }
+        } else {
+            content()
+        }
     }
 }
 
@@ -129,7 +161,7 @@ struct PlaceholderMetricCard: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Image(systemName: symbol)
-                    .font(.headline)
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(.tint)
                     .frame(width: 34, height: 34)
                     .background(.tint.opacity(0.12), in: Circle())

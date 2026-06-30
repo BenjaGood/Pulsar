@@ -7,5 +7,8 @@
 ORION_BACKEND_BASE_URL = https:/$()/www.aetherial.tech
 ORION_CHAT_PATH = /api/orion/chat
 ORION_MOCK_MODE = NO
+MEAL_SCANNER_BACKEND_BASE_URL =
+MEAL_SCANNER_ANALYZE_PATH = /api/orion/meal-scan
+MEAL_SCANNER_MOCK_MODE = NO
 
 #include? "Orion.local.xcconfig"

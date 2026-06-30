@@ -20,11 +20,11 @@ struct StressSignalRow: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(signal.title)
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(primaryText)
                 if let baseline = signal.baseline {
                     Text(baseline)
-                        .font(.caption.weight(.medium))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(secondaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.80)
@@ -35,12 +35,12 @@ struct StressSignalRow: View {
 
             VStack(alignment: .trailing, spacing: 4) {
                 Text(signal.value)
-                    .font(.subheadline.weight(.bold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(valueColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
                 Text(statusText)
-                    .font(.caption2.weight(.bold))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(secondaryText)
             }
         }

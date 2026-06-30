@@ -47,7 +47,7 @@ struct OrionBarView: View {
             OrionLogoView(size: isInlinePlacement ? 31 : 38)
 
             Text("Ask Orion")
-                .font(.system(size: isInlinePlacement ? 15 : 17, weight: .semibold, design: .rounded))
+                .pulsarTextStyle(.buttonTitle)
                 .foregroundStyle(.white.opacity(0.94))
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)

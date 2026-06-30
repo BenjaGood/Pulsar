@@ -44,7 +44,7 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Pulsar uses location during outdoor workouts to show your live map, distance, pace or speed, elevation, and route.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Pulsar uses the camera when you choose to take a workout photo for sharing.</string>
+	<string>Pulsar uses the camera to scan meals, capture workout photos, and estimate nutrition information.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>Pulsar uses motion data to track your running activity, movement, pace, cadence, and workout performance.</string>
 	<key>NSAppTransportSecurity</key>
@@ -72,6 +72,12 @@
 	<string>$(ORION_CHAT_PATH)</string>
 	<key>OrionMockMode</key>
 	<string>$(ORION_MOCK_MODE)</string>
+	<key>MealScannerBackendBaseURL</key>
+	<string>$(MEAL_SCANNER_BACKEND_BASE_URL)</string>
+	<key>MealScannerAnalyzePath</key>
+	<string>$(MEAL_SCANNER_ANALYZE_PATH)</string>
+	<key>MealScannerMockMode</key>
+	<string>$(MEAL_SCANNER_MOCK_MODE)</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -24,77 +24,73 @@ struct LabView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    LabHeaderView(result: store.state.latestBiologicalAgeResult)
-                        .labStaggered(isVisible: isVisible, index: 0)
+            GeometryReader { proxy in
+                let topChromeClearance = Self.topChromeClearance(for: proxy.safeAreaInsets.top)
 
-                    if let result = store.state.latestBiologicalAgeResult {
-                        LabBiologicalAgeHeroView(result: result)
-                            .labStaggered(isVisible: isVisible, index: 1)
-
-                        LabHealthTrajectoryCard(result: result, trendResults: store.biologicalAgeTrendResults)
-                            .labStaggered(isVisible: isVisible, index: 2)
-
-                        LabSectionTitle(title: "Pillar Signals", subtitle: "A conservative estimate weighted by fitness, lifestyle, and recent blood markers.")
-                            .labStaggered(isVisible: isVisible, index: 3)
-
-                        VStack(spacing: 12) {
-                            ForEach(result.pillarResults) { pillar in
-                                LabPillarCard(pillar: pillar)
-                            }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        if let onClose {
+                            LabCloseButton(action: onClose)
+                                .labStaggered(isVisible: isVisible, index: 0)
                         }
-                        .labStaggered(isVisible: isVisible, index: 4)
 
-                        DataConfidenceCard(result: result)
-                            .labStaggered(isVisible: isVisible, index: 5)
-                    } else {
-                        LabEmptyStateCard(
-                            hasBiomarkers: !store.state.biomarkers.isEmpty,
-                            onConnectData: {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                store.refresh(profile: profileStore.profile)
-                            },
+                        LabHeaderView()
+                            .labStaggered(isVisible: isVisible, index: onClose == nil ? 0 : 1)
+
+                        if let result = store.state.latestBiologicalAgeResult {
+                            LabBiologicalAgeHeroView(result: result)
+                                .labStaggered(isVisible: isVisible, index: onClose == nil ? 1 : 2)
+
+                            LabPrivacyFooter()
+                                .labStaggered(isVisible: isVisible, index: onClose == nil ? 2 : 3)
+
+                            LabSectionTitle(title: "Pillar Signals", subtitle: "A conservative estimate weighted by fitness, lifestyle, and recent blood markers.")
+                                .labStaggered(isVisible: isVisible, index: onClose == nil ? 3 : 4)
+
+                            LabPillarSignalsList(pillars: result.pillarResults)
+                                .labStaggered(isVisible: isVisible, index: onClose == nil ? 4 : 5)
+
+                            DataConfidenceCard(result: result)
+                                .labStaggered(isVisible: isVisible, index: onClose == nil ? 5 : 6)
+                        } else {
+                            LabEmptyStateCard(
+                                hasBiomarkers: !store.state.biomarkers.isEmpty,
+                                onConnectData: {
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    store.refresh(profile: profileStore.profile)
+                                },
+                                onImport: { isShowingImport = true },
+                                onManualEntry: { isShowingManualEntry = true }
+                            )
+                            .labStaggered(isVisible: isVisible, index: onClose == nil ? 1 : 2)
+
+                            LabPrivacyFooter()
+                                .labStaggered(isVisible: isVisible, index: onClose == nil ? 2 : 3)
+                        }
+
+                        BiomarkersSection(
+                            biomarkers: store.displayedBiomarkers,
                             onImport: { isShowingImport = true },
-                            onManualEntry: { isShowingManualEntry = true }
+                            onManualEntry: { isShowingManualEntry = true },
+                            onDelete: { biomarker in
+                                store.deleteBiomarker(biomarker, profile: profileStore.profile)
+                            }
                         )
-                        .labStaggered(isVisible: isVisible, index: 1)
+                        .labStaggered(isVisible: isVisible, index: onClose == nil ? 6 : 7)
                     }
-
-                    BiomarkersSection(
-                        biomarkers: store.displayedBiomarkers,
-                        onImport: { isShowingImport = true },
-                        onManualEntry: { isShowingManualEntry = true },
-                        onDelete: { biomarker in
-                            store.deleteBiomarker(biomarker, profile: profileStore.profile)
-                        }
-                    )
-                    .labStaggered(isVisible: isVisible, index: 6)
-
-                    LabDisclaimerCard()
-                        .labStaggered(isVisible: isVisible, index: 7)
+                    .padding(.horizontal, 22)
+                    .padding(.top, topChromeClearance)
+                    .padding(.bottom, 8)
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, 14)
-                .padding(.bottom, 36)
+                .safeAreaPadding(.bottom, 16)
+                .background(LabModuleBackground())
+                .scrollContentBackground(.hidden)
             }
-            .safeAreaPadding(.bottom, 16)
-            .background(LabModuleBackground())
-            .navigationTitle("Lab")
+            .navigationTitle("")
             .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                if let onClose {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button {
-                            onClose()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.body.weight(.semibold))
-                        }
-                        .accessibilityLabel("Close Lab")
-                    }
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
         }
         .task {
             store.refresh(profile: profileStore.profile)
@@ -130,38 +126,143 @@ struct LabView: View {
                 .presentationDragIndicator(.visible)
         }
     }
+
+    private static func topChromeClearance(for safeAreaTop: CGFloat) -> CGFloat {
+        safeAreaTop > 0 ? 16 : 64
+    }
 }
 
-private struct LabHeaderView: View {
-    let result: BiologicalAgeResult?
+private struct LabCloseButton: View {
+    let action: () -> Void
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        HStack(alignment: .center, spacing: 13) {
-            LabGenomeIconView(size: 54)
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            action()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 22, weight: .medium))
+                .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
+                .frame(width: 52, height: 52)
+                .background(
+                    FitnessCircularGlassSurface(
+                        cornerRadius: 26,
+                        tint: LabPalette.glassTint(for: colorScheme),
+                        opacity: 1
+                    )
+                )
+        }
+        .buttonStyle(.plain)
+        .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .accessibilityLabel("Close Lab")
+    }
+}
 
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 9) {
-                    Text("Lab")
-                        .font(.largeTitle.weight(.semibold))
-                        .foregroundStyle(LabPalette.primaryText(for: colorScheme))
-                        .lineLimit(1)
+private struct LabHeaderView: View {
+    @Environment(\.colorScheme) private var colorScheme
 
-                    if let result {
-                        LabStatusPill(text: "Updated \(result.updatedAt.formatted(.dateTime.weekday(.wide)))", symbol: "clock")
-                    } else {
-                        LabStatusPill(text: "Latest available data")
-                    }
-                }
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            LabHeaderIconView()
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Lab")
+                    .pulsarTextStyle(.displayLarge)
+                    .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
 
                 Text("Biological age & biomarker insights")
-                    .font(.subheadline)
-                    .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
-                    .fixedSize(horizontal: false, vertical: true)
+                    .pulsarTextStyle(.label)
+                    .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Lab")
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+private struct LabHeaderIconView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        LabHeaderDNAGlyphView(tint: PulsarTheme.fitnessPrimaryText(for: colorScheme))
+            .frame(width: 27, height: 31)
+            .frame(width: 52, height: 52)
+            .background(
+                FitnessCircularGlassSurface(
+                    cornerRadius: 26,
+                    tint: LabPalette.positive(for: colorScheme),
+                    opacity: 0.92
+                )
+            )
+            .accessibilityHidden(true)
+    }
+}
+
+private struct LabHeaderDNAGlyphView: View {
+    let tint: Color
+
+    var body: some View {
+        Canvas { context, size in
+            let left = strandPath(size: size, phase: 0)
+            let right = strandPath(size: size, phase: .pi)
+            let lineWidth = max(size.width * 0.09, 2)
+            let rungWidth = max(size.width * 0.055, 1.1)
+
+            for progress in [0.10, 0.28, 0.46, 0.64, 0.82] as [CGFloat] {
+                let start = point(size: size, progress: progress, phase: 0)
+                let end = point(size: size, progress: progress, phase: .pi)
+                var rung = Path()
+                rung.move(to: start)
+                rung.addLine(to: end)
+                context.stroke(rung, with: .color(tint.opacity(0.50)), style: StrokeStyle(lineWidth: rungWidth, lineCap: .round))
+            }
+
+            context.stroke(left, with: .color(tint.opacity(0.88)), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
+            context.stroke(right, with: .color(tint.opacity(0.70)), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
+        }
+    }
+
+    private func point(size: CGSize, progress: CGFloat, phase: Double) -> CGPoint {
+        let top = size.height * 0.07
+        let height = size.height * 0.86
+        let centerX = size.width * 0.50
+        let amplitude = size.width * 0.28
+        let theta = Double(progress) * .pi * 2.0 - .pi / 2 + phase
+
+        return CGPoint(
+            x: centerX + amplitude * CGFloat(sin(theta)),
+            y: top + height * progress
+        )
+    }
+
+    private func strandPath(size: CGSize, phase: Double) -> Path {
+        var path = Path()
+        let samples = 28
+        let points = (0...samples).map { index in
+            point(size: size, progress: CGFloat(index) / CGFloat(samples), phase: phase)
+        }
+
+        guard let first = points.first else { return path }
+        path.move(to: first)
+
+        for index in 1..<points.count {
+            let previous = points[index - 1]
+            let current = points[index]
+            let mid = CGPoint(x: (previous.x + current.x) / 2, y: (previous.y + current.y) / 2)
+            path.addQuadCurve(to: mid, control: previous)
+            if index == points.count - 1 {
+                path.addQuadCurve(to: current, control: mid)
+            }
+        }
+
+        return path
     }
 }
 
@@ -182,22 +283,22 @@ private struct LabStatusPill: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
         }
-        .font(.caption2.weight(.semibold))
-        .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .background(LabPalette.controlBackground(for: colorScheme), in: Capsule(style: .continuous))
+        .pulsarTextStyle(.overline)
+        .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme).opacity(colorScheme == .dark ? 0.88 : 0.82))
+        .padding(.horizontal, 11)
+        .padding(.vertical, 6)
+        .background(PulsarTheme.matrixPillBackground(for: colorScheme), in: Capsule(style: .continuous))
         .overlay {
             Capsule(style: .continuous)
-                .stroke(LabPalette.controlBorder(for: colorScheme), lineWidth: 1)
+                .stroke(.white.opacity(colorScheme == .dark ? 0.14 : 0.70), lineWidth: 1)
         }
     }
 }
 
 private struct LabBiologicalAgeHeroView: View {
     let result: BiologicalAgeResult
-    var startsSettled = false
-    @State private var animatedAge = 0.0
+    let startsSettled: Bool
+    @State private var animatedAge: Double
     @State private var cardVisible = false
     @State private var heroVisible = false
     @State private var readoutDetailsVisible = false
@@ -207,35 +308,111 @@ private struct LabBiologicalAgeHeroView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    init(result: BiologicalAgeResult, startsSettled: Bool = false) {
+        self.result = result
+        self.startsSettled = startsSettled
+        _animatedAge = State(initialValue: startsSettled ? result.biologicalAge : result.chronologicalAge)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 17) {
-            heroCopy
+        VStack(alignment: .leading, spacing: 16) {
+            heroTitleRow
 
-            AgeDifferenceScaleView(
-                biologicalAge: result.biologicalAge,
-                chronologicalAge: result.chronologicalAge,
-                delta: result.ageDelta,
-                confidence: result.confidence,
-                tint: tint,
-                animationProgress: scaleProgress,
-                badgeVisible: deltaBadgeVisible
-            )
-            .frame(maxWidth: .infinity)
-            .frame(height: 158)
-            .opacity(heroVisible ? 1 : 0)
-            .offset(y: heroVisible ? 0 : 8)
-            .scaleEffect(heroVisible ? 1 : 0.985)
-            .animation(reduceMotion ? nil : .spring(response: 0.62, dampingFraction: 0.86), value: heroVisible)
+            VStack(alignment: .leading, spacing: 17) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: 14) {
+                        BiologicalAgeReadoutColumn(
+                            displayedAge: animatedAge,
+                            deltaText: deltaText,
+                            sourceCopy: sourceCopy,
+                            tint: tint,
+                            detailsVisible: readoutDetailsVisible
+                        )
+                        .frame(width: 106, alignment: .leading)
 
-            HStack(spacing: 10) {
-                statChips
+                        AgeDifferenceScaleView(
+                            biologicalAge: result.biologicalAge,
+                            chronologicalAge: result.chronologicalAge,
+                            delta: result.ageDelta,
+                            confidence: result.confidence,
+                            tint: tint,
+                            animationProgress: scaleProgress,
+                            badgeVisible: deltaBadgeVisible
+                        )
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 156)
+                    }
+                    .frame(minWidth: 278)
+
+                    VStack(alignment: .leading, spacing: 14) {
+                        BiologicalAgeReadoutColumn(
+                            displayedAge: animatedAge,
+                            deltaText: deltaText,
+                            sourceCopy: sourceCopy,
+                            tint: tint,
+                            detailsVisible: readoutDetailsVisible
+                        )
+
+                        AgeDifferenceScaleView(
+                            biologicalAge: result.biologicalAge,
+                            chronologicalAge: result.chronologicalAge,
+                            delta: result.ageDelta,
+                            confidence: result.confidence,
+                            tint: tint,
+                            animationProgress: scaleProgress,
+                            badgeVisible: deltaBadgeVisible
+                        )
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 150)
+                    }
+                }
+                .opacity(heroVisible ? 1 : 0)
+                .offset(y: heroVisible ? 0 : 8)
+                .scaleEffect(heroVisible ? 1 : 0.985)
+                .animation(reduceMotion ? nil : .spring(response: 0.62, dampingFraction: 0.86), value: heroVisible)
+
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack(alignment: .firstTextBaseline, spacing: 7) {
+                        Image(systemName: result.ageDelta < -0.05 ? "arrow.down.right" : result.ageDelta > 0.05 ? "arrow.up.right" : "equal")
+                            .pulsarTextStyle(.captionEmphasis)
+                        Text(deltaText)
+                            .pulsarTextStyle(.label)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .foregroundStyle(tint)
+
+                    Text(sourceCopy)
+                        .pulsarTextStyle(.metadata)
+                        .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .opacity(readoutDetailsVisible ? 1 : 0)
+                .offset(y: readoutDetailsVisible ? 0 : 8)
+                .animation(reduceMotion ? nil : .spring(response: 0.50, dampingFraction: 0.88), value: readoutDetailsVisible)
+
+                PulsarGlassEffectGroup(spacing: 10) {
+                    HStack(spacing: 10) {
+                        statChips
+                    }
+                }
+            }
+            .padding(12)
+            .background(PulsarTheme.matrixPanelBackground(for: colorScheme), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .stroke(.white.opacity(colorScheme == .dark ? 0.12 : 0.72), lineWidth: 1)
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 18)
-        .padding(.bottom, 18)
+        .padding(.horizontal, 16)
+        .padding(.top, 17)
+        .padding(.bottom, 16)
         .frame(maxWidth: .infinity)
-        .labGlassCard(cornerRadius: 32, glow: tint.opacity(colorScheme == .dark ? 0.16 : 0.09))
+        .modifier(FitnessGlassSurfaceModifier(
+            cornerRadius: 32,
+            tint: LabPalette.glassTint(for: colorScheme),
+            borderOpacity: 1
+        ))
         .opacity(cardVisible ? 1 : 0)
         .offset(y: cardVisible ? 0 : 10)
         .onAppear {
@@ -263,51 +440,39 @@ private struct LabBiologicalAgeHeroView: View {
         .accessibilityElement(children: .contain)
     }
 
-    private var heroCopy: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack(alignment: .center, spacing: 10) {
-                Text("Preliminary Biological Age")
-                    .font(.caption2.weight(.bold))
-                    .textCase(.uppercase)
-                    .foregroundStyle(tint)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
+    private var heroTitleRow: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Text("Preliminary Biological Age")
+                .pulsarTextStyle(.overline)
+                .textCase(.uppercase)
+                .foregroundStyle(.white.opacity(colorScheme == .dark ? 0.72 : 0.82))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
 
-                Spacer(minLength: 8)
+            Spacer(minLength: 8)
 
-                HStack(spacing: 6) {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.caption2.weight(.bold))
-                    Text("Age estimate")
-                        .font(.caption2.weight(.semibold))
-                }
-                .foregroundStyle(tint)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(tint.opacity(colorScheme == .dark ? 0.09 : 0.07), in: Capsule(style: .continuous))
-                .overlay {
-                    Capsule(style: .continuous)
-                        .stroke(tint.opacity(colorScheme == .dark ? 0.18 : 0.14), lineWidth: 1)
-                }
-                .accessibilityHidden(true)
+            HStack(spacing: 7) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Age estimate")
+                    .pulsarTextStyle(.label)
             }
-
-            AnimatedBiologicalAgeReadoutView(
-                displayedAge: animatedAge,
-                chronologicalAge: result.chronologicalAge,
-                delta: result.ageDelta,
-                deltaText: deltaText,
-                sourceCopy: sourceCopy,
-                tint: tint,
-                detailsVisible: readoutDetailsVisible
-            )
+            .foregroundStyle(.white.opacity(colorScheme == .dark ? 0.86 : 0.88))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(PulsarTheme.matrixPillBackground(for: colorScheme), in: Capsule(style: .continuous))
+            .overlay {
+                Capsule(style: .continuous)
+                    .stroke(.white.opacity(colorScheme == .dark ? 0.20 : 0.52), lineWidth: 0.75)
+            }
+            .accessibilityHidden(true)
         }
         .layoutPriority(1)
     }
 
     @ViewBuilder
     private var statChips: some View {
-        animatedStatChip(index: 0, title: "Chronological", value: String(format: "%.0f", result.chronologicalAge), symbol: "calendar")
+        animatedStatChip(index: 0, title: "Chronological Age", value: String(format: "%.0f years", result.chronologicalAge), symbol: "calendar")
         animatedStatChip(index: 1, title: "Delta", value: signedYears(result.ageDelta), symbol: result.ageDelta <= 0 ? "arrow.down.right" : "arrow.up.right", tint: tint)
         animatedStatChip(index: 2, title: "Confidence", value: result.confidence.rawValue, symbol: "shield.lefthalf.filled")
     }
@@ -401,6 +566,56 @@ private struct LabBiologicalAgeHeroView: View {
         withAnimation(.spring(response: 0.46, dampingFraction: 0.90).delay(1.24)) {
             statChipsVisible = true
         }
+    }
+}
+
+private struct BiologicalAgeReadoutColumn: View {
+    let displayedAge: Double
+    let deltaText: String
+    let sourceCopy: String
+    let tint: Color
+    let detailsVisible: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Biological Age")
+                .pulsarTextStyle(.label)
+                .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
+
+            VStack(alignment: .leading, spacing: 0) {
+                BiologicalAgeValueText(value: displayedAge)
+                    .foregroundStyle(LabPalette.primaryText(for: colorScheme))
+
+                Text("years")
+                    .pulsarTextStyle(.label)
+                    .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
+                    .padding(.top, -3)
+            }
+
+            Text("Preliminary")
+                .pulsarTextStyle(.overline)
+                .textCase(.uppercase)
+                .foregroundStyle(tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .pulsarLiquidGlass(
+                    cornerRadius: 16,
+                    tint: tint.opacity(colorScheme == .dark ? 0.12 : 0.065)
+                )
+                .overlay {
+                    Capsule(style: .continuous)
+                        .stroke(tint.opacity(colorScheme == .dark ? 0.28 : 0.18), lineWidth: 1)
+                }
+                .shadow(color: tint.opacity(colorScheme == .dark ? 0.16 : 0.07), radius: 9, x: 0, y: 4)
+                .opacity(detailsVisible ? 1 : 0)
+                .offset(y: detailsVisible ? 0 : 5)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Biological Age \(displayedAge.formattedOneDecimal) years. \(deltaText). \(sourceCopy)")
     }
 }
 
@@ -554,21 +769,21 @@ private struct AnimatedBiologicalAgeReadoutView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Biological Age")
-                    .font(.headline.weight(.semibold))
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(LabPalette.primaryText(for: colorScheme))
 
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
                     Image(systemName: deltaSymbol)
-                        .font(.caption.weight(.bold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(tint)
                     Text(deltaText)
-                        .font(.subheadline.weight(.semibold))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(tint)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Text(sourceCopy)
-                    .font(.footnote)
+                    .pulsarTextStyle(.metadata)
                     .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -596,7 +811,7 @@ private struct BiologicalAgeValueText: View {
 
     var body: some View {
         AnimatedDecimalText(value: value)
-            .font(.system(size: 60, weight: .semibold, design: .rounded).monospacedDigit())
+            .font(.system(size: 52, weight: .light, design: .default).monospacedDigit())
             .lineLimit(1)
             .minimumScaleFactor(0.55)
     }
@@ -683,135 +898,143 @@ private struct AgeDifferenceScaleView: View {
         GeometryReader { proxy in
             let width = max(proxy.size.width, 1)
             let height = max(proxy.size.height, 1)
-            let horizontalInset: CGFloat = 24
-            let railY = height * 0.39
-            let railWidth = max(width - horizontalInset * 2, 1)
-            let centerX = width / 2
+            let center = CGPoint(x: width / 2, y: height * 0.90)
+            let radius = min(width * 0.50, height * 0.61)
+            let tickCount = 43
             let progress = max(0.0, min(1.0, animationProgress))
             let displayedDelta = delta * progress
-            let rawOffset = CGFloat(max(-5.0, min(5.0, displayedDelta)) / 5.0) * (railWidth / 2)
-            let bioX = min(max(centerX + rawOffset, horizontalInset), width - horizontalInset)
-            let connectorX = min(centerX, bioX)
-            let connectorWidth = max(abs(bioX - centerX), 1.5)
-            let pulseProgress = reduceMotion ? 0.50 : progress
+            let markerProgress = visualMarkerProgress(for: displayedDelta)
+            let markerAngle = gaugeAngle(for: markerProgress)
+            let markerPoint = gaugePoint(center: center, radius: radius - 2, angleDegrees: markerAngle)
             let bioPulse = reduceMotion ? 1.0 : 1.0 + 0.025 * sin(phase * 1.8)
-            let badgeX = min(max(bioX, horizontalInset + 62), width - horizontalInset - 62)
+            let activeArcStart = displayedDelta <= 0 ? gaugeStartAngle : markerAngle
+            let activeArcEnd = displayedDelta <= 0 ? markerAngle : gaugeEndAngle
+            let badgeY = min(max(center.y - radius * 0.10, 106), height - 25)
+            let lineTop = center.y - radius + 20
+            let lineBottom = badgeY - 19
+            let lineHeight = max(0, lineBottom - lineTop)
 
             ZStack {
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                tint.opacity(colorScheme == .dark ? 0.10 : 0.055),
-                                Color(red: 0.90, green: 0.97, blue: 1.00).opacity(colorScheme == .dark ? 0.045 : 0.58),
-                                Color.white.opacity(colorScheme == .dark ? 0.035 : 0.82)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 26, style: .continuous)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [
-                                        .white.opacity(colorScheme == .dark ? 0.18 : 0.86),
-                                        tint.opacity(colorScheme == .dark ? 0.18 : 0.22),
-                                        .black.opacity(colorScheme == .dark ? 0.08 : 0.045)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
-                    }
-                    .shadow(color: tint.opacity(colorScheme == .dark ? 0.09 : 0.045), radius: 10, x: 0, y: 6)
-
                 if !reduceMotion {
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    .clear,
-                                    .white.opacity(colorScheme == .dark ? 0.055 : 0.24),
-                                    tint.opacity(colorScheme == .dark ? 0.10 : 0.12),
-                                    .clear
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                    Path { path in
+                        path.addArc(
+                            center: center,
+                            radius: radius + 2,
+                            startAngle: .degrees(activeArcStart),
+                            endAngle: .degrees(activeArcEnd),
+                            clockwise: false
                         )
-                        .frame(width: width * 0.24)
-                        .blur(radius: 8)
-                        .opacity(sin(progress * .pi))
-                        .offset(x: -width * 0.58 + width * 1.16 * pulseProgress)
+                    }
+                    .stroke(
+                        displayedDelta <= 0
+                            ? LabPalette.positive(for: colorScheme).opacity(colorScheme == .dark ? 0.42 : 0.24)
+                            : LabPalette.warning(for: colorScheme).opacity(colorScheme == .dark ? 0.36 : 0.20),
+                        style: StrokeStyle(lineWidth: 5, lineCap: .round)
+                    )
+                    .opacity(0.22 + 0.05 * sin(phase * 0.7))
                         .allowsHitTesting(false)
                 }
 
-                scaleLabels
-                    .frame(width: max(width - 20, 1))
-                    .position(x: width / 2, y: 23)
+                Path { path in
+                    path.addArc(
+                        center: center,
+                        radius: radius,
+                        startAngle: .degrees(gaugeStartAngle),
+                        endAngle: .degrees(gaugeEndAngle),
+                        clockwise: false
+                    )
+                }
+                .stroke(
+                    AngularGradient(
+                        colors: [
+                            LabPalette.positive(for: colorScheme).opacity(0.52),
+                            LabPalette.accent(for: colorScheme).opacity(0.48),
+                            LabPalette.older(for: colorScheme).opacity(0.48)
+                        ],
+                        center: .center,
+                        startAngle: .degrees(gaugeStartAngle),
+                        endAngle: .degrees(gaugeEndAngle)
+                    ),
+                    style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                )
+                .opacity(colorScheme == .dark ? 0.20 : 0.15)
 
-                ageRail(railWidth: railWidth)
-                    .position(x: centerX, y: railY)
+                ForEach(0..<tickCount, id: \.self) { index in
+                    let tickProgress = Double(index) / Double(tickCount - 1)
+                    let angle = gaugeAngle(for: tickProgress)
+                    let tickPoint = gaugePoint(center: center, radius: radius, angleDegrees: angle)
+                    let isMajor = index % 7 == 0 || index == (tickCount - 1) / 2
+                    let tickColor = gaugeTickColor(progress: tickProgress)
 
-                Capsule(style: .continuous)
+                    Capsule(style: .continuous)
+                        .fill(tickColor.opacity(gaugeTickOpacity(progress: tickProgress, markerProgress: markerProgress, displayedDelta: displayedDelta, isMajor: isMajor)))
+                        .frame(width: isMajor ? 2.5 : 1.9, height: isMajor ? 20 : 14)
+                        .shadow(color: tickColor.opacity(colorScheme == .dark ? 0.12 : 0.04), radius: isMajor ? 3 : 1.8)
+                        .rotationEffect(.degrees(angle + 90))
+                        .position(tickPoint)
+                        .opacity(0.34 + 0.66 * progress)
+                }
+
+                Rectangle()
                     .fill(
                         LinearGradient(
                             colors: [
-                                tint.opacity(colorScheme == .dark ? 0.14 : 0.10),
-                                tint.opacity(colorScheme == .dark ? 0.42 : 0.34)
+                                .white.opacity(colorScheme == .dark ? 0.20 : 0.42),
+                                LabPalette.accent(for: colorScheme).opacity(colorScheme == .dark ? 0.10 : 0.15),
+                                .clear
                             ],
-                            startPoint: .leading,
-                            endPoint: .trailing
+                            startPoint: .top,
+                            endPoint: .bottom
                         )
                     )
-                    .frame(width: connectorWidth, height: 2.5)
-                    .opacity(abs(displayedDelta) < 0.02 ? 0 : 1)
-                    .position(x: connectorX + connectorWidth / 2, y: railY)
-                    .shadow(color: tint.opacity(colorScheme == .dark ? 0.18 : 0.08), radius: 4)
+                    .frame(width: 1, height: lineHeight)
+                    .position(x: center.x, y: lineTop + lineHeight / 2)
 
-                scaleMarker(tint: LabPalette.secondaryText(for: colorScheme), size: 10, isPrimary: false)
-                    .position(x: centerX, y: railY)
-
-                scaleMarker(tint: tint, size: 14, isPrimary: true)
+                gaugeMarker(angleDegrees: markerAngle, tint: tint)
                     .scaleEffect(bioPulse)
-                    .position(x: bioX, y: railY)
+                    .position(markerPoint)
 
-                Text(deltaBadgeText)
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(tint)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(LabPalette.controlBackground(for: colorScheme), in: Capsule(style: .continuous))
-                    .overlay {
-                        Capsule(style: .continuous)
-                            .stroke(tint.opacity(colorScheme == .dark ? 0.20 : 0.15), lineWidth: 1)
-                    }
-                    .opacity(badgeVisible ? 1 : 0)
-                    .offset(y: badgeVisible ? 0 : 5)
-                    .position(x: badgeX, y: railY + 28)
-                    .animation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.86), value: badgeVisible)
+                HStack(spacing: 5) {
+                    Text(deltaBadgeText)
+                        .font(.system(size: 14, weight: .semibold, design: .default).monospacedDigit())
 
-                HStack(spacing: 7) {
-                    ScaleLegendChip(title: "Bio", value: biologicalAge.formattedOneDecimal, tint: tint, isPrimary: true)
-                    ScaleLegendChip(title: "Age", value: String(format: "%.0f", chronologicalAge), tint: LabPalette.secondaryText(for: colorScheme), isPrimary: false)
-                    ScaleLegendChip(title: "Confidence", value: confidence.rawValue, tint: LabPalette.accent(for: colorScheme), isPrimary: false)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .opacity(0.82)
                 }
+                .foregroundStyle(tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
                 .padding(.horizontal, 10)
-                .frame(width: max(width - 18, 1))
-                .position(x: centerX, y: height - 24)
+                .padding(.vertical, 6)
+                .pulsarLiquidGlass(
+                    cornerRadius: 16,
+                    tint: tint.opacity(colorScheme == .dark ? 0.10 : 0.055)
+                )
+                .overlay {
+                    Capsule(style: .continuous)
+                        .stroke(.white.opacity(colorScheme == .dark ? 0.22 : 0.52), lineWidth: 0.75)
+                }
+                .opacity(badgeVisible ? 1 : 0)
+                .offset(y: badgeVisible ? 0 : 5)
+                .position(x: center.x, y: badgeY)
+                .animation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.86), value: badgeVisible)
+
+                HStack(spacing: 0) {
+                    gaugeZoneLabel("Younger", color: LabPalette.positive(for: colorScheme), alignment: .leading)
+                    gaugeZoneLabel("Aligned", color: LabPalette.primaryText(for: colorScheme).opacity(colorScheme == .dark ? 0.78 : 0.66), alignment: .center)
+                    gaugeZoneLabel("Older", color: LabPalette.older(for: colorScheme), alignment: .trailing)
+                }
+                .frame(width: width - 4)
+                .position(x: center.x, y: 22)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         }
     }
 
     private var deltaBadgeText: String {
         if roundedDeltaMagnitude < 0.1 { return "Aligned" }
-        if delta < 0 { return "\(roundedDeltaMagnitude.formattedOneDecimal) yr younger" }
-        if delta > 0 { return "\(roundedDeltaMagnitude.formattedOneDecimal) yr older" }
+        if delta < 0 { return "\(roundedDeltaMagnitude.formattedOneDecimal) years younger" }
+        if delta > 0 { return "\(roundedDeltaMagnitude.formattedOneDecimal) years older" }
         return "Aligned"
     }
 
@@ -826,71 +1049,154 @@ private struct AgeDifferenceScaleView: View {
         (abs(delta) * 10).rounded() / 10
     }
 
-    private var scaleLabels: some View {
-        HStack {
-            Text("Younger")
-            Spacer()
-            Text("Aligned")
-            Spacer()
-            Text("Older")
-        }
-        .font(.caption2.weight(.semibold))
-        .textCase(.uppercase)
-        .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
-        .padding(.horizontal, 20)
+    private var gaugeStartAngle: Double { 200 }
+
+    private var gaugeEndAngle: Double { 340 }
+
+    private func gaugeAngle(for progress: Double) -> Double {
+        gaugeStartAngle + (gaugeEndAngle - gaugeStartAngle) * min(max(progress, 0), 1)
     }
 
-    private func ageRail(railWidth: CGFloat) -> some View {
-        ZStack {
-            Capsule(style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            LabPalette.positive(for: colorScheme).opacity(colorScheme == .dark ? 0.14 : 0.12),
-                            LabPalette.accent(for: colorScheme).opacity(colorScheme == .dark ? 0.17 : 0.13),
-                            LabPalette.warning(for: colorScheme).opacity(colorScheme == .dark ? 0.13 : 0.10)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
+    private func visualMarkerProgress(for displayedDelta: Double) -> Double {
+        guard abs(displayedDelta) >= 0.001 else { return 0.5 }
 
-            Capsule(style: .continuous)
-                .stroke(.white.opacity(colorScheme == .dark ? 0.12 : 0.58), lineWidth: 1)
+        guard abs(displayedDelta) >= 0.05 else { return 0.5 }
 
-            Rectangle()
-                .fill(LabPalette.secondaryText(for: colorScheme).opacity(colorScheme == .dark ? 0.18 : 0.14))
-                .frame(width: 1, height: 24)
-                .offset(y: -1)
-        }
-        .frame(width: railWidth, height: 8)
-        .shadow(color: LabPalette.accent(for: colorScheme).opacity(colorScheme == .dark ? 0.08 : 0.045), radius: 7, x: 0, y: 4)
+        let maxDelta = 1.5
+        let direction = displayedDelta < 0 ? -1.0 : 1.0
+        let normalizedMagnitude = min(abs(displayedDelta) / maxDelta, 1.0)
+        let visualOffset = 0.13 + normalizedMagnitude * 0.37
+        return min(max(0.5 + direction * visualOffset, 0.06), 0.94)
     }
 
-    private func scaleMarker(tint: Color, size: CGFloat, isPrimary: Bool) -> some View {
-        VStack(spacing: 2) {
-            Capsule(style: .continuous)
-                .fill(tint.opacity(isPrimary ? 0.40 : 0.18))
-                .frame(width: isPrimary ? 1.5 : 1, height: isPrimary ? 22 : 16)
-            ZStack {
-                Circle()
-                    .fill(tint.opacity(isPrimary ? (colorScheme == .dark ? 0.14 : 0.085) : 0.055))
-                    .frame(width: size + 13, height: size + 13)
-                    .blur(radius: isPrimary ? 1.0 : 0.3)
-                Circle()
-                    .fill(LabPalette.controlBackground(for: colorScheme))
-                    .frame(width: size + 6, height: size + 6)
-                    .overlay {
-                        Circle()
-                            .stroke(tint.opacity(isPrimary ? 0.54 : 0.28), lineWidth: isPrimary ? 1.3 : 1)
-                    }
-                Circle()
-                    .fill(tint)
-                    .frame(width: size, height: size)
-                    .shadow(color: tint.opacity(isPrimary ? 0.26 : 0.10), radius: isPrimary ? 5 : 2)
+    private func gaugePoint(center: CGPoint, radius: CGFloat, angleDegrees: Double) -> CGPoint {
+        let radians = angleDegrees * .pi / 180
+        return CGPoint(
+            x: center.x + CGFloat(cos(radians)) * radius,
+            y: center.y + CGFloat(sin(radians)) * radius
+        )
+    }
+
+    private func gaugeTickColor(progress: Double) -> Color {
+        if progress < 0.46 {
+            return LabPalette.positive(for: colorScheme)
+        }
+        if progress > 0.56 {
+            return LabPalette.older(for: colorScheme)
+        }
+        return LabPalette.accent(for: colorScheme)
+    }
+
+    private func gaugeTickOpacity(progress tickProgress: Double, markerProgress: Double, displayedDelta: Double, isMajor: Bool) -> Double {
+        let base: Double
+
+        if abs(tickProgress - 0.5) < 0.075 {
+            base = colorScheme == .dark ? 0.78 : 0.64
+        } else if displayedDelta <= 0 {
+            if tickProgress <= markerProgress + 0.02 {
+                base = colorScheme == .dark ? 0.96 : 0.82
+            } else if tickProgress > 0.5 {
+                base = colorScheme == .dark ? 0.45 : 0.34
+            } else {
+                base = colorScheme == .dark ? 0.68 : 0.54
+            }
+        } else {
+            if tickProgress >= markerProgress - 0.02 {
+                base = colorScheme == .dark ? 0.92 : 0.78
+            } else if tickProgress < 0.5 {
+                base = colorScheme == .dark ? 0.48 : 0.36
+            } else {
+                base = colorScheme == .dark ? 0.68 : 0.54
             }
         }
-        .offset(y: -9)
+
+        return isMajor ? base : base * 0.86
+    }
+
+    private func gaugeZoneLabel(_ text: String, color: Color, alignment: Alignment) -> some View {
+        Text(text)
+            .pulsarTextStyle(.overline)
+            .textCase(.uppercase)
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.50)
+            .frame(maxWidth: .infinity, alignment: alignment)
+    }
+
+    private func gaugeMarker(angleDegrees: Double, tint: Color) -> some View {
+        ZStack {
+            Capsule(style: .continuous)
+                .fill(tint.opacity(colorScheme == .dark ? 0.14 : 0.08))
+                .frame(width: 24, height: 42)
+                .opacity(0.24)
+
+            gaugeMarkerGlassBody(tint: tint)
+                .overlay {
+                    Capsule(style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    .white.opacity(colorScheme == .dark ? 0.16 : 0.28),
+                                    tint.opacity(colorScheme == .dark ? 0.10 : 0.08),
+                                    .clear
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+                .overlay {
+                    Capsule(style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    .white.opacity(colorScheme == .dark ? 0.55 : 0.82),
+                                    tint.opacity(colorScheme == .dark ? 0.62 : 0.42),
+                                    .white.opacity(0.12)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+
+            Capsule(style: .continuous)
+                .fill(tint.opacity(colorScheme == .dark ? 0.66 : 0.52))
+                .frame(width: 4, height: 18)
+                .shadow(color: tint.opacity(colorScheme == .dark ? 0.38 : 0.18), radius: 4)
+        }
+        .rotationEffect(.degrees(angleDegrees + 90))
+        .shadow(color: tint.opacity(colorScheme == .dark ? 0.24 : 0.10), radius: 5, x: 0, y: 0)
+    }
+
+    @ViewBuilder
+    private func gaugeMarkerGlassBody(tint: Color) -> some View {
+        let markerFill = LinearGradient(
+            colors: [
+                .white.opacity(colorScheme == .dark ? 0.24 : 0.42),
+                tint.opacity(colorScheme == .dark ? 0.12 : 0.075),
+                .white.opacity(colorScheme == .dark ? 0.06 : 0.18)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        if #available(iOS 26.0, *) {
+            Capsule(style: .continuous)
+                .fill(markerFill)
+                .frame(width: 15, height: 32)
+                .glassEffect(
+                    .clear.tint(tint.opacity(colorScheme == .dark ? 0.14 : 0.08)),
+                    in: Capsule(style: .continuous)
+                )
+                .clipShape(Capsule(style: .continuous))
+        } else {
+            Capsule(style: .continuous)
+                .fill(markerFill)
+                .frame(width: 15, height: 32)
+                .background(.ultraThinMaterial, in: Capsule(style: .continuous))
+        }
     }
 }
 
@@ -909,7 +1215,7 @@ private struct ScaleLegendChip: View {
                 .shadow(color: tint.opacity(isPrimary ? (colorScheme == .dark ? 0.24 : 0.10) : 0), radius: 3)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.caption2.weight(.semibold))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
                     .lineLimit(1)
                     .minimumScaleFactor(0.66)
@@ -947,8 +1253,9 @@ private struct AgeStatChipView: View {
                 Image(systemName: symbol)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(resolvedTint)
-                    .frame(width: 21, height: 21)
-                    .background(resolvedTint.opacity(colorScheme == .dark ? 0.10 : 0.08), in: Circle())
+                    .frame(width: 19, height: 19)
+                    .background(resolvedTint.opacity(colorScheme == .dark ? 0.16 : 0.10), in: Circle())
+                    .shadow(color: resolvedTint.opacity(colorScheme == .dark ? 0.16 : 0.06), radius: 6)
                 Spacer(minLength: 0)
             }
 
@@ -959,41 +1266,20 @@ private struct AgeStatChipView: View {
                 .minimumScaleFactor(0.56)
 
             Text(value)
-                .font(.subheadline.weight(.bold).monospacedDigit())
-                .foregroundStyle(LabPalette.primaryText(for: colorScheme))
+                .pulsarTextStyle(.label)
+                .monospacedDigit()
+                .foregroundStyle(tint == nil ? LabPalette.primaryText(for: colorScheme) : resolvedTint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.70)
         }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, minHeight: 78, idealHeight: 80, alignment: .leading)
-        .background(
-            LinearGradient(
-                colors: [
-                    LabPalette.controlBackground(for: colorScheme).opacity(colorScheme == .dark ? 0.78 : 0.95),
-                    resolvedTint.opacity(colorScheme == .dark ? 0.035 : 0.030)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 17, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 17, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [
-                            .white.opacity(colorScheme == .dark ? 0.08 : 0.68),
-                            resolvedTint.opacity(colorScheme == .dark ? 0.16 : 0.13),
-                            LabPalette.controlBorder(for: colorScheme)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
-        }
-        .shadow(color: resolvedTint.opacity(colorScheme == .dark ? 0.07 : 0.035), radius: 8, x: 0, y: 4)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, minHeight: 68, idealHeight: 72, alignment: .leading)
+        .modifier(FitnessGlassSurfaceModifier(
+            cornerRadius: 15,
+            tint: LabPalette.glassTint(for: colorScheme),
+            borderOpacity: 0.78
+        ))
     }
 }
 
@@ -1005,12 +1291,29 @@ struct LabGenomeIconView: View {
     var body: some View {
         ZStack {
             Circle()
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    .white.opacity(colorScheme == .dark ? 0.16 : 0.62),
+                                    LabPalette.accent(for: colorScheme).opacity(colorScheme == .dark ? 0.08 : 0.14),
+                                    .clear
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+
+            Circle()
                 .fill(
                     LinearGradient(
                         colors: [
-                            LabPalette.accent(for: colorScheme).opacity(colorScheme == .dark ? 0.20 : 0.11),
-                            LabPalette.positive(for: colorScheme).opacity(colorScheme == .dark ? 0.12 : 0.07),
-                            LabPalette.controlBackground(for: colorScheme)
+                            .white.opacity(colorScheme == .dark ? 0.11 : 0.46),
+                            LabPalette.accent(for: colorScheme).opacity(colorScheme == .dark ? 0.12 : 0.10),
+                            LabPalette.controlBackground(for: colorScheme).opacity(colorScheme == .dark ? 0.42 : 0.58)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -1032,12 +1335,50 @@ struct LabGenomeIconView: View {
                 .blur(radius: size * 0.035)
 
             Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            .white.opacity(colorScheme == .dark ? 0.24 : 0.72),
+                            .white.opacity(colorScheme == .dark ? 0.09 : 0.26),
+                            .clear
+                        ],
+                        center: UnitPoint(x: 0.20, y: 0.18),
+                        startRadius: 1,
+                        endRadius: size * 0.64
+                    )
+                )
+                .blendMode(.screen)
+
+            Ellipse()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            .white.opacity(colorScheme == .dark ? 0.40 : 0.84),
+                            .white.opacity(colorScheme == .dark ? 0.12 : 0.28),
+                            .clear
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: size * 0.52, height: size * 0.22)
+                .rotationEffect(.degrees(-28))
+                .offset(x: -size * 0.18, y: -size * 0.24)
+                .blur(radius: 0.5)
+
+            Ellipse()
+                .stroke(.white.opacity(colorScheme == .dark ? 0.15 : 0.42), lineWidth: 1)
+                .frame(width: size * 0.50, height: size * 0.72)
+                .rotationEffect(.degrees(32))
+                .offset(x: size * 0.20, y: -size * 0.02)
+
+            Circle()
                 .stroke(
                     LinearGradient(
                         colors: [
-                            .white.opacity(colorScheme == .dark ? 0.26 : 0.92),
-                            LabPalette.accent(for: colorScheme).opacity(colorScheme == .dark ? 0.26 : 0.28),
-                            .black.opacity(colorScheme == .dark ? 0.14 : 0.04)
+                            .white.opacity(colorScheme == .dark ? 0.58 : 0.98),
+                            LabPalette.accent(for: colorScheme).opacity(colorScheme == .dark ? 0.36 : 0.26),
+                            .white.opacity(colorScheme == .dark ? 0.10 : 0.42)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -1046,14 +1387,22 @@ struct LabGenomeIconView: View {
                 )
 
             LabGenomeIconGlyphView(tint: LabPalette.accent(for: colorScheme))
-                .frame(width: size * 0.66, height: size * 0.72)
+                .frame(width: size * 0.62, height: size * 0.68)
 
             Circle()
-                .stroke(.white.opacity(colorScheme == .dark ? 0.07 : 0.30), lineWidth: 0.7)
+                .stroke(.white.opacity(colorScheme == .dark ? 0.12 : 0.38), lineWidth: 0.7)
                 .padding(size * 0.17)
         }
         .frame(width: size, height: size)
-        .shadow(color: LabPalette.accent(for: colorScheme).opacity(colorScheme == .dark ? 0.13 : 0.06), radius: size * 0.16, x: 0, y: size * 0.07)
+        .clipShape(Circle())
+        .pulsarLiquidGlass(
+            cornerRadius: size / 2,
+            tint: LabPalette.accent(for: colorScheme).opacity(colorScheme == .dark ? 0.16 : 0.08),
+            isClear: true
+        )
+        .shadow(color: .white.opacity(colorScheme == .dark ? 0.13 : 0.34), radius: size * 0.13, x: -size * 0.03, y: -size * 0.04)
+        .shadow(color: LabPalette.accent(for: colorScheme).opacity(colorScheme == .dark ? 0.38 : 0.14), radius: size * 0.24, x: 0, y: size * 0.08)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.09), radius: size * 0.18, x: 0, y: size * 0.12)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Lab")
         .accessibilityHint("Biological age and biomarkers")
@@ -1477,405 +1826,6 @@ private struct LabCapsuleParticles: View {
     }
 }
 
-private enum LabTrajectoryStatus: String, CaseIterable {
-    case waiting
-    case improving
-    case stable
-    case accelerating
-
-    var title: String {
-        switch self {
-        case .waiting:
-            return "Waiting for history"
-        case .improving:
-            return "Improving"
-        case .stable:
-            return "Stable"
-        case .accelerating:
-            return "Accelerating"
-        }
-    }
-
-    var explanation: String {
-        switch self {
-        case .waiting:
-            return "Complete at least 3 weekly biological age calculations to unlock trajectory."
-        case .improving:
-            return "Your biological age is trending slower than your chronological age."
-        case .stable:
-            return "Your biological age is moving in line with your chronological age."
-        case .accelerating:
-            return "Your biological age is trending faster than expected."
-        }
-    }
-
-    var markerProgress: CGFloat {
-        switch self {
-        case .waiting:
-            return 0.50
-        case .improving:
-            return 0.16
-        case .stable:
-            return 0.50
-        case .accelerating:
-            return 0.84
-        }
-    }
-
-    func tint(for colorScheme: ColorScheme) -> Color {
-        switch self {
-        case .waiting:
-            return LabPalette.accent(for: colorScheme)
-        case .improving:
-            return LabPalette.positive(for: colorScheme)
-        case .stable:
-            return LabPalette.accent(for: colorScheme)
-        case .accelerating:
-            return LabPalette.warning(for: colorScheme)
-        }
-    }
-}
-
-private struct LabHealthTrajectoryCard: View {
-    let result: BiologicalAgeResult
-    let trendResults: [BiologicalAgeResult]
-    @State private var markerProgress: CGFloat = 0.5
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        let status = trajectoryStatus
-        let tint = status.tint(for: colorScheme)
-
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Health Trajectory")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(LabPalette.primaryText(for: colorScheme))
-                    Text(subtitle)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .layoutPriority(1)
-
-                Spacer(minLength: 8)
-
-                LabTrajectoryStatusPill(text: status.title, tint: tint)
-            }
-
-            LabTrajectoryZoneRail(
-                status: status,
-                markerProgress: markerProgress,
-                hasTrajectory: hasTrajectory,
-                tint: tint
-            )
-            .frame(height: 148)
-
-            if hasTrajectory {
-                HStack(spacing: 10) {
-                    LabTrajectoryMetricTile(title: "Weekly change", value: weeklyChangeText, tint: tint)
-                    LabTrajectoryMetricTile(title: "4-week pace", value: paceText, tint: LabPalette.accent(for: colorScheme))
-                }
-
-                Text(status.explanation)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(status.explanation)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(LabPalette.primaryText(for: colorScheme))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("Pulsar recalculates every Monday.")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
-                }
-                .padding(15)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(LabPalette.controlBackground(for: colorScheme), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(LabPalette.controlBorder(for: colorScheme), lineWidth: 1)
-                }
-            }
-        }
-        .padding(20)
-        .labGlassCard(cornerRadius: 30, glow: tint.opacity(colorScheme == .dark ? 0.14 : 0.07))
-        .onAppear {
-            if reduceMotion {
-                markerProgress = status.markerProgress
-            } else {
-                withAnimation(.spring(response: 0.72, dampingFraction: 0.86).delay(0.12)) {
-                    markerProgress = status.markerProgress
-                }
-            }
-        }
-        .onChange(of: status.markerProgress) { _, newValue in
-            if reduceMotion {
-                markerProgress = newValue
-            } else {
-                withAnimation(.spring(response: 0.72, dampingFraction: 0.86)) {
-                    markerProgress = newValue
-                }
-            }
-        }
-    }
-
-    private var trajectoryResults: [BiologicalAgeResult] {
-        var results = trendResults
-
-        if !results.contains(where: { Calendar.current.isDate($0.updatedAt, inSameDayAs: result.updatedAt) }) {
-            results.append(result)
-        }
-
-        return Array(results.sorted { $0.updatedAt < $1.updatedAt }.suffix(4))
-    }
-
-    private var hasTrajectory: Bool {
-        trajectoryResults.count >= 3
-    }
-
-    private var subtitle: String {
-        hasTrajectory
-            ? "Your biological age direction over time"
-            : "Trajectory unlocks after multiple weekly calculations"
-    }
-
-    private var periodChange: Double {
-        guard hasTrajectory,
-              let oldest = trajectoryResults.first,
-              let newest = trajectoryResults.last else { return 0 }
-        return newest.biologicalAge - oldest.biologicalAge
-    }
-
-    private var latestWeeklyChange: Double {
-        guard hasTrajectory,
-              trajectoryResults.count >= 2,
-              let newest = trajectoryResults.last,
-              let previous = trajectoryResults.dropLast().last else { return 0 }
-        return newest.biologicalAge - previous.biologicalAge
-    }
-
-    private var trajectoryStatus: LabTrajectoryStatus {
-        guard hasTrajectory else { return .waiting }
-
-        if periodChange <= -0.2 || pace < 0.98 {
-            return .improving
-        }
-
-        if periodChange >= 0.2 || pace > 1.02 {
-            return .accelerating
-        }
-
-        return .stable
-    }
-
-    private var pace: Double {
-        if let paceOfAging = result.paceOfAging {
-            return min(max(paceOfAging, 0.90), 1.10)
-        }
-
-        guard hasTrajectory else { return 1.0 }
-        return min(max(1 + latestWeeklyChange * 0.10, 0.90), 1.10)
-    }
-
-    private var weeklyChangeText: String {
-        guard abs(latestWeeklyChange) >= 0.05 else { return "No meaningful change" }
-        return String(format: "%+.1f yr this week", latestWeeklyChange)
-    }
-
-    private var paceText: String {
-        String(format: "%.2fx pace", pace)
-    }
-}
-
-private struct LabTrajectoryStatusPill: View {
-    let text: String
-    let tint: Color
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        Text(text)
-            .font(.caption2.weight(.bold))
-            .lineLimit(1)
-            .minimumScaleFactor(0.70)
-            .fixedSize(horizontal: true, vertical: false)
-            .foregroundStyle(tint)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(tint.opacity(colorScheme == .dark ? 0.13 : 0.09), in: Capsule(style: .continuous))
-            .overlay {
-                Capsule(style: .continuous)
-                    .stroke(tint.opacity(colorScheme == .dark ? 0.32 : 0.22), lineWidth: 1)
-            }
-    }
-}
-
-private struct LabTrajectoryZoneRail: View {
-    let status: LabTrajectoryStatus
-    let markerProgress: CGFloat
-    let hasTrajectory: Bool
-    let tint: Color
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let railWidth = max(width - 34, 1)
-            let railY: CGFloat = 68
-            let markerX = 17 + railWidth * min(max(markerProgress, 0), 1)
-            let zoneColors = [
-                LabPalette.positive(for: colorScheme),
-                LabPalette.accent(for: colorScheme),
-                LabPalette.warning(for: colorScheme)
-            ]
-            let zoneLabels = ["Improving", "Stable", "Accelerating"]
-
-            ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                LabPalette.controlBackground(for: colorScheme),
-                                tint.opacity(colorScheme == .dark ? 0.08 : 0.045)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-
-                HStack(spacing: 0) {
-                    ForEach(0..<3, id: \.self) { index in
-                        zoneColors[index]
-                            .opacity(hasTrajectory ? (colorScheme == .dark ? 0.22 : 0.16) : (colorScheme == .dark ? 0.10 : 0.075))
-                            .frame(maxWidth: .infinity)
-                            .overlay(alignment: .top) {
-                                LinearGradient(
-                                    colors: [
-                                        .white.opacity(colorScheme == .dark ? 0.10 : 0.28),
-                                        .clear
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            }
-                    }
-                }
-                .frame(width: railWidth, height: 18)
-                .clipShape(Capsule(style: .continuous))
-                .overlay {
-                    Capsule(style: .continuous)
-                        .stroke(.white.opacity(colorScheme == .dark ? 0.14 : 0.48), lineWidth: 1)
-                }
-                .position(x: width / 2, y: railY)
-
-                Capsule(style: .continuous)
-                    .fill(tint.opacity(hasTrajectory ? (colorScheme == .dark ? 0.36 : 0.28) : 0.16))
-                    .frame(width: max(railWidth * 0.21, 54), height: 5)
-                    .blur(radius: 7)
-                    .position(x: markerX, y: railY)
-
-                ForEach(0..<3, id: \.self) { index in
-                    let zoneX = 17 + railWidth * (CGFloat(index) + 0.5) / 3
-                    VStack(spacing: 8) {
-                        Text(zoneLabels[index])
-                            .font(.caption2.weight(statusIndex == index ? .bold : .semibold))
-                            .foregroundStyle(labelColor(index: index))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.74)
-
-                        RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(zoneColors[index].opacity(statusIndex == index && hasTrajectory ? 0.72 : 0.24))
-                            .frame(width: 2, height: 18)
-                    }
-                    .frame(width: railWidth / 3)
-                    .position(x: zoneX, y: 34)
-                }
-
-                trajectoryMarker
-                    .position(x: markerX, y: railY)
-
-                HStack(spacing: 8) {
-                    Image(systemName: hasTrajectory ? "waveform.path.ecg" : "lock.fill")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(tint)
-                        .frame(width: 22, height: 22)
-                        .background(tint.opacity(colorScheme == .dark ? 0.13 : 0.09), in: Circle())
-
-                    Text(hasTrajectory ? "Based on repeated Monday calculations." : "Locked until 3 weekly results are available.")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.86)
-                }
-                .padding(.horizontal, 13)
-                .padding(.vertical, 10)
-                .background(LabPalette.cardBackground(for: colorScheme), in: Capsule(style: .continuous))
-                .overlay {
-                    Capsule(style: .continuous)
-                        .stroke(LabPalette.controlBorder(for: colorScheme), lineWidth: 1)
-                }
-                .position(x: width / 2, y: 122)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .stroke(LabPalette.controlBorder(for: colorScheme), lineWidth: 1)
-            }
-        }
-    }
-
-    private var statusIndex: Int {
-        switch status {
-        case .improving:
-            return 0
-        case .waiting, .stable:
-            return 1
-        case .accelerating:
-            return 2
-        }
-    }
-
-    private var trajectoryMarker: some View {
-        ZStack {
-            Circle()
-                .fill(tint.opacity(colorScheme == .dark ? 0.18 : 0.12))
-                .frame(width: 54, height: 54)
-                .blur(radius: 5)
-
-            Circle()
-                .fill(LabPalette.cardBackground(for: colorScheme))
-                .frame(width: 42, height: 42)
-                .overlay {
-                    Circle()
-                        .stroke(tint.opacity(colorScheme == .dark ? 0.60 : 0.44), lineWidth: 1.2)
-                }
-
-            Circle()
-                .fill(tint)
-                .frame(width: hasTrajectory ? 13 : 9, height: hasTrajectory ? 13 : 9)
-                .shadow(color: tint.opacity(colorScheme == .dark ? 0.42 : 0.20), radius: 10)
-
-            if !hasTrajectory {
-                Image(systemName: "lock.fill")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(tint)
-                    .offset(y: 15)
-            }
-        }
-    }
-
-    private func labelColor(index: Int) -> Color {
-        if hasTrajectory, statusIndex == index {
-            return LabPalette.primaryText(for: colorScheme)
-        }
-
-        return LabPalette.secondaryText(for: colorScheme)
-    }
-}
-
 private struct LabTrajectoryMetricTile: View {
     let title: String
     let value: String
@@ -1885,11 +1835,12 @@ private struct LabTrajectoryMetricTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
-                .font(.caption2.weight(.bold))
+                .pulsarTextStyle(.overline)
                 .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
                 .lineLimit(1)
             Text(value)
-                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .pulsarTextStyle(.label)
+                                .monospacedDigit()
                 .foregroundStyle(LabPalette.primaryText(for: colorScheme))
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
@@ -1901,6 +1852,116 @@ private struct LabTrajectoryMetricTile: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(tint.opacity(colorScheme == .dark ? 0.18 : 0.13), lineWidth: 1)
         }
+    }
+}
+
+private struct LabInsightSummaryCard: View {
+    let title: String
+    let value: String
+    let subtitle: String
+    let footer: String
+    let symbol: String
+    let tint: Color
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 9) {
+                Image(systemName: symbol)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.94))
+                    .frame(width: 30, height: 30)
+                    .background(
+                        RadialGradient(
+                            colors: [
+                                tint.opacity(colorScheme == .dark ? 0.95 : 0.84),
+                                tint.opacity(colorScheme == .dark ? 0.44 : 0.34)
+                            ],
+                            center: .topLeading,
+                            startRadius: 3,
+                            endRadius: 28
+                        ),
+                        in: Circle()
+                    )
+                    .overlay {
+                        Circle()
+                            .stroke(.white.opacity(colorScheme == .dark ? 0.20 : 0.44), lineWidth: 1)
+                    }
+                    .shadow(color: tint.opacity(colorScheme == .dark ? 0.24 : 0.12), radius: 10, x: 0, y: 5)
+
+                Text(title)
+                    .font(.system(size: 16, weight: .semibold, design: .default))
+                    .foregroundStyle(LabPalette.primaryText(for: colorScheme))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value)
+                    .font(.system(size: 30, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(LabPalette.primaryText(for: colorScheme))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.70)
+
+                Text(subtitle)
+                    .pulsarTextStyle(.label)
+                    .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
+            }
+
+            HStack(alignment: .bottom, spacing: 10) {
+                Text(footer)
+                    .pulsarTextStyle(.captionEmphasis)
+                    .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
+
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(LabPalette.primaryText(for: colorScheme))
+                    .frame(width: 28, height: 28)
+                    .background(tint.opacity(colorScheme == .dark ? 0.12 : 0.08), in: Circle())
+                    .overlay {
+                        Circle()
+                            .stroke(tint.opacity(colorScheme == .dark ? 0.26 : 0.18), lineWidth: 1)
+                    }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 124, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [
+                    .white.opacity(colorScheme == .dark ? 0.022 : 0.36),
+                    tint.opacity(colorScheme == .dark ? 0.026 : 0.022),
+                    .black.opacity(colorScheme == .dark ? 0.015 : 0.00)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+        )
+        .pulsarLiquidGlass(
+            cornerRadius: 20,
+            tint: tint.opacity(colorScheme == .dark ? 0.040 : 0.025),
+            isClear: true
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            .white.opacity(colorScheme == .dark ? 0.32 : 0.72),
+                            tint.opacity(colorScheme == .dark ? 0.24 : 0.18),
+                            .white.opacity(colorScheme == .dark ? 0.10 : 0.32)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        }
+        .shadow(color: tint.opacity(colorScheme == .dark ? 0.10 : 0.04), radius: 8, x: 0, y: 4)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -1925,11 +1986,12 @@ private struct LabHeroMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.caption.weight(.medium))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
                 .lineLimit(1)
             Text(value)
-                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .pulsarTextStyle(.label)
+                                .monospacedDigit()
                 .foregroundStyle(LabPalette.primaryText(for: colorScheme))
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
@@ -1953,16 +2015,104 @@ private struct LabSectionTitle: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(LabPalette.primaryText(for: colorScheme))
+                .pulsarTextStyle(.sectionTitle)
+                .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
             if let subtitle {
                 Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
+                    .pulsarTextStyle(.screenSubtitle)
+                    .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, 2)
+    }
+}
+
+private struct LabPillarSignalsList: View {
+    let pillars: [LabPillarResult]
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ForEach(pillars) { pillar in
+                LabPillarSignalRow(pillar: pillar)
+            }
+        }
+    }
+}
+
+private struct LabPillarSignalRow: View {
+    let pillar: LabPillarResult
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: pillar.kind.labSymbol)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 42, height: 42)
+                .background(tint.opacity(colorScheme == .dark ? 0.14 : 0.11), in: Circle())
+                .overlay {
+                    Circle()
+                        .stroke(.white.opacity(colorScheme == .dark ? 0.08 : 0.44), lineWidth: 0.75)
+                }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(pillar.kind.title)
+                    .pulsarTextStyle(.cardTitle)
+                    .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.74)
+
+                Text(pillar.statusLabel)
+                    .pulsarTextStyle(.captionEmphasis)
+                    .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.74)
+            }
+
+            Spacer(minLength: 8)
+
+            Text(scoreText)
+                .pulsarTextStyle(.metricMedium)
+                .monospacedDigit()
+                .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
+                .lineLimit(1)
+                .minimumScaleFactor(0.70)
+
+            Image(systemName: "chevron.right")
+                .pulsarTextStyle(.captionEmphasis)
+                .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme).opacity(0.72))
+        }
+        .padding(15)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(FitnessGlassSurfaceModifier(
+            cornerRadius: 28,
+            tint: LabPalette.glassTint(for: colorScheme),
+            borderOpacity: 0.92
+        ))
+        .overlay(alignment: .leading) {
+            Capsule(style: .continuous)
+                .fill(tint)
+                .frame(width: 4)
+                .padding(.vertical, 18)
+                .padding(.leading, 1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(pillar.kind.title), \(scoreText), \(pillar.statusLabel). \(pillar.explanation)")
+    }
+
+    private var scoreText: String {
+        guard let score = pillar.score else { return "--" }
+        return "\(Int(score.rounded()))"
+    }
+
+    private var tint: Color {
+        guard let score = pillar.score else { return LabPalette.tertiaryText(for: colorScheme) }
+        switch score {
+        case 86...100: return LabPalette.positive(for: colorScheme)
+        case 72..<86: return LabPalette.accent(for: colorScheme)
+        default: return LabPalette.warning(for: colorScheme)
+        }
     }
 }
 
@@ -1981,19 +2131,20 @@ private struct LabPillarCard: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(pillar.kind.title)
-                        .font(.headline.weight(.semibold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(LabPalette.primaryText(for: colorScheme))
                         .lineLimit(1)
                         .minimumScaleFactor(0.74)
                     Text(pillar.statusLabel)
-                        .font(.caption.weight(.bold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(tint)
                 }
 
                 Spacer()
 
                 Text(scoreText)
-                    .font(.title3.weight(.bold).monospacedDigit())
+                    .pulsarTextStyle(.metricMedium)
+                                .monospacedDigit()
                     .foregroundStyle(LabPalette.primaryText(for: colorScheme))
                     .minimumScaleFactor(0.7)
             }
@@ -2002,7 +2153,7 @@ private struct LabPillarCard: View {
                 .frame(height: 8)
 
             Text(pillar.explanation)
-                .font(.caption)
+                .pulsarTextStyle(.caption)
                 .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -2065,7 +2216,7 @@ private struct LabMiniPill: View {
 
     var body: some View {
         Text(text)
-            .font(.caption2.weight(.bold))
+            .pulsarTextStyle(.overline)
             .lineLimit(1)
             .minimumScaleFactor(0.72)
             .foregroundStyle(tint)
@@ -2084,7 +2235,7 @@ private struct DataConfidenceCard: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Data confidence")
-                        .font(.headline.weight(.semibold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(LabPalette.primaryText(for: colorScheme))
                     Text("\(confidencePercent)%")
                         .font(.system(size: 36, weight: .bold, design: .rounded).monospacedDigit())
@@ -2097,7 +2248,7 @@ private struct DataConfidenceCard: View {
             }
 
             Text("Confidence improves with 20+ days of data and recent lab results. Blood markers should be less than 6 months old.")
-                .font(.subheadline)
+                .pulsarTextStyle(.label)
                 .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -2106,11 +2257,11 @@ private struct DataConfidenceCard: View {
                     ForEach(Array(result.missingDataMessages.prefix(3).enumerated()), id: \.offset) { _, message in
                         HStack(alignment: .top, spacing: 8) {
                             Image(systemName: "plus.circle.fill")
-                                .font(.caption)
+                                .pulsarTextStyle(.caption)
                                 .foregroundStyle(LabPalette.accent(for: colorScheme))
                                 .padding(.top, 2)
                             Text(message)
-                                .font(.caption)
+                                .pulsarTextStyle(.caption)
                                 .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -2151,10 +2302,10 @@ private struct LabEmptyStateCard: View {
 
             VStack(alignment: .leading, spacing: 7) {
                 Text("Build your biological age profile")
-                    .font(.title2.weight(.semibold))
+                    .pulsarTextStyle(.title)
                     .foregroundStyle(LabPalette.primaryText(for: colorScheme))
                 Text(emptyCopy)
-                    .font(.subheadline)
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -2166,7 +2317,7 @@ private struct LabEmptyStateCard: View {
 
             Button(action: onManualEntry) {
                 Label("Enter manually", systemImage: "square.and.pencil")
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.label)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
             }
@@ -2213,7 +2364,7 @@ private struct LabCommandButton: View {
                 Image(systemName: symbol)
                     .font(.system(size: 14, weight: .semibold))
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.label)
                     .lineLimit(1)
                     .minimumScaleFactor(0.68)
             }
@@ -2223,21 +2374,10 @@ private struct LabCommandButton: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(LabPalette.primaryText(for: colorScheme))
-        .background(
-            LinearGradient(
-                colors: [
-                    LabPalette.accent(for: colorScheme).opacity(colorScheme == .dark ? 0.18 : 0.10),
-                    LabPalette.positive(for: colorScheme).opacity(colorScheme == .dark ? 0.10 : 0.07),
-                    LabPalette.controlBackground(for: colorScheme)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-        )
+        .background(PulsarTheme.matrixPillBackground(for: colorScheme), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(LabPalette.controlBorder(for: colorScheme), lineWidth: 1)
+                .stroke(.white.opacity(colorScheme == .dark ? 0.12 : 0.64), lineWidth: 1)
         }
     }
 }
@@ -2294,12 +2434,12 @@ private struct BiomarkerRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 7) {
                     Text(biomarker.name)
-                        .font(.headline.weight(.semibold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(LabPalette.primaryText(for: colorScheme))
                         .lineLimit(1)
                         .minimumScaleFactor(0.74)
                     Text(biomarker.status.rawValue)
-                        .font(.caption2.weight(.bold))
+                        .pulsarTextStyle(.overline)
                         .foregroundStyle(statusTint)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
@@ -2307,7 +2447,7 @@ private struct BiomarkerRow: View {
                 }
 
                 Text(detailText)
-                    .font(.caption)
+                    .pulsarTextStyle(.caption)
                     .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
                     .lineLimit(2)
             }
@@ -2315,17 +2455,18 @@ private struct BiomarkerRow: View {
 
             VStack(alignment: .trailing, spacing: 3) {
                 Text(valueText)
-                    .font(.headline.weight(.bold).monospacedDigit())
+                    .pulsarTextStyle(.cardTitle)
+                                .monospacedDigit()
                     .foregroundStyle(LabPalette.primaryText(for: colorScheme))
                     .lineLimit(1)
                     .minimumScaleFactor(0.68)
                 Text(biomarker.unit.isEmpty ? " " : biomarker.unit)
-                    .font(.caption2.weight(.semibold))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(LabPalette.tertiaryText(for: colorScheme))
             }
 
             Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(LabPalette.tertiaryText(for: colorScheme))
         }
         .padding(15)
@@ -2361,10 +2502,10 @@ private struct BiomarkerDetailView: View {
                         HStack(alignment: .center) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(biomarker.name)
-                                    .font(.largeTitle.weight(.semibold))
+                                    .pulsarTextStyle(.displayLarge)
                                     .foregroundStyle(LabPalette.primaryText(for: colorScheme))
                                 Text(biomarker.status.rawValue)
-                                    .font(.subheadline.weight(.bold))
+                                    .pulsarTextStyle(.label)
                                     .foregroundStyle(statusTint)
                             }
                             Spacer()
@@ -2376,7 +2517,7 @@ private struct BiomarkerDetailView: View {
                         }
 
                         Text(biomarker.unit)
-                            .font(.subheadline.weight(.semibold))
+                            .pulsarTextStyle(.label)
                             .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
                     }
                     .padding(18)
@@ -2388,7 +2529,7 @@ private struct BiomarkerDetailView: View {
 
                     if let definition = LabBiomarkerDefinition.definition(for: biomarker.name) {
                         Text(definition.explanation)
-                            .font(.subheadline)
+                            .pulsarTextStyle(.label)
                             .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
                             .padding(16)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2402,7 +2543,7 @@ private struct BiomarkerDetailView: View {
                     if biomarker.value != nil {
                         Button(role: .destructive, action: onDelete) {
                             Label("Delete biomarker", systemImage: "trash")
-                                .font(.headline.weight(.semibold))
+                                .pulsarTextStyle(.cardTitle)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
                         }
@@ -2436,10 +2577,10 @@ private struct LabDetailRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
             Text(value)
-                .font(.subheadline.weight(.semibold))
+                .pulsarTextStyle(.label)
                 .foregroundStyle(LabPalette.primaryText(for: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -2516,10 +2657,10 @@ private struct ImportLabResultsView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Import Lab Results")
-                    .font(.title.weight(.semibold))
+                    .pulsarTextStyle(.displayMedium)
                     .foregroundStyle(LabPalette.primaryText(for: colorScheme))
                 Text("Select a PDF lab report. Extraction architecture is in place; parser connection will arrive in a later step.")
-                    .font(.subheadline)
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -2530,7 +2671,7 @@ private struct ImportLabResultsView: View {
 
             Button(action: onEnterManually) {
                 Label("Enter manually", systemImage: "square.and.pencil")
-                    .font(.headline.weight(.semibold))
+                    .pulsarTextStyle(.cardTitle)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
             }
@@ -2545,12 +2686,13 @@ private struct ImportLabResultsView: View {
     private func importingView(progress: Double) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Reading PDF")
-                .font(.title2.weight(.semibold))
+                .pulsarTextStyle(.title)
                 .foregroundStyle(LabPalette.primaryText(for: colorScheme))
             ProgressView(value: progress)
                 .tint(LabPalette.accent(for: colorScheme))
             Text("\(Int((progress * 100).rounded()))%")
-                .font(.headline.weight(.bold).monospacedDigit())
+                .pulsarTextStyle(.cardTitle)
+                                .monospacedDigit()
                 .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
         }
         .padding(20)
@@ -2560,7 +2702,7 @@ private struct ImportLabResultsView: View {
     private func reviewView(extracted: [LabBiomarker]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Review extracted biomarkers")
-                .font(.title2.weight(.semibold))
+                .pulsarTextStyle(.title)
                 .foregroundStyle(LabPalette.primaryText(for: colorScheme))
 
             ForEach(extracted) { biomarker in
@@ -2584,17 +2726,17 @@ private struct ImportLabResultsView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(title)
-                    .font(.title2.weight(.semibold))
+                    .pulsarTextStyle(.title)
                     .foregroundStyle(LabPalette.primaryText(for: colorScheme))
                 Text(message)
-                    .font(.subheadline)
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             Button(action: onEnterManually) {
                 Label("Enter manually", systemImage: "square.and.pencil")
-                    .font(.headline.weight(.semibold))
+                    .pulsarTextStyle(.cardTitle)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
             }
@@ -2607,7 +2749,7 @@ private struct ImportLabResultsView: View {
                     store.resetImportStatus()
                     isShowingPicker = true
                 }
-                .font(.subheadline.weight(.semibold))
+                .pulsarTextStyle(.label)
             }
         }
         .padding(20)
@@ -2645,7 +2787,7 @@ private struct ManualBiomarkerEntryView: View {
                         }
                     } label: {
                         Label(name.isEmpty ? "Choose common biomarker" : name, systemImage: "list.bullet")
-                            .font(.headline.weight(.semibold))
+                            .pulsarTextStyle(.cardTitle)
                             .foregroundStyle(LabPalette.primaryText(for: colorScheme))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(16)
@@ -2658,7 +2800,7 @@ private struct ManualBiomarkerEntryView: View {
                     LabTextField(title: "Unit", text: $unit, keyboardType: .default)
 
                     DatePicker("Date collected", selection: $collectedAt, displayedComponents: .date)
-                        .font(.headline.weight(.semibold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(LabPalette.primaryText(for: colorScheme))
                         .padding(16)
                         .background(LabPalette.controlBackground(for: colorScheme), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -2672,7 +2814,7 @@ private struct ManualBiomarkerEntryView: View {
 
                     Button(action: save) {
                         Label("Save biomarker", systemImage: "checkmark.circle.fill")
-                            .font(.headline.weight(.semibold))
+                            .pulsarTextStyle(.cardTitle)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 15)
                     }
@@ -2724,10 +2866,10 @@ private struct LabTextField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title)
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
             TextField(title, text: $text)
-                .font(.headline.weight(.semibold))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(LabPalette.primaryText(for: colorScheme))
                 .keyboardType(keyboardType)
                 .textInputAutocapitalization(.words)
@@ -2741,37 +2883,48 @@ private struct LabTextField: View {
     }
 }
 
-private struct LabDisclaimerCard: View {
+private struct LabPrivacyFooter: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        Text("Biological Age is an estimate based on available health, lifestyle, and biomarker data. It is not a diagnosis or a substitute for medical advice.")
-            .font(.caption)
-            .foregroundStyle(LabPalette.secondaryText(for: colorScheme))
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .labGlassCard(cornerRadius: 24, glow: Color.white.opacity(0.04))
+        VStack(spacing: 7) {
+            HStack(spacing: 7) {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("Your data is private and encrypted")
+                    .pulsarTextStyle(.captionEmphasis)
+            }
+            .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
+
+            Text("Biological Age is an estimate, not a diagnosis or a substitute for medical advice.")
+                .pulsarTextStyle(.caption)
+                .foregroundStyle(PulsarTheme.fitnessTertiaryText(for: colorScheme))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.horizontal, 20)
+        .padding(.top, 2)
+        .padding(.bottom, 6)
+        .accessibilityElement(children: .combine)
     }
 }
 
 private enum LabPalette {
     static func primaryText(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? .white.opacity(0.96)
-            : Color(red: 0.04, green: 0.08, blue: 0.12)
+        PulsarTheme.fitnessPrimaryText(for: colorScheme)
     }
 
     static func secondaryText(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? .white.opacity(0.68)
-            : Color(red: 0.25, green: 0.33, blue: 0.40)
+        PulsarTheme.fitnessSecondaryText(for: colorScheme)
     }
 
     static func tertiaryText(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? .white.opacity(0.44)
-            : Color(red: 0.45, green: 0.52, blue: 0.60)
+        PulsarTheme.fitnessTertiaryText(for: colorScheme)
+    }
+
+    static func glassTint(for _: ColorScheme) -> Color {
+        Color(red: 0.68, green: 0.80, blue: 0.92)
     }
 
     static func cardBackground(for colorScheme: ColorScheme) -> LinearGradient {
@@ -2779,13 +2932,13 @@ private enum LabPalette {
             colors: colorScheme == .dark
                 ? [
                     Color.white.opacity(0.095),
-                    Color(red: 0.018, green: 0.045, blue: 0.065).opacity(0.94),
-                    Color(red: 0.035, green: 0.14, blue: 0.13).opacity(0.24)
+                    Color(red: 0.055, green: 0.075, blue: 0.095).opacity(0.38),
+                    Color.black.opacity(0.14)
                 ]
                 : [
-                    Color.white.opacity(0.98),
-                    Color(red: 0.93, green: 0.98, blue: 1.00).opacity(0.95),
-                    Color(red: 0.74, green: 0.92, blue: 0.96).opacity(0.30)
+                    Color.white.opacity(0.78),
+                    Color(red: 0.90, green: 0.95, blue: 0.98).opacity(0.48),
+                    Color.white.opacity(0.20)
                 ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -2796,13 +2949,15 @@ private enum LabPalette {
         LinearGradient(
             colors: colorScheme == .dark
                 ? [
-                    .white.opacity(0.22),
-                    accent(for: colorScheme).opacity(0.24),
-                    .black.opacity(0.20)
+                    .white.opacity(0.36),
+                    .white.opacity(0.115),
+                    accent(for: colorScheme).opacity(0.14),
+                    .white.opacity(0.055)
                 ]
                 : [
                     .white.opacity(0.96),
-                    Color(red: 0.42, green: 0.70, blue: 0.78).opacity(0.30),
+                    .white.opacity(0.40),
+                    accent(for: colorScheme).opacity(0.18),
                     Color(red: 0.05, green: 0.17, blue: 0.22).opacity(0.08)
                 ],
             startPoint: .topLeading,
@@ -2812,20 +2967,26 @@ private enum LabPalette {
 
     static func controlBackground(for colorScheme: ColorScheme) -> Color {
         colorScheme == .dark
-            ? .white.opacity(0.065)
-            : Color(red: 0.97, green: 0.995, blue: 1.00).opacity(0.90)
+            ? .white.opacity(0.070)
+            : .white.opacity(0.72)
+    }
+
+    static func moduleBackground(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color(red: 0.115, green: 0.125, blue: 0.140)
+            : Color(red: 0.90, green: 0.94, blue: 0.96)
     }
 
     static func controlBorder(for colorScheme: ColorScheme) -> Color {
         colorScheme == .dark
-            ? .white.opacity(0.10)
+            ? .white.opacity(0.14)
             : Color(red: 0.25, green: 0.50, blue: 0.58).opacity(0.18)
     }
 
     static func accent(for colorScheme: ColorScheme) -> Color {
         colorScheme == .dark
-            ? Color(red: 0.42, green: 0.84, blue: 1.00)
-            : Color(red: 0.00, green: 0.42, blue: 0.52)
+            ? Color(red: 0.50, green: 0.78, blue: 0.90)
+            : Color(red: 0.16, green: 0.46, blue: 0.56)
     }
 
     static func accentSoft(for colorScheme: ColorScheme) -> Color {
@@ -2846,6 +3007,24 @@ private enum LabPalette {
             : Color(red: 0.78, green: 0.31, blue: 0.08)
     }
 
+    static func older(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color(red: 0.66, green: 0.58, blue: 1.00)
+            : Color(red: 0.42, green: 0.33, blue: 0.76)
+    }
+
+    static func tealTile(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color(red: 0.18, green: 0.88, blue: 0.72)
+            : Color(red: 0.00, green: 0.52, blue: 0.48)
+    }
+
+    static func purpleTile(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color(red: 0.50, green: 0.42, blue: 1.00)
+            : Color(red: 0.36, green: 0.28, blue: 0.76)
+    }
+
     static func negative(for colorScheme: ColorScheme) -> Color {
         colorScheme == .dark
             ? Color(red: 1.00, green: 0.39, blue: 0.42)
@@ -2854,58 +3033,25 @@ private enum LabPalette {
 }
 
 private struct LabModuleBackground: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        ZStack {
-            PulsarSectionBackground()
-
-            LinearGradient(
-                colors: backgroundColors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-        }
-    }
-
-    private var backgroundColors: [Color] {
-        if colorScheme == .dark {
-            [
-                Color(red: 0.015, green: 0.060, blue: 0.075).opacity(0.96),
-                Color.black.opacity(0.88),
-                Color(red: 0.055, green: 0.115, blue: 0.165).opacity(0.92),
-                Color(red: 0.035, green: 0.13, blue: 0.11).opacity(0.48)
-            ]
-        } else {
-            [
-                Color(red: 0.93, green: 0.985, blue: 1.00).opacity(0.98),
-                Color.white.opacity(0.98),
-                Color(red: 0.88, green: 0.965, blue: 1.00).opacity(0.86),
-                Color(red: 0.80, green: 0.94, blue: 0.91).opacity(0.46)
-            ]
-        }
+        FitnessWeeklyBackground()
     }
 }
 
 private struct LabGlassCardModifier: ViewModifier {
     let cornerRadius: CGFloat
-    let glow: Color
     @Environment(\.colorScheme) private var colorScheme
 
+    @ViewBuilder
     func body(content: Content) -> some View {
         content
-            .background {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(LabPalette.cardBackground(for: colorScheme))
-            }
-            .pulsarLiquidGlass(cornerRadius: cornerRadius)
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(LabPalette.cardBorder(for: colorScheme), lineWidth: 1)
-            }
-            .shadow(color: glow, radius: colorScheme == .dark ? 20 : 12, x: 0, y: colorScheme == .dark ? 12 : 7)
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.22 : 0.06), radius: colorScheme == .dark ? 16 : 12, x: 0, y: colorScheme == .dark ? 10 : 7)
+            .modifier(
+                FitnessGlassSurfaceModifier(
+                    cornerRadius: cornerRadius,
+                    tint: LabPalette.glassTint(for: colorScheme),
+                    borderOpacity: 1
+                )
+            )
     }
 }
 
@@ -2926,8 +3072,8 @@ private struct LabStaggeredAppearanceModifier: ViewModifier {
 }
 
 private extension View {
-    func labGlassCard(cornerRadius: CGFloat, glow: Color) -> some View {
-        modifier(LabGlassCardModifier(cornerRadius: cornerRadius, glow: glow))
+    func labGlassCard(cornerRadius: CGFloat, glow _: Color) -> some View {
+        modifier(LabGlassCardModifier(cornerRadius: cornerRadius))
     }
 
     func labStaggered(isVisible: Bool, index: Int) -> some View {
@@ -2939,9 +3085,9 @@ private extension LabPillarKind {
     var labSymbol: String {
         switch self {
         case .physiological:
-            return "figure.run.circle"
+            return "heart.fill"
         case .lifestyle:
-            return "leaf.circle"
+            return "leaf.fill"
         case .biomarkers:
             return "testtube.2"
         }

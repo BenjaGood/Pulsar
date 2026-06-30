@@ -367,7 +367,7 @@ struct WatchLiveRunView: View {
                     isShowingNowPlaying = true
                 } label: {
                     Image(systemName: "music.note")
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.white)
                         .frame(width: 30, height: 30)
                         .background(.thinMaterial, in: Circle())

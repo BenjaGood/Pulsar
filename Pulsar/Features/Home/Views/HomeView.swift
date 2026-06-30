@@ -657,9 +657,9 @@ private struct OuraDebugReportSheet: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Refresh \(report.reason)", systemImage: "arrow.triangle.2.circlepath.circle.fill")
-                .font(.headline.weight(.semibold))
+                .pulsarTextStyle(.cardTitle)
             Text(report.summary)
-                .font(.subheadline)
+                .pulsarTextStyle(.label)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 4) {
@@ -667,7 +667,7 @@ private struct OuraDebugReportSheet: View {
                 Text("Window \(report.windowStartKey) to \(report.windowEndKey)")
                 Text("Scopes \(report.scopes.isEmpty ? "none" : report.scopes.joined(separator: ", "))")
             }
-            .font(.caption.weight(.medium))
+            .pulsarTextStyle(.captionEmphasis)
             .foregroundStyle(.secondary)
         }
         .padding(14)
@@ -685,9 +685,9 @@ private struct OuraDebugReportSheet: View {
                             .frame(width: 8, height: 8)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(row.title): \(row.sampleCount)")
-                                .font(.caption.weight(.semibold))
+                                .pulsarTextStyle(.captionEmphasis)
                             Text(endpointDetail(row))
-                                .font(.caption2.weight(.medium))
+                                .pulsarTextStyle(.overline)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -708,14 +708,14 @@ private struct OuraDebugReportSheet: View {
                 ForEach(rows, id: \.title) { row in
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: row.isAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                            .font(.caption.weight(.bold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(row.isAvailable ? .green : .orange)
                             .frame(width: 18)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(row.title)
-                                .font(.caption.weight(.semibold))
+                                .pulsarTextStyle(.captionEmphasis)
                             Text(row.detail)
-                                .font(.caption2.weight(.medium))
+                                .pulsarTextStyle(.overline)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -730,7 +730,7 @@ private struct OuraDebugReportSheet: View {
 
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
-            .font(.caption.weight(.bold))
+            .pulsarTextStyle(.captionEmphasis)
             .textCase(.uppercase)
             .foregroundStyle(.secondary)
     }

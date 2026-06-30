@@ -51,7 +51,8 @@ struct MindfulnessSessionView: View {
                             .contentTransition(.opacity)
 
                         Text(remainingText(elapsed: elapsed))
-                            .font(.title3.weight(.semibold).monospacedDigit())
+                            .pulsarTextStyle(.metricMedium)
+                                .monospacedDigit()
                             .foregroundStyle(.white.opacity(0.68))
                     }
 
@@ -94,7 +95,7 @@ struct MindfulnessSessionView: View {
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.white.opacity(0.82))
                     .frame(width: 38, height: 38)
                     .background(.white.opacity(0.11), in: Circle())
@@ -103,7 +104,7 @@ struct MindfulnessSessionView: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(engine.template.category.title)
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.white.opacity(0.54))
                 Text(engine.template.title)
                     .font(.system(size: 30, weight: .bold, design: .rounded))
@@ -115,7 +116,8 @@ struct MindfulnessSessionView: View {
             Spacer(minLength: 0)
 
             Text(engine.template.durationText)
-                .font(.subheadline.weight(.bold).monospacedDigit())
+                .pulsarTextStyle(.label)
+                                .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.78))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 9)
@@ -130,7 +132,7 @@ struct MindfulnessSessionView: View {
                     engine.resume()
                 } label: {
                     Label("Resume", systemImage: "play.fill")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                 }
@@ -142,7 +144,7 @@ struct MindfulnessSessionView: View {
                     }
                 } label: {
                     Label(engine.phase == .preparing ? "Settling" : "Pause", systemImage: engine.phase == .preparing ? "sparkles" : "pause.fill")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                 }
@@ -155,7 +157,7 @@ struct MindfulnessSessionView: View {
                 engine.finish()
             } label: {
                 Text("End")
-                    .font(.subheadline.weight(.bold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(.white.opacity(0.76))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
@@ -319,16 +321,16 @@ private struct MindfulnessSessionSummaryOverlay: View {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .top) {
                     Image(systemName: "checkmark.seal.fill")
-                        .font(.title2.weight(.bold))
+                        .pulsarTextStyle(.title)
                         .foregroundStyle(summary.category.accent)
                         .frame(width: 46, height: 46)
                         .background(summary.category.accent.opacity(0.16), in: Circle())
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Session complete")
-                            .font(.title2.weight(.bold))
+                            .pulsarTextStyle(.title)
                         Text(summary.title)
-                            .font(.subheadline)
+                            .pulsarTextStyle(.label)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -341,7 +343,7 @@ private struct MindfulnessSessionSummaryOverlay: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Reflection")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                     TextEditor(text: $reflectionText)
                         .frame(minHeight: 84)
                         .scrollContentBackground(.hidden)
@@ -350,7 +352,7 @@ private struct MindfulnessSessionSummaryOverlay: View {
 
                 Button(action: onDone) {
                     Text("Done")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                 }

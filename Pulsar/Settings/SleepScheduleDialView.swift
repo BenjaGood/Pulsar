@@ -118,14 +118,14 @@ struct SleepScheduleDialView: View {
 
     private func referenceLabel(_ text: String, angle: Angle, radius: CGFloat) -> some View {
         Text(text)
-            .font(.caption2.weight(.semibold))
+            .pulsarTextStyle(.overline)
             .foregroundStyle(.secondary)
             .offset(x: CGFloat(cos(angle.radians)) * radius, y: CGFloat(sin(angle.radians)) * radius)
     }
 
     private func referenceSymbol(_ symbol: String, angle: Angle, radius: CGFloat, tint: Color) -> some View {
         Image(systemName: symbol)
-            .font(.caption.weight(.bold))
+            .pulsarTextStyle(.captionEmphasis)
             .foregroundStyle(tint.opacity(0.82))
             .offset(x: CGFloat(cos(angle.radians)) * radius, y: CGFloat(sin(angle.radians)) * radius)
     }
@@ -215,7 +215,7 @@ struct SleepScheduleDialView: View {
     private func dialCenter(size: CGFloat) -> some View {
         VStack(spacing: 5) {
             Text("Target Sleep")
-                .font(.caption.weight(.semibold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
             Text(durationText(minutes: schedule.targetSleepDurationMinutes))
@@ -223,7 +223,7 @@ struct SleepScheduleDialView: View {
                 .monospacedDigit()
                 .minimumScaleFactor(0.72)
             Text(durationStatusText(minutes: schedule.targetSleepDurationMinutes))
-                .font(.footnote.weight(.medium))
+                .pulsarTextStyle(.metadata)
                 .foregroundStyle(schedule.targetSleepDurationMinutes >= Int(PulsarSharedSleepCalculator.defaultTargetSleepHours * 60) ? .cyan : .secondary)
                 .multilineTextAlignment(.center)
         }

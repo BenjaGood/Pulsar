@@ -55,7 +55,7 @@ struct PulsarWorkoutShareComposerView: View {
                         renderShareImage()
                     } label: {
                         Label("Share", systemImage: "square.and.arrow.up")
-                            .font(.headline.weight(.bold))
+                            .pulsarTextStyle(.cardTitle)
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(PulsarShareControlButtonStyle(tint: content.tint, isProminent: true))
@@ -376,7 +376,7 @@ private struct PulsarWorkoutShareCard: View {
                     .padding(90)
             } else {
                 Image(systemName: content.symbolName)
-                    .font(.system(size: 260, weight: .black))
+                    .font(.system(size: 260, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.12))
             }
         }
@@ -488,7 +488,7 @@ private struct PulsarShareControlButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.headline.weight(.bold))
+            .pulsarTextStyle(.cardTitle)
             .foregroundStyle(isProminent ? .white : tint)
             .padding(.vertical, 15)
             .padding(.horizontal, 16)

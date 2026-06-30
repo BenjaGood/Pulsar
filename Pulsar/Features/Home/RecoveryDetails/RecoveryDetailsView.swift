@@ -236,7 +236,7 @@ struct RecoveryTrendGraphView: View {
                             .position(x: x, y: plot.midY)
                     }
                     Text(dayLabel(point.date))
-                        .font(.caption2.weight(.medium))
+                        .pulsarTextStyle(.overline)
                         .foregroundStyle(.secondary)
                         .position(x: x, y: plot.maxY + 18)
                 }
@@ -305,7 +305,7 @@ private struct RecoveryMetricTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Image(systemName: metric.symbol)
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.blue)
             Text(metric.title)
                 .pulsarTextStyle(.metricLabel)
@@ -374,7 +374,7 @@ private struct RecoveryInsightsSection: View {
             ForEach(insights) { insight in
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "heart.text.square")
-                        .font(.subheadline.weight(.semibold))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(.blue)
                     Text(insight.text)
                         .pulsarTextStyle(.appBody)
@@ -418,7 +418,7 @@ private struct RecoveryDataQualitySection: View {
             Text(value)
                 .multilineTextAlignment(.trailing)
         }
-        .font(.footnote)
+        .pulsarTextStyle(.metadata)
         .pulsarTextStyle(.caption)
     }
 }

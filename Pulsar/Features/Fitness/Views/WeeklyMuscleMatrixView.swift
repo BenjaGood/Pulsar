@@ -70,7 +70,7 @@ struct WeeklyMuscleMatrixCard: View {
                 .shadow(color: (viewModel.week.isCurrentWeek ? Color.green : .clear).opacity(0.48), radius: 7)
 
             Text(viewModel.week.isCurrentWeek ? "Active" : "Archived")
-                .font(.caption2.weight(.semibold))
+                .pulsarTextStyle(.overline)
                 .lineLimit(1)
         }
         .foregroundStyle(viewModel.week.isCurrentWeek ? Color.green : PulsarTheme.fitnessSecondaryText(for: colorScheme))
@@ -379,7 +379,7 @@ private struct MuscleMatrixRow: View {
     private var rowSymbol: some View {
         if muscleGroup == .cardio {
             Image(systemName: muscleGroup.symbolName)
-                .font(.caption2.weight(.bold))
+                .pulsarTextStyle(.overline)
                 .foregroundStyle(muscleGroup.accent)
                 .frame(width: 11, height: 11)
                 .shadow(color: muscleGroup.accent.opacity(0.22), radius: 5)
@@ -498,7 +498,7 @@ private struct MuscleMatrixLegend: View {
     var body: some View {
         HStack(spacing: 9) {
             Text("Intensity")
-                .font(.caption2.weight(.semibold))
+                .pulsarTextStyle(.overline)
                 .foregroundStyle(PulsarTheme.fitnessTertiaryText(for: colorScheme))
 
             ForEach(items, id: \.0) { item in
@@ -507,7 +507,7 @@ private struct MuscleMatrixLegend: View {
                         .fill(Color(red: 0.58, green: 0.77, blue: 1.0).opacity(min(item.1.opacity * 0.78, 0.78)))
                         .frame(width: 10 * item.1.dotScale, height: 10 * item.1.dotScale)
                     Text(item.0)
-                        .font(.caption2.weight(.medium))
+                        .pulsarTextStyle(.overline)
                         .foregroundStyle(PulsarTheme.fitnessTertiaryText(for: colorScheme))
                 }
             }
@@ -545,11 +545,11 @@ private struct MuscleMatrixInsightCard: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(summary.insightTitle)
-                        .font(.subheadline.weight(.semibold))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
 
                     Text(summary.insight)
-                        .font(.caption.weight(.medium))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
                         .lineSpacing(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -559,9 +559,9 @@ private struct MuscleMatrixInsightCard: View {
                             ForEach(Array(insightChips.enumerated()), id: \.offset) { _, chip in
                                 HStack(spacing: 4) {
                                     Image(systemName: chip.symbol)
-                                        .font(.caption2.weight(.semibold))
+                                        .pulsarTextStyle(.overline)
                                     Text(chip.label)
-                                        .font(.caption2.weight(.semibold))
+                                        .pulsarTextStyle(.overline)
                                 }
                                 .foregroundStyle(chip.color.opacity(0.90))
                                 .padding(.horizontal, 8)
@@ -692,17 +692,17 @@ private struct MuscleMatrixDetailSheet: View {
                     .shadow(color: color.opacity(0.34), radius: 14)
 
                 Image(systemName: symbol)
-                    .font(.system(size: 20, weight: .black))
+                    .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(color)
             }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.title3.weight(.bold))
+                    .pulsarTextStyle(.sectionHeader)
                     .foregroundStyle(.white.opacity(0.96))
 
                 Text(subtitle)
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(.white.opacity(0.58))
             }
         }
@@ -713,10 +713,10 @@ private struct MuscleMatrixDetailSheet: View {
             ForEach(metrics, id: \.0) { metric in
                 VStack(alignment: .leading, spacing: 3) {
                     Text(metric.0)
-                        .font(.caption2.weight(.black))
+                        .pulsarTextStyle(.overline)
                         .foregroundStyle(.white.opacity(0.42))
                     Text(metric.1)
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(.white.opacity(0.90))
                 }
                 .padding(12)
@@ -733,18 +733,18 @@ private struct MuscleMatrixDetailSheet: View {
     private func exerciseList(_ exercises: [String]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Exercises")
-                .font(.caption.weight(.black))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.white.opacity(0.46))
 
             if exercises.isEmpty {
                 Text("No exercises logged for this selection.")
-                    .font(.subheadline.weight(.medium))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(.white.opacity(0.58))
             } else {
                 MuscleMatrixFlowLayout(spacing: 7, rowSpacing: 7) {
                     ForEach(exercises, id: \.self) { exercise in
                         Text(exercise)
-                            .font(.caption.weight(.bold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(.white.opacity(0.78))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 7)

@@ -398,6 +398,50 @@ struct OuraIntegrationTests {
         #expect(!manager.isPrimaryActionDisabled(for: disconnectedOura))
     }
 
+    @Test func measurementSourceManagerSwitchesBetweenConnectedWearablesAndPersistsSelection() throws {
+        let defaults = ephemeralDefaults()
+        let tokenStore = OuraInMemoryTokenStore(token: OuraStoredToken(
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            expiresAt: Date().addingTimeInterval(3_600),
+            scopes: [.daily, .heartrate],
+            tokenType: "bearer"
+        ))
+        let connectionStore = OuraConnectionStore(defaults: defaults, tokenStorage: tokenStore)
+        let configuration = testConfiguration()
+        let authService = OuraAuthService(
+            configuration: configuration,
+            tokenStorage: tokenStore,
+            backendClient: FakeOuraBackendTokenClient(),
+            connectionStore: connectionStore
+        )
+        let manager = MeasurementSourceManager(
+            defaults: defaults,
+            syncStore: nil,
+            ouraAuthService: authService,
+            ouraSyncService: FakeOuraSyncService(),
+            sourcePriorityStore: HealthSourcePriorityStore(defaults: defaults),
+            ouraConfiguration: configuration
+        )
+
+        #expect(manager.activeDeviceType == .appleWatch)
+        #expect(manager.device(for: .ouraRing).canBecomeActiveSource)
+
+        manager.selectActiveDevice(.ouraRing)
+
+        #expect(manager.activeDeviceType == .ouraRing)
+        #expect(manager.device(for: .ouraRing).isActiveSource)
+        #expect(defaults.string(forKey: "pulsar.measurementSource.activeDevice.v1") == "ouraRing")
+
+        manager.selectActiveDevice(.appleWatch)
+
+        #expect(manager.activeDeviceType == .appleWatch)
+        #expect(manager.device(for: .appleWatch).isActiveSource)
+
+        manager.selectActiveDevice(.airPodsPro3)
+
+        #expect(manager.activeDeviceType == .appleWatch)
+    }
 
     @Test func apiErrorHandlingClassifiesUnauthorizedRateLimitAndForbidden() throws {
         let unauthorized = OuraAPIError.from(

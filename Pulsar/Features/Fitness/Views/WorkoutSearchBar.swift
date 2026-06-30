@@ -13,13 +13,13 @@ struct WorkoutSearchBar: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .font(.subheadline.weight(.semibold))
+                .pulsarTextStyle(.label)
                 .foregroundStyle(.secondary)
 
             TextField("Search workouts", text: $text)
                 .textInputAutocapitalization(.words)
                 .autocorrectionDisabled()
-                .font(.subheadline.weight(.semibold))
+                .pulsarTextStyle(.label)
                 .submitLabel(.search)
 
             if !text.isEmpty {
@@ -29,7 +29,7 @@ struct WorkoutSearchBar: View {
                     }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.subheadline.weight(.semibold))
+                        .pulsarTextStyle(.label)
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.secondary)
                 }

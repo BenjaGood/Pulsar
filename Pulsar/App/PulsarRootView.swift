@@ -1953,7 +1953,7 @@ private enum PulsarRootTab: String, Hashable, CaseIterable {
         case .home: "house"
         case .fitness: "figure.run"
         case .food: "leaf"
-        case .mindfulness: "figure.mind.and.body"
+        case .mindfulness: "camera.macro"
         }
     }
 
@@ -2225,7 +2225,7 @@ private struct PulsarPlusActionItem: View {
                     .frame(width: iconFrame, height: iconFrame)
 
                 Text(destination.title)
-                    .font(.body.weight(.medium))
+                    .pulsarTextStyle(.bodyEmphasis)
                     .lineLimit(1)
                     .minimumScaleFactor(0.86)
 

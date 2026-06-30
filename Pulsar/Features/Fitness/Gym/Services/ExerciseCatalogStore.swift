@@ -14,7 +14,7 @@ final class ExerciseCatalogStore: ObservableObject {
     @Published private(set) var lastRefreshDate: Date?
     @Published private(set) var isShowingCachedData = false
 
-    private let service: FreeExerciseDBService
+    private let service: ExercisesDatasetService
     private let cache: ExerciseCatalogCache
     private let customStore: CustomExerciseCatalogStore
     private var hasLoaded = false
@@ -22,11 +22,11 @@ final class ExerciseCatalogStore: ObservableObject {
     private var customExercises: [PulsarExercise] = []
 
     init(
-        service: FreeExerciseDBService? = nil,
+        service: ExercisesDatasetService? = nil,
         cache: ExerciseCatalogCache? = nil,
         customStore: CustomExerciseCatalogStore? = nil
     ) {
-        self.service = service ?? FreeExerciseDBService()
+        self.service = service ?? ExercisesDatasetService()
         self.cache = cache ?? ExerciseCatalogCache()
         self.customStore = customStore ?? CustomExerciseCatalogStore()
         self.customExercises = self.customStore.loadExercises()
@@ -65,7 +65,7 @@ final class ExerciseCatalogStore: ObservableObject {
             let fetchedExercises = try await service.fetchAllExercises()
             let snapshot = PulsarExerciseCatalogSnapshot(
                 exercises: fetchedExercises,
-                sourceName: FreeExerciseDBService.sourceName,
+                sourceName: ExercisesDatasetService.sourceName,
                 refreshedAt: .now,
                 schemaVersion: ExerciseCatalogCache.schemaVersion
             )
@@ -125,13 +125,6 @@ final class ExerciseCatalogStore: ObservableObject {
 
     private func loadBundledCatalog() {
         guard let bundledExercises = try? service.loadBundledExercises() else { return }
-        let snapshot = PulsarExerciseCatalogSnapshot(
-            exercises: bundledExercises,
-            sourceName: FreeExerciseDBService.sourceName,
-            refreshedAt: .now,
-            schemaVersion: ExerciseCatalogCache.schemaVersion
-        )
-        cache.save(snapshot)
         catalogExercises = bundledExercises
         publishExercises()
         lastRefreshDate = nil
@@ -160,7 +153,7 @@ final class ExerciseCatalogStore: ObservableObject {
 }
 
 final class ExerciseCatalogCache {
-    static let schemaVersion = 2
+    static let schemaVersion = 3
 
     private let fileURL: URL
     private let encoder = JSONEncoder()
@@ -170,14 +163,14 @@ final class ExerciseCatalogCache {
         let supportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fileManager.temporaryDirectory
         let directoryURL = supportURL.appendingPathComponent("Pulsar/ExerciseCatalog", isDirectory: true)
-        self.fileURL = directoryURL.appendingPathComponent("free-exercise-db-exercises-v1.json")
+        self.fileURL = directoryURL.appendingPathComponent("exercises-dataset-v1.json")
     }
 
     func loadSnapshot() -> PulsarExerciseCatalogSnapshot? {
         guard let data = try? Data(contentsOf: fileURL),
               let snapshot = try? decoder.decode(PulsarExerciseCatalogSnapshot.self, from: data),
               snapshot.schemaVersion == Self.schemaVersion,
-              snapshot.sourceName == FreeExerciseDBService.sourceName else { return nil }
+              snapshot.sourceName == ExercisesDatasetService.sourceName else { return nil }
         return snapshot
     }
 

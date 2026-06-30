@@ -68,7 +68,7 @@ struct HomeFloatingHeader: View {
             Button(action: onDateTapped) {
                 HStack(spacing: 7) {
                     Text(title)
-                        .font(.system(size: 22, weight: .semibold, design: .rounded))
+                        .pulsarTextStyle(.sectionHeader)
                         .foregroundStyle(primaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.58)

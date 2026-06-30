@@ -225,7 +225,7 @@ private struct PremiumGlassPillEffect: ViewModifier {
         StaticTimeBackgroundView(mode: .sunset)
         PremiumGlassContainer(tint: .green) {
             Text("Glass")
-                .font(.title2.weight(.semibold))
+                .pulsarTextStyle(.title)
                 .foregroundStyle(.white)
                 .padding(40)
         }

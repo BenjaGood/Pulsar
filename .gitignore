@@ -16,6 +16,11 @@ DerivedData/
 Package.resolved
 
 # Local OAuth/developer credentials
+.env
+.env.local
+.env.*.local
+.codex/*.env
+.codex/*.local.toml
 Config/Oura.local.xcconfig
 Config/Orion.local.xcconfig
 Backend/OuraOAuthServer/.env

@@ -227,21 +227,23 @@ struct FitnessView: View {
 private struct FitnessPageTitleHeader: View {
     var onAddWorkout: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
-            RunningGlyphView()
+            RunningGlyphView(tint: primaryText)
                 .frame(width: 52, height: 52)
                 .background(FitnessCircularGlassSurface(cornerRadius: 26))
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("Fitness")
-                    .font(.system(size: 28, weight: .bold, design: .default))
-                    .foregroundStyle(.white.opacity(0.96))
+                    .pulsarTextStyle(.displayLarge)
+                    .foregroundStyle(primaryText)
 
                 Text("Train smarter. Every day.")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.62))
+                    .pulsarTextStyle(.label)
+                    .foregroundStyle(secondaryText)
             }
 
             Spacer(minLength: 12)
@@ -249,7 +251,7 @@ private struct FitnessPageTitleHeader: View {
             Button(action: onAddWorkout) {
                 Image(systemName: "plus")
                     .font(.system(size: 24, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.94))
+                    .foregroundStyle(primaryText)
                     .frame(width: 52, height: 52)
                     .background(FitnessCircularGlassSurface(cornerRadius: 26))
             }
@@ -260,10 +262,18 @@ private struct FitnessPageTitleHeader: View {
         .accessibilityLabel("Fitness")
         .accessibilityAddTraits(.isHeader)
     }
+
+    private var primaryText: Color {
+        colorScheme == .dark ? .white.opacity(0.96) : Color(red: 0.07, green: 0.10, blue: 0.14)
+    }
+
+    private var secondaryText: Color {
+        colorScheme == .dark ? .white.opacity(0.62) : Color(red: 0.36, green: 0.40, blue: 0.48)
+    }
 }
 
 struct RunningGlyphView: View {
-    var tint: Color = .white.opacity(0.96)
+    var tint: Color = .primary
 
     var body: some View {
         Image(systemName: "figure.run")

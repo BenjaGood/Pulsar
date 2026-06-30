@@ -72,19 +72,19 @@ private struct SleepDetailsHeader: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Sleep")
-                    .font(.largeTitle.weight(.bold))
+                    .pulsarTextStyle(.displayLarge)
                 Text(viewModel.dateSubtitle)
-                    .font(.callout.weight(.medium))
+                    .pulsarTextStyle(.bodyEmphasis)
                     .foregroundStyle(.secondary)
             }
             HStack(alignment: .lastTextBaseline) {
                 Text(viewModel.totalSleepText)
-                    .font(.system(size: 56, weight: .semibold, design: .rounded))
+                    .pulsarTextStyle(.metricLarge)
                     .monospacedDigit()
                     .minimumScaleFactor(0.72)
                 Spacer(minLength: 12)
                 Text(viewModel.statusText)
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.label)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(.indigo.opacity(0.14), in: Capsule())
@@ -92,7 +92,7 @@ private struct SleepDetailsHeader: View {
             }
             if let alarmBadgeText = viewModel.alarmBadgeText {
                 Label(alarmBadgeText, systemImage: "alarm.fill")
-                    .font(.footnote.weight(.semibold))
+                    .pulsarTextStyle(.metadata)
                     .foregroundStyle(.orange)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -113,9 +113,9 @@ private struct SleepFlowCard: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Sleep Flow")
-                        .font(.title3.weight(.semibold))
+                        .pulsarTextStyle(.sectionHeader)
                     Text("Normalized HealthKit stages")
-                        .font(.caption)
+                        .pulsarTextStyle(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -211,7 +211,7 @@ struct SleepStageTimelineView: View {
                 let total = max(1, range.duration)
                 let x = CGFloat(date.timeIntervalSince(range.start) / total) * width
                 Text(date.formatted(.dateTime.hour()))
-                    .font(.caption2.weight(.medium))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(.secondary)
                     .position(x: min(max(18, x), width - 18), y: top)
             }
@@ -251,7 +251,7 @@ private struct SleepStageLegend: View {
             legend("Core", .core)
             legend("Deep", .deep)
         }
-        .font(.caption.weight(.medium))
+        .pulsarTextStyle(.captionEmphasis)
         .foregroundStyle(.secondary)
     }
 
@@ -283,16 +283,16 @@ private struct SleepMetricTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(metric.title)
-                .font(.caption.weight(.medium))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.secondary)
             Text(metric.value)
-                .font(.headline.weight(.semibold))
+                .pulsarTextStyle(.cardTitle)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
             if let subtitle = metric.subtitle {
                 Text(subtitle)
-                    .font(.caption2)
+                    .pulsarTextStyle(.metadata)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
@@ -309,7 +309,7 @@ private struct SleepStageBreakdownSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Stage Breakdown")
-                .font(.title3.weight(.semibold))
+                .pulsarTextStyle(.sectionHeader)
             VStack(spacing: 10) {
                 ForEach(rows) { row in
                     HStack(spacing: 12) {
@@ -317,13 +317,15 @@ private struct SleepStageBreakdownSection: View {
                             .fill(SleepStageVisualStyle.color(for: row.stage))
                             .frame(width: 34, height: 8)
                         Text(row.stage == .core ? "Core / Light" : row.stage.rawValue)
-                            .font(.subheadline.weight(.medium))
+                            .pulsarTextStyle(.label)
                         Spacer()
                         Text(SleepDetailsViewModel.durationText(minutes: row.minutes))
-                            .font(.subheadline.monospacedDigit())
+                            .pulsarTextStyle(.label)
+                                .monospacedDigit()
                         if row.stage.isSleep {
                             Text(SleepDetailsViewModel.percentText(row.percentOfSleep))
-                                .font(.caption.monospacedDigit())
+                                .pulsarTextStyle(.caption)
+                                .monospacedDigit()
                                 .foregroundStyle(.secondary)
                                 .frame(width: 44, alignment: .trailing)
                         }
@@ -343,7 +345,7 @@ private struct SleepInsightsSection: View {
         if !insights.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Insights")
-                    .font(.title3.weight(.semibold))
+                    .pulsarTextStyle(.sectionHeader)
                 ForEach(insights) { insight in
                     SleepInsightCard(text: insight.text)
                 }
@@ -358,10 +360,10 @@ private struct SleepInsightCard: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "sparkle.magnifyingglass")
-                .font(.subheadline.weight(.semibold))
+                .pulsarTextStyle(.label)
                 .foregroundStyle(.indigo)
             Text(text)
-                .font(.callout)
+                .pulsarTextStyle(.body)
                 .foregroundStyle(.primary)
         }
         .padding(16)
@@ -385,7 +387,7 @@ private struct SleepDataQualitySection: View {
             .padding(.top, 8)
         } label: {
             Text("Data Quality")
-                .font(.headline)
+                .pulsarTextStyle(.cardTitle)
         }
         .padding(16)
         .pulsarLiquidGlass(cornerRadius: 24)
@@ -399,7 +401,7 @@ private struct SleepDataQualitySection: View {
             Text(value)
                 .multilineTextAlignment(.trailing)
         }
-        .font(.footnote)
+        .pulsarTextStyle(.metadata)
     }
 }
 
@@ -408,7 +410,7 @@ private struct SleepDetailsLoadingView: View {
         VStack(spacing: 14) {
             ProgressView()
             Text("Loading sleep details")
-                .font(.headline)
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, minHeight: 280)
@@ -427,9 +429,9 @@ private struct SleepDetailsStateView: View {
                 .font(.system(size: 34, weight: .semibold))
                 .foregroundStyle(.indigo)
             Text(title)
-                .font(.title3.weight(.semibold))
+                .pulsarTextStyle(.sectionHeader)
             Text(message)
-                .font(.callout)
+                .pulsarTextStyle(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }

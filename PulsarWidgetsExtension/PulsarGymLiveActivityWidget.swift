@@ -20,7 +20,7 @@ struct PulsarGymLiveActivityWidget: Widget {
 
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(WidgetGymFormatters.duration(context.state.elapsedSeconds))
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.white)
                         .monospacedDigit()
                         .lineLimit(1)
@@ -29,7 +29,7 @@ struct PulsarGymLiveActivityWidget: Widget {
 
                 DynamicIslandExpandedRegion(.center) {
                     Text(WidgetGymFormatters.routineTitle(context.state.routineName))
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.white)
                         .lineLimit(1)
                         .minimumScaleFactor(0.78)
@@ -42,14 +42,14 @@ struct PulsarGymLiveActivityWidget: Widget {
             } compactLeading: {
                 if let routineEmoji = context.state.routineEmoji, !routineEmoji.isEmpty {
                     Text(routineEmoji)
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                 } else {
                     Image(systemName: "dumbbell.fill")
                         .foregroundStyle(Color(red: 0.78, green: 0.72, blue: 1.0))
                 }
             } compactTrailing: {
                 Text(WidgetGymFormatters.duration(context.state.elapsedSeconds))
-                    .font(.caption2.weight(.black))
+                    .pulsarTextStyle(.overline)
                     .monospacedDigit()
             } minimal: {
                 Image(systemName: "dumbbell.fill")
@@ -66,15 +66,15 @@ private struct GymLiveActivityIslandLeading: View {
         HStack(spacing: 4) {
             if let routineEmoji = state.routineEmoji, !routineEmoji.isEmpty {
                 Text(routineEmoji)
-                    .font(.caption2.weight(.black))
+                    .pulsarTextStyle(.overline)
             } else {
                 Image(systemName: "dumbbell.fill")
-                    .font(.caption2.weight(.black))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(Color(red: 0.78, green: 0.72, blue: 1.0))
             }
 
             Text(WidgetGymFormatters.compactSetProgress(completed: state.completedSets, total: state.totalSets))
-                .font(.caption2.weight(.black))
+                .pulsarTextStyle(.overline)
                 .foregroundStyle(.white.opacity(0.84))
                 .monospacedDigit()
                 .lineLimit(1)
@@ -94,10 +94,10 @@ private struct GymLiveActivityLockScreenView: View {
                         .fill(Color(red: 0.72, green: 0.66, blue: 1.0).opacity(0.20))
                     if let routineEmoji = state.routineEmoji, !routineEmoji.isEmpty {
                         Text(routineEmoji)
-                            .font(.headline.weight(.black))
+                            .pulsarTextStyle(.cardTitle)
                     } else {
                         Image(systemName: "dumbbell.fill")
-                            .font(.headline.weight(.black))
+                            .pulsarTextStyle(.cardTitle)
                             .foregroundStyle(Color(red: 0.78, green: 0.72, blue: 1.0))
                     }
                 }
@@ -105,13 +105,13 @@ private struct GymLiveActivityLockScreenView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(WidgetGymFormatters.routineTitle(state.routineName))
-                        .font(.headline.weight(.black))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(.white)
                         .lineLimit(1)
                         .minimumScaleFactor(0.82)
 
                     Text(WidgetGymFormatters.exerciseTitle(state.currentExerciseName))
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.white.opacity(0.68))
                         .lineLimit(1)
                         .minimumScaleFactor(0.82)
@@ -121,7 +121,7 @@ private struct GymLiveActivityLockScreenView: View {
                 Spacer(minLength: 0)
 
                 Text(WidgetGymFormatters.duration(state.elapsedSeconds))
-                    .font(.headline.weight(.black))
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(.white)
                     .monospacedDigit()
                     .lineLimit(1)
@@ -158,7 +158,7 @@ private struct GymLiveActivityProgressLine: View {
         VStack(alignment: .leading, spacing: style == .dynamicIsland ? 5 : 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(WidgetGymFormatters.exerciseTitle(state.currentExerciseName))
-                    .font(style == .dynamicIsland ? .caption2.weight(.black) : .caption.weight(.black))
+                    .font(style == .dynamicIsland ? .caption2.weight(.semibold) : .caption.weight(.semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.76)
@@ -167,7 +167,7 @@ private struct GymLiveActivityProgressLine: View {
                 Spacer(minLength: 4)
 
                 Text(WidgetGymFormatters.setProgress(completed: state.completedSets, total: state.totalSets))
-                    .font(.caption2.weight(.black))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(Color(red: 0.78, green: 0.72, blue: 1.0))
                     .monospacedDigit()
                     .lineLimit(1)
@@ -195,7 +195,7 @@ private struct GymLiveActivityProgressLine: View {
                 GymLiveActivityMetricPill(symbol: "timer", text: restText, tint: Color(red: 0.78, green: 0.72, blue: 1.0))
             } else if state.totalExercises > 0 {
                 Text(state.exerciseProgressText)
-                    .font(.caption2.weight(.semibold))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(.white.opacity(0.58))
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
@@ -260,7 +260,7 @@ private struct GymLiveActivityMetricPill: View {
 
     var body: some View {
         Label(text, systemImage: symbol)
-            .font(.caption2.weight(.black))
+            .pulsarTextStyle(.overline)
             .foregroundStyle(tint)
             .lineLimit(1)
             .minimumScaleFactor(0.72)

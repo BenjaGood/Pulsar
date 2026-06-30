@@ -21,7 +21,7 @@ struct WorkoutOptionCard: View {
                     Spacer(minLength: 0)
 
                     Image(systemName: workout.isPersonalized ? "sparkles" : "plus")
-                        .font(.caption.weight(.bold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(workout.accent.color.opacity(0.95))
                         .frame(width: 26, height: 26)
                         .background(workout.accent.color.opacity(colorScheme == .dark ? 0.16 : 0.11), in: Circle())

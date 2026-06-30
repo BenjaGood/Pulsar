@@ -7,6 +7,23 @@ import SwiftUI
 
 enum PulsarTypography {
     enum Role {
+        case displayLarge
+        case displayMedium
+        case title
+        case sectionHeader
+        case body
+        case bodyEmphasis
+        case label
+        case navigationLabel
+        case metadata
+        case caption
+        case captionEmphasis
+        case metricLarge
+        case metricMedium
+        case emptyStateTitle
+        case insightHeadline
+        case orionHero
+
         case appBody
         case appBodyEmphasis
         case screenTitle
@@ -16,7 +33,6 @@ enum PulsarTypography {
         case heroMetric
         case metricValue
         case metricLabel
-        case caption
         case overline
         case buttonTitle
         case workoutHero
@@ -34,44 +50,75 @@ enum PulsarTypography {
 extension PulsarTypography.Role {
     var font: Font {
         switch self {
-        case .appBody:
-            .body.weight(.regular)
-        case .appBodyEmphasis:
-            .body.weight(.medium)
-        case .screenTitle:
-            .system(.largeTitle, design: .default).weight(.semibold)
-        case .screenSubtitle:
-            .subheadline.weight(.regular)
-        case .sectionTitle:
-            .title3.weight(.semibold)
-        case .cardTitle:
-            .headline.weight(.semibold)
-        case .heroMetric:
-            .system(.largeTitle, design: .default).weight(.semibold)
-        case .metricValue:
-            .system(.title, design: .default).weight(.semibold)
-        case .metricLabel:
-            .caption.weight(.medium)
+        case .displayLarge:
+            Self.serif(.largeTitle, weight: .regular)
+        case .displayMedium:
+            Self.serif(.title, weight: .regular)
+        case .title:
+            Self.serif(.title2, weight: .regular)
+        case .sectionHeader:
+            Self.serif(.title3, weight: .medium)
+        case .body:
+            Self.sans(.body, weight: .regular)
+        case .bodyEmphasis:
+            Self.sans(.body, weight: .medium)
+        case .label:
+            Self.sans(.subheadline, weight: .medium)
+        case .navigationLabel:
+            Self.sans(.subheadline, weight: .medium)
+        case .metadata:
+            Self.sans(.footnote, weight: .regular)
         case .caption:
-            .caption.weight(.regular)
+            Self.sans(.caption, weight: .regular)
+        case .captionEmphasis:
+            Self.sans(.caption, weight: .medium)
+        case .metricLarge:
+            Self.serif(.largeTitle, weight: .regular)
+        case .metricMedium:
+            Self.serif(.title, weight: .regular)
+        case .emptyStateTitle:
+            Self.serif(.title2, weight: .regular)
+        case .insightHeadline:
+            Self.serif(.title3, weight: .medium)
+        case .orionHero:
+            Self.serif(.largeTitle, weight: .regular)
+
+        case .appBody:
+            PulsarTypography.Role.body.font
+        case .appBodyEmphasis:
+            PulsarTypography.Role.bodyEmphasis.font
+        case .screenTitle:
+            PulsarTypography.Role.displayLarge.font
+        case .screenSubtitle:
+            PulsarTypography.Role.label.font
+        case .sectionTitle:
+            PulsarTypography.Role.sectionHeader.font
+        case .cardTitle:
+            Self.serif(.headline, weight: .medium)
+        case .heroMetric:
+            PulsarTypography.Role.metricLarge.font
+        case .metricValue:
+            PulsarTypography.Role.metricMedium.font
+        case .metricLabel:
+            PulsarTypography.Role.captionEmphasis.font
         case .overline:
-            .caption2.weight(.semibold)
+            Self.sans(.caption2, weight: .semibold)
         case .buttonTitle:
-            .headline.weight(.semibold)
+            Self.sans(.headline, weight: .semibold)
         case .workoutHero:
-            .system(.largeTitle, design: .default).weight(.semibold)
+            PulsarTypography.Role.metricLarge.font
         case .workoutSubtitle:
-            .title3.weight(.regular)
+            PulsarTypography.Role.sectionHeader.font
         case .watchTitle:
-            .headline.weight(.semibold)
+            Self.serif(.headline, weight: .medium)
         case .watchSubtitle:
-            .caption2.weight(.regular)
+            Self.sans(.caption2, weight: .regular)
         case .watchHeroValue:
-            .system(.title, design: .default).weight(.semibold)
+            Self.serif(.title, weight: .regular)
         case .watchValue:
-            .system(.title2, design: .default).weight(.semibold)
+            Self.serif(.title2, weight: .regular)
         case .watchMetric:
-            .caption.weight(.semibold)
+            Self.sans(.caption, weight: .medium)
         case .watchLabel:
             .caption2.weight(.medium)
         case .watchButton:
@@ -81,12 +128,6 @@ extension PulsarTypography.Role {
 
     var tracking: CGFloat {
         switch self {
-        case .overline:
-            0.7
-        case .metricLabel, .watchLabel:
-            0.3
-        case .buttonTitle, .watchButton:
-            0.15
         default:
             0
         }
@@ -94,15 +135,25 @@ extension PulsarTypography.Role {
 
     var lineSpacing: CGFloat {
         switch self {
-        case .screenTitle, .workoutHero:
+        case .displayLarge, .screenTitle, .workoutHero, .orionHero:
             2
-        case .screenSubtitle, .appBody, .appBodyEmphasis:
+        case .displayMedium, .title, .sectionHeader, .metricLarge, .metricMedium:
+            1
+        case .screenSubtitle, .appBody, .appBodyEmphasis, .body, .bodyEmphasis, .label:
             3
         case .watchTitle, .watchSubtitle:
             1
         default:
             0
         }
+    }
+
+    private static func serif(_ textStyle: Font.TextStyle, weight: Font.Weight) -> Font {
+        .system(textStyle, design: .serif).weight(weight)
+    }
+
+    private static func sans(_ textStyle: Font.TextStyle, weight: Font.Weight) -> Font {
+        .system(textStyle, design: .default).weight(weight)
     }
 }
 

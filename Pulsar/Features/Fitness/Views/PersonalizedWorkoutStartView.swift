@@ -170,9 +170,9 @@ struct PersonalizedWorkoutStartView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "xmark")
-                    .font(.caption.weight(.bold))
+                    .pulsarTextStyle(.captionEmphasis)
                 Text("Cancel")
-                    .font(.subheadline.weight(.bold))
+                    .pulsarTextStyle(.label)
             }
             .foregroundStyle(.white.opacity(0.78))
             .padding(.horizontal, 14)
@@ -196,7 +196,7 @@ struct PersonalizedWorkoutStartView: View {
                 Text("Start Workout")
                     .pulsarTextStyle(.buttonTitle)
                 Image(systemName: "arrow.right")
-                    .font(.headline.weight(.semibold))
+                    .pulsarTextStyle(.cardTitle)
             }
             .foregroundStyle(.white.opacity(0.94))
             .frame(maxWidth: .infinity)

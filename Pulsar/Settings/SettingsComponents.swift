@@ -13,7 +13,7 @@ struct SettingsSectionCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title.uppercased())
-                .font(.caption.weight(.semibold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 4)
 
@@ -25,7 +25,7 @@ struct SettingsSectionCard<Content: View>: View {
 
             if let footer {
                 Text(footer)
-                    .font(.footnote)
+                    .pulsarTextStyle(.metadata)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)
             }
@@ -45,11 +45,11 @@ struct SettingsNavigationRow: View {
             SettingsIcon(symbol: symbol, tint: tint)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.body.weight(.medium))
+                    .pulsarTextStyle(.bodyEmphasis)
                     .foregroundStyle(.primary)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.footnote)
+                        .pulsarTextStyle(.metadata)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
@@ -57,14 +57,14 @@ struct SettingsNavigationRow: View {
             Spacer(minLength: 10)
             if let badge {
                 Text(badge)
-                    .font(.caption.weight(.semibold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 5)
                     .background(.secondary.opacity(0.12), in: Capsule())
                     .foregroundStyle(.secondary)
             }
             Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 16)
@@ -79,7 +79,7 @@ struct SettingsIcon: View {
 
     var body: some View {
         Image(systemName: symbol)
-            .font(.headline.weight(.semibold))
+            .pulsarTextStyle(.cardTitle)
             .foregroundStyle(.white)
             .frame(width: 34, height: 34)
             .background(
@@ -106,16 +106,16 @@ struct SettingsValueRow: View {
         HStack(alignment: .firstTextBaseline, spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.body.weight(.medium))
+                    .pulsarTextStyle(.bodyEmphasis)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.footnote)
+                        .pulsarTextStyle(.metadata)
                         .foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 12)
             Text(value)
-                .font(.body.weight(.semibold))
+                .pulsarTextStyle(.bodyEmphasis)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.trailing)
         }
@@ -135,9 +135,9 @@ struct HelperCard: View {
             SettingsIcon(symbol: symbol, tint: tint)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.headline)
+                    .pulsarTextStyle(.cardTitle)
                 Text(message)
-                    .font(.footnote)
+                    .pulsarTextStyle(.metadata)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -154,7 +154,7 @@ struct HealthStatusBadge: View {
 
     var body: some View {
         Text(text)
-            .font(.caption.weight(.semibold))
+            .pulsarTextStyle(.captionEmphasis)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(tint.opacity(0.14), in: Capsule())

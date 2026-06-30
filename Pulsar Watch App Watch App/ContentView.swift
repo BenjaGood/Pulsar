@@ -292,7 +292,7 @@ private struct WatchSyncBanner: View {
                         .frame(width: 12, height: 12)
                 } else {
                     Image(systemName: state.symbol)
-                        .font(.caption2.weight(.bold))
+                        .pulsarTextStyle(.overline)
                         .foregroundStyle(state.tint)
                         .scaleEffect(pulse ? 1.08 : 1)
                 }

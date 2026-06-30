@@ -38,14 +38,14 @@ struct PulsarSyncStatusPill: View {
                         .tint(mood.tint)
                 } else {
                     Image(systemName: mood.symbol)
-                        .font(.caption.weight(.bold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(mood.tint)
                         .scaleEffect(pulse && mood == .success ? 1.08 : 1)
                 }
             }
 
             Text(message)
-                .font(.footnote.weight(.semibold))
+                .pulsarTextStyle(.metadata)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
         }

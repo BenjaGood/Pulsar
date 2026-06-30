@@ -140,7 +140,7 @@ struct PulsarRunSummaryView: View {
     private var heartRateSourceCard: some View {
         if let sourceText = summary.heartRateSourceSummaryText {
             Label(sourceText, systemImage: "heart.text.square.fill")
-                .font(.subheadline.weight(.semibold))
+                .pulsarTextStyle(.label)
                 .foregroundStyle(.primary)
                 .lineLimit(2)
                 .minimumScaleFactor(0.82)
@@ -199,7 +199,7 @@ struct PulsarRunSummaryView: View {
         PulsarRunGlassCard {
             VStack(alignment: .leading, spacing: 12) {
                 Label(title, systemImage: symbol)
-                    .font(.headline.weight(.bold))
+                    .pulsarTextStyle(.cardTitle)
                 content()
             }
         }
@@ -211,18 +211,20 @@ struct PulsarRunSummaryView: View {
             PulsarRunGlassCard {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Splits")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                     ForEach(summary.splits) { split in
                         HStack {
                             Text("\(split.index)")
-                                .font(.headline.weight(.black).monospacedDigit())
+                                .pulsarTextStyle(.cardTitle)
+                                .monospacedDigit()
                                 .frame(width: 30, alignment: .leading)
                             Text(PulsarRunFormatters.distance(split.distanceMeters))
                             Spacer()
                             Text(PulsarRunFormatters.pace(split.paceSecondsPerKilometer))
-                                .font(.headline.weight(.bold).monospacedDigit())
+                                .pulsarTextStyle(.cardTitle)
+                                .monospacedDigit()
                         }
-                        .font(.subheadline.weight(.semibold))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(.primary)
                     }
                 }
@@ -305,7 +307,7 @@ private struct SummaryTile: View {
         PulsarRunGlassCard {
             VStack(alignment: .leading, spacing: 10) {
                 Image(systemName: symbol)
-                    .font(.headline.weight(.bold))
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(tint)
                 Text(value)
                     .pulsarMonospacedMetric(.metricValue)

@@ -36,13 +36,13 @@ struct StressDetailView: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Stress")
-                        .font(.largeTitle.weight(.bold))
+                        .pulsarTextStyle(.displayLarge)
                         .foregroundStyle(primaryText)
                     Text(dateSubtitle)
-                        .font(.callout.weight(.semibold))
+                        .pulsarTextStyle(.bodyEmphasis)
                         .foregroundStyle(secondaryText)
                     Text("Estimated from recent HR, HRV, movement, and baseline signals. Not a medical diagnosis.")
-                        .font(.subheadline.weight(.medium))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -61,7 +61,7 @@ struct StressDetailView: View {
                     .minimumScaleFactor(0.64)
 
                 Text(summary.displayLevelText)
-                    .font(.headline.weight(.semibold))
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(tint)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
@@ -72,7 +72,7 @@ struct StressDetailView: View {
 
             if let updated = summary.lastUpdated {
                 Label("Updated \(updated.formatted(date: .omitted, time: .shortened))", systemImage: "clock")
-                    .font(.caption.weight(.semibold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(secondaryText)
             }
         }
@@ -90,7 +90,7 @@ struct StressDetailView: View {
                 .frame(height: 286)
 
             Text(summary.explanation)
-                .font(.subheadline.weight(.medium))
+                .pulsarTextStyle(.label)
                 .foregroundStyle(secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -148,10 +148,10 @@ struct StressDetailView: View {
     private func sectionHeader(title: String, subtitle: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.title3.weight(.bold))
+                .pulsarTextStyle(.sectionHeader)
                 .foregroundStyle(primaryText)
             Text(subtitle)
-                .font(.caption.weight(.medium))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(secondaryText)
         }
         .padding(.horizontal, 2)
@@ -159,7 +159,7 @@ struct StressDetailView: View {
 
     private var confidenceBadge: some View {
         Text(summary.confidence.shortLabel)
-            .font(.caption.weight(.bold))
+            .pulsarTextStyle(.captionEmphasis)
             .foregroundStyle(confidenceColor)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -339,18 +339,18 @@ private struct StressSnapshotTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(secondaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.74)
             Text(value)
-                .font(.title3.weight(.bold))
+                .pulsarTextStyle(.sectionHeader)
                 .foregroundStyle(primaryText)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.70)
             Text(subtitle)
-                .font(.caption2.weight(.semibold))
+                .pulsarTextStyle(.overline)
                 .foregroundStyle(secondaryText)
                 .lineLimit(2)
                 .minimumScaleFactor(0.72)

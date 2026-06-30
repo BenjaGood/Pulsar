@@ -91,7 +91,7 @@ struct WatchGymOptionsView: View {
                         dismiss()
                     } label: {
                         Text("Cancel")
-                            .font(.caption.weight(.black))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(.white.opacity(0.72))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 9)
@@ -114,10 +114,10 @@ struct WatchGymOptionsView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Gym")
-                .font(.headline.weight(.black))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(.white)
             Text("Start fast or mirror an iPhone routine.")
-                .font(.caption2.weight(.semibold))
+                .pulsarTextStyle(.overline)
                 .foregroundStyle(.white.opacity(0.60))
                 .lineLimit(2)
         }
@@ -181,7 +181,7 @@ struct WatchSavedRoutineListView: View {
                     syncStore.sendGymAction(.requestSavedRoutines())
                 } label: {
                     Image(systemName: "arrow.clockwise")
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.white.opacity(0.72))
                 }
                 .buttonStyle(.plain)
@@ -196,10 +196,10 @@ struct WatchSavedRoutineListView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Saved Routines")
-                .font(.headline.weight(.black))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(.white)
             Text("Synced from iPhone")
-                .font(.caption2.weight(.semibold))
+                .pulsarTextStyle(.overline)
                 .foregroundStyle(.white.opacity(0.60))
         }
         .padding(.horizontal, 2)
@@ -209,13 +209,13 @@ struct WatchSavedRoutineListView: View {
         WatchGymStartGlassCard {
             VStack(spacing: 7) {
                 Image(systemName: "iphone.gen3")
-                    .font(.title3.weight(.black))
+                    .pulsarTextStyle(.sectionHeader)
                     .foregroundStyle(Color(red: 0.72, green: 0.66, blue: 1.0))
                 Text("No saved routines")
-                    .font(.headline.weight(.black))
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(.white)
                 Text("Create one on iPhone")
-                    .font(.caption2.weight(.semibold))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(.white.opacity(0.58))
             }
             .frame(maxWidth: .infinity)
@@ -232,13 +232,13 @@ private struct WatchSavedRoutineCard: View {
         WatchGymStartGlassCard {
             HStack(spacing: 9) {
                 Text(routine.emoji)
-                    .font(.title3)
+                    .pulsarTextStyle(.sectionHeader)
                     .frame(width: 34, height: 34)
                     .background(.white.opacity(0.09), in: Circle())
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(routine.name)
-                        .font(.system(size: 14, weight: .black, design: .rounded))
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white)
                         .lineLimit(1)
                         .minimumScaleFactor(0.74)
@@ -251,7 +251,7 @@ private struct WatchSavedRoutineCard: View {
                 Spacer(minLength: 0)
 
                 Image(systemName: isStarting ? "hourglass" : "play.fill")
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(Color(red: 0.66, green: 1.0, blue: 0.78))
             }
         }
@@ -280,14 +280,14 @@ private struct WatchGymStartOptionCard: View {
                     Circle()
                         .fill(tint.opacity(0.18))
                     Image(systemName: symbolName)
-                        .font(.system(size: 17, weight: .black))
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(tint)
                 }
                 .frame(width: 38, height: 38)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
-                        .font(.system(size: 14, weight: .black, design: .rounded))
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white)
                         .lineLimit(1)
                         .minimumScaleFactor(0.72)
@@ -300,7 +300,7 @@ private struct WatchGymStartOptionCard: View {
                 Spacer(minLength: 0)
 
                 Image(systemName: trailingSymbol)
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(tint.opacity(0.86))
             }
         }

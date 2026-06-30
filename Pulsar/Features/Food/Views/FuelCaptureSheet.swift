@@ -139,7 +139,7 @@ struct FuelCaptureSheet: View {
                 servingAmountChips
 
                 Toggle("Save to Private Foods", isOn: $saveAsPrivateFood)
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.label)
             }
         }
     }
@@ -190,7 +190,7 @@ struct FuelCaptureSheet: View {
     private var saveButton: some View {
         Button(action: confirm) {
             Text(editingEntry == nil ? "Add Food" : "Save Changes")
-                .font(.headline.weight(.bold))
+                .pulsarTextStyle(.cardTitle)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 15)
         }
@@ -205,7 +205,7 @@ struct FuelCaptureSheet: View {
                 Button("\(PulsarNutritionFormatters.decimal(value))x") {
                     servingAmountText = PulsarNutritionFormatters.decimal(value)
                 }
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .buttonStyle(.bordered)
                 .tint(.green)
             }
@@ -218,7 +218,7 @@ struct FuelCaptureSheet: View {
         if !foods.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text(title)
-                    .font(.caption.weight(.bold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.secondary)
 
                 VStack(spacing: 8) {
@@ -242,7 +242,7 @@ struct FuelCaptureSheet: View {
     private func quickEntryGroup(title: String, entries: [PulsarNutritionEntry]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.secondary)
 
             VStack(spacing: 8) {
@@ -415,18 +415,18 @@ private struct FuelQuickFoodRow: View {
             Button(action: selectAction) {
                 HStack(spacing: 10) {
                     Image(systemName: symbolName)
-                        .font(.subheadline.weight(.bold))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(tint)
                         .frame(width: 32, height: 32)
                         .background(tint.opacity(0.13), in: Circle())
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(title)
-                            .font(.subheadline.weight(.bold))
+                            .pulsarTextStyle(.label)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                         Text(subtitle)
-                            .font(.caption.weight(.semibold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
@@ -436,7 +436,7 @@ private struct FuelQuickFoodRow: View {
 
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.subheadline.weight(.bold))
+                            .pulsarTextStyle(.label)
                             .foregroundStyle(.green)
                     }
                 }
@@ -449,7 +449,7 @@ private struct FuelQuickFoodRow: View {
 
             Button(action: quickAddAction) {
                 Image(systemName: "plus.circle.fill")
-                    .font(.title3.weight(.bold))
+                    .pulsarTextStyle(.sectionHeader)
                     .frame(width: 36, height: 36)
             }
             .buttonStyle(NutritionIconButtonStyle(tint: tint, size: 36))
@@ -479,12 +479,12 @@ private struct FuelPreviewPill: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(value)
-                .font(.headline.weight(.bold))
+                .pulsarTextStyle(.cardTitle)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
             Text(title)
-                .font(.caption2.weight(.semibold))
+                .pulsarTextStyle(.overline)
                 .foregroundStyle(.secondary)
         }
         .padding(12)

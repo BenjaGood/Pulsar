@@ -53,7 +53,7 @@ struct StrainDetailWatchView: View {
             WatchGlassCard {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Heart Zones")
-                            .font(.headline)
+                            .pulsarTextStyle(.cardTitle)
                         ForEach(snapshot.strain.zoneMinutes) { zone in
                             WatchStatPill(title: "Zone \(zone.zone)", value: WatchFormatters.minutes(zone.minutes))
                         }
@@ -119,11 +119,11 @@ struct SleepDetailWatchView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Label(snapshot.alarm.isEnabled ? "Alarm On" : "Alarm Off", systemImage: "alarm.fill")
-                                .font(.headline)
+                                .pulsarTextStyle(.cardTitle)
                             Spacer()
                             if snapshot.alarm.isEnabled {
                                 Text(WatchFormatters.clockTime(snapshot.alarm.timeMinutesFromMidnight))
-                                    .font(.caption.weight(.semibold))
+                                    .pulsarTextStyle(.captionEmphasis)
                                     .monospacedDigit()
                                     .foregroundStyle(.orange)
                             }
@@ -162,10 +162,10 @@ struct StressDetailWatchView: View {
                 VStack(alignment: .center, spacing: 10) {
                     WatchStressHaloGaugeView(stress: stress, size: 112)
                     Text(stress.level)
-                        .font(.headline.weight(.semibold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(tint)
                     Text(WatchFormatters.confidence(stress.confidence))
-                        .font(.caption.weight(.bold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 5)
@@ -177,11 +177,11 @@ struct StressDetailWatchView: View {
             WatchGlassCard {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Today")
-                        .font(.headline)
+                        .pulsarTextStyle(.cardTitle)
                     WatchMiniStressTimelineView(samples: stress.timelineSamples, tint: tint)
                         .frame(height: 58)
                     Text("Estimated from available wearable signals. Not a medical diagnosis.")
-                        .font(.caption2)
+                        .pulsarTextStyle(.metadata)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -190,10 +190,10 @@ struct StressDetailWatchView: View {
             WatchGlassCard {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Key Drivers")
-                        .font(.headline)
+                        .pulsarTextStyle(.cardTitle)
                     ForEach(driverRows, id: \.self) { driver in
                         Label(driver, systemImage: "waveform.path.ecg")
-                            .font(.caption.weight(.semibold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -260,14 +260,14 @@ struct HealthStatusWatchView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("HealthKit")
-                            .font(.headline)
+                            .pulsarTextStyle(.cardTitle)
                         Spacer()
                         Text(snapshot.healthKitState.label)
-                            .font(.caption.weight(.semibold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(snapshot.healthKitState.tint)
                     }
                     Text("Data source: \(sourceLabel)")
-                        .font(.caption)
+                        .pulsarTextStyle(.caption)
                         .foregroundStyle(.secondary)
                     if snapshot.healthKitState == .notRequested {
                         Button("Connect") { Task { await store.requestAuthorization() } }
@@ -294,10 +294,10 @@ private struct LastWorkoutCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(workout.type)
-                        .font(.headline)
+                        .pulsarTextStyle(.cardTitle)
                     Spacer()
                     Text(workout.start.formatted(date: .omitted, time: .shortened))
-                        .font(.caption2)
+                        .pulsarTextStyle(.metadata)
                         .foregroundStyle(.secondary)
                 }
                 WatchStatPill(title: "Duration", value: WatchFormatters.minutes(workout.durationMinutes))
@@ -305,7 +305,7 @@ private struct LastWorkoutCard: View {
                 WatchStatPill(title: "Avg HR", value: WatchFormatters.bpm(workout.averageHeartRate), unit: "bpm")
                 if let source = workout.sourceName {
                     Text(source)
-                        .font(.caption2)
+                        .pulsarTextStyle(.metadata)
                         .foregroundStyle(.secondary)
                 }
             }

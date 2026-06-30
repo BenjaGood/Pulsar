@@ -61,7 +61,11 @@ final class PulsarMindfulnessStore: ObservableObject {
     }
 
     @discardableResult
-    func saveCheckIn(_ draft: PulsarDailyJournalDraft, now: Date = Date()) -> PulsarDailyJournalEntry {
+    func saveCheckIn(
+        _ draft: PulsarDailyJournalDraft,
+        now: Date = Date(),
+        playsHaptic: Bool = true
+    ) -> PulsarDailyJournalEntry {
         let entry = draft.entry(now: now)
         var entries = state.entries
         entries.removeAll { existing in
@@ -70,7 +74,9 @@ final class PulsarMindfulnessStore: ObservableObject {
         entries.insert(entry, at: 0)
         updateState(entries: entries, sessions: state.sessions, now: now)
         persist()
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        if playsHaptic {
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        }
         return entry
     }
 

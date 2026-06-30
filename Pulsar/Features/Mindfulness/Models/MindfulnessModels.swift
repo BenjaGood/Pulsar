@@ -189,6 +189,21 @@ struct PulsarDailyJournalEntry: Identifiable, Codable, Equatable, Hashable {
         }
     }
 
+    var wellnessAverage: Double {
+        let signals = [
+            Self.clamped01((valence + 1) / 2),
+            Self.clamped01(energy),
+            1 - Self.clamped01(stress),
+            Self.clamped01(gratitude),
+            1 - Self.clamped01(anxiety),
+            Self.clamped01(socialConnection),
+            Self.clamped01(productivity),
+            Self.clamped01(sleepPerception)
+        ]
+
+        return signals.reduce(0, +) / Double(signals.count)
+    }
+
     private static func clamped01(_ value: Double) -> Double {
         clamped(value, range: 0...1)
     }
@@ -279,6 +294,52 @@ struct PulsarDailyJournalDraft: Equatable {
             createdAt: createdAt ?? now,
             updatedAt: now
         )
+    }
+}
+
+struct PulsarMindfulnessWeekSnapshot: Equatable {
+    struct Day: Identifiable, Equatable {
+        var date: Date
+        var entry: PulsarDailyJournalEntry?
+
+        var id: Date { date }
+    }
+
+    var days: [Day]
+    var wellnessAverage: Double?
+
+    init(
+        entries: [PulsarDailyJournalEntry],
+        referenceDate: Date = Date(),
+        calendar: Calendar = .current
+    ) {
+        let referenceDay = calendar.startOfDay(for: referenceDate)
+        let weekday = calendar.component(.weekday, from: referenceDay)
+        let daysSinceMonday = (weekday + 5) % 7
+        let monday = calendar.date(
+            byAdding: .day,
+            value: -daysSinceMonday,
+            to: referenceDay
+        ) ?? referenceDay
+
+        let latestEntryByDay = entries.reduce(into: [Date: PulsarDailyJournalEntry]()) { result, entry in
+            let day = calendar.startOfDay(for: entry.date)
+            guard result[day]?.updatedAt ?? .distantPast < entry.updatedAt else { return }
+            result[day] = entry
+        }
+
+        days = (0..<7).compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: monday) else {
+                return nil
+            }
+            let day = calendar.startOfDay(for: date)
+            return Day(date: day, entry: latestEntryByDay[day])
+        }
+
+        let loggedEntries = days.compactMap(\.entry)
+        wellnessAverage = loggedEntries.isEmpty
+            ? nil
+            : loggedEntries.reduce(0) { $0 + $1.wellnessAverage } / Double(loggedEntries.count)
     }
 }
 

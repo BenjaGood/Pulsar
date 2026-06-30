@@ -114,7 +114,7 @@ struct GymWorkoutSessionView: View {
                 systemImage: "music.note",
                 accessibilityLabel: "Now Playing",
                 size: 36,
-                font: .caption.weight(.black),
+                font: .caption.weight(.semibold),
                 foregroundStyle: .white.opacity(0.84)
             ) {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -125,7 +125,7 @@ struct GymWorkoutSessionView: View {
                 systemImage: onMinimize == nil ? "xmark" : "chevron.down",
                 accessibilityLabel: onMinimize == nil ? "Close workout" : "Minimize workout",
                 size: 36,
-                font: .caption.weight(.black),
+                font: .caption.weight(.semibold),
                 foregroundStyle: .white.opacity(0.78)
             ) {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -142,7 +142,7 @@ struct GymWorkoutSessionView: View {
                 HStack(spacing: 7) {
                     Text(viewModel.session.routineEmoji)
                     Text("Workout in progress")
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.white.opacity(0.56))
                 }
 
@@ -157,7 +157,7 @@ struct GymWorkoutSessionView: View {
 
             VStack(alignment: .trailing, spacing: 8) {
                 Text(viewModel.elapsedSeconds.formattedGymDuration)
-                    .font(.system(size: 20, weight: .black, design: .rounded))
+                    .font(.system(size: 20, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.white)
                     .padding(.horizontal, 12)
@@ -248,7 +248,7 @@ struct GymWorkoutSessionView: View {
                     Text(viewModel.isWorkoutComplete ? "Finish Workout" : "Finish Early")
                     Image(systemName: viewModel.isWorkoutComplete ? "checkmark" : "flag.checkered")
                 }
-                .font(.headline.weight(.bold))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 17)
@@ -293,7 +293,7 @@ private struct GymHeartRateSourceBanner: View {
 
     var body: some View {
         Label(message, systemImage: "heart.text.square.fill")
-            .font(.caption.weight(.black))
+            .pulsarTextStyle(.captionEmphasis)
             .foregroundStyle(.white.opacity(0.92))
             .lineLimit(2)
             .minimumScaleFactor(0.82)
@@ -311,9 +311,9 @@ private struct AdaptiveGymCoachingBanner: View {
         Label {
             VStack(alignment: .leading, spacing: 2) {
                 Text(coaching.title)
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                 Text(coaching.message)
-                    .font(.caption.weight(.semibold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .fixedSize(horizontal: false, vertical: true)
             }
         } icon: {
@@ -354,18 +354,18 @@ private struct GymHeartRatePill: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "heart.fill")
-                .font(.caption.weight(.black))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(Color(red: 1.0, green: 0.42, blue: 0.56))
                 .symbolEffect(.pulse, options: .repeating, value: heartRate != nil)
 
             VStack(alignment: .trailing, spacing: 1) {
                 Text(heartRateText)
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.white)
                     .monospacedDigit()
 
                 Text(statusText)
-                    .font(.system(size: 9, weight: .black, design: .rounded))
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white.opacity(0.52))
                     .lineLimit(1)
             }
@@ -400,17 +400,17 @@ private struct GymCaloriesPill: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "flame.fill")
-                .font(.caption.weight(.black))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(Color(red: 1.0, green: 0.72, blue: 0.34))
 
             VStack(alignment: .trailing, spacing: 1) {
                 Text(caloriesText)
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.white)
                     .monospacedDigit()
 
                 Text(statusText)
-                    .font(.system(size: 9, weight: .black, design: .rounded))
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white.opacity(0.52))
                     .lineLimit(1)
             }
@@ -488,9 +488,9 @@ private struct GymSupersetSessionPairView: View {
             HStack(spacing: 9) {
                 HStack(spacing: 7) {
                     Image(systemName: "link")
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                     Text(viewModel.supersetLabel(for: group.id))
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                 }
                 .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
                 .padding(.horizontal, 11)
@@ -505,7 +505,7 @@ private struct GymSupersetSessionPairView: View {
                 )
 
                 Text("\(group.sharedSetCount) shared sets / \(group.restTimeSeconds.formattedRestLabel) rest")
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.white.opacity(0.62))
                     .lineLimit(1)
                     .minimumScaleFactor(0.76)
@@ -520,7 +520,7 @@ private struct GymSupersetSessionPairView: View {
                         }
                     } label: {
                         Image(systemName: "minus")
-                            .font(.caption.weight(.black))
+                            .pulsarTextStyle(.captionEmphasis)
                             .frame(width: 28, height: 28)
                             .background(.white.opacity(0.075), in: Circle())
                     }
@@ -534,7 +534,7 @@ private struct GymSupersetSessionPairView: View {
                         }
                     } label: {
                         Image(systemName: "plus")
-                            .font(.caption.weight(.black))
+                            .pulsarTextStyle(.captionEmphasis)
                             .frame(width: 28, height: 28)
                             .background(.white.opacity(0.095), in: Circle())
                     }
@@ -595,14 +595,14 @@ private struct GymSessionExerciseCard: View {
                         .frame(width: 38, height: 38)
 
                     Image(systemName: exercise.isCompleted ? "checkmark" : "figure.strengthtraining.traditional")
-                        .font(.subheadline.weight(.black))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(exercise.isCompleted ? Color(red: 0.72, green: 1.0, blue: 0.78) : .white.opacity(0.76))
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
                     if let supersetBadge {
                         Text(supersetBadge)
-                            .font(.system(size: 10, weight: .black, design: .rounded))
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
                             .foregroundStyle(Color(red: 0.78, green: 0.72, blue: 1.0))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
@@ -614,17 +614,17 @@ private struct GymSessionExerciseCard: View {
                     }
 
                     Text(exercise.exerciseName)
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(.white)
                         .lineLimit(2)
 
                     Text("\(exercise.primaryMuscleGroup.displayName) / \(exercise.equipment)")
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.white.opacity(0.58))
                         .lineLimit(1)
 
                     Text(planCaption)
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(Color(red: 0.75, green: 0.70, blue: 1.0))
                         .lineLimit(2)
                 }
@@ -637,7 +637,7 @@ private struct GymSessionExerciseCard: View {
                             onShowProgress(exercise)
                         } label: {
                             Image(systemName: "chart.line.uptrend.xyaxis")
-                                .font(.caption.weight(.black))
+                                .pulsarTextStyle(.captionEmphasis)
                                 .foregroundStyle(Color(red: 0.78, green: 0.72, blue: 1.0))
                                 .frame(width: 28, height: 28)
                                 .background(.white.opacity(0.075), in: Circle())
@@ -649,7 +649,7 @@ private struct GymSessionExerciseCard: View {
                         .accessibilityLabel("Open \(exercise.exerciseName) progress")
 
                         Text("\(exercise.completedSetCount)/\(exercise.sets.count)")
-                            .font(.caption.weight(.black))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(exercise.isCompleted ? Color(red: 0.70, green: 1.0, blue: 0.76) : .white.opacity(0.58))
                             .padding(.horizontal, 9)
                             .padding(.vertical, 6)
@@ -663,7 +663,7 @@ private struct GymSessionExerciseCard: View {
                                 viewModel.removeLastSet(from: exercise.id)
                             } label: {
                                 Image(systemName: "minus")
-                                    .font(.caption.weight(.black))
+                                    .pulsarTextStyle(.captionEmphasis)
                                     .foregroundStyle(.white.opacity(0.76))
                                     .frame(width: 28, height: 28)
                                     .background(.white.opacity(0.065), in: Circle())
@@ -679,7 +679,7 @@ private struct GymSessionExerciseCard: View {
                                 viewModel.addSet(to: exercise.id)
                             } label: {
                                 Image(systemName: "plus")
-                                    .font(.caption.weight(.black))
+                                    .pulsarTextStyle(.captionEmphasis)
                                     .foregroundStyle(.white.opacity(0.76))
                                     .frame(width: 28, height: 28)
                                     .background(.white.opacity(0.075), in: Circle())
@@ -696,7 +696,7 @@ private struct GymSessionExerciseCard: View {
 
             if let notes = exercise.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(notes)
-                    .font(.caption.weight(.semibold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.white.opacity(0.64))
                     .padding(11)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -768,10 +768,10 @@ private struct GymPerformanceMemoryStrip: View {
             if let suggestion = snapshot.suggestion {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: suggestionIcon(for: suggestion.kind))
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(Color(red: 0.73, green: 1.0, blue: 0.78))
                     Text(suggestion.detail)
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.white.opacity(0.76))
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -807,9 +807,9 @@ private struct GymPerformanceMemoryChip: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: symbol)
-                .font(.caption2.weight(.black))
+                .pulsarTextStyle(.overline)
             Text(text)
-                .font(.caption2.weight(.black))
+                .pulsarTextStyle(.overline)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
         }
@@ -831,7 +831,7 @@ private struct GymWorkoutSetRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Text("Set \(set.setNumber)")
-                .font(.caption.weight(.black))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(set.isCompleted ? Color(red: 0.70, green: 1.0, blue: 0.76) : .white.opacity(0.70))
                 .frame(width: 54, alignment: .leading)
 
@@ -841,18 +841,18 @@ private struct GymWorkoutSetRow: View {
             } label: {
                 HStack(spacing: 10) {
                     Text("\(displayReps) reps")
-                        .font(.subheadline.weight(.bold))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     Text("\(displayWeight.formattedGymDecimal) \(weightUnit.displayName)")
-                        .font(.subheadline.weight(.bold))
+                        .pulsarTextStyle(.label)
                         .monospacedDigit()
                         .foregroundStyle(.white.opacity(0.84))
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     Image(systemName: "slider.horizontal.3")
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.white.opacity(0.42))
                 }
             }
@@ -880,7 +880,7 @@ private struct GymWorkoutSetRow: View {
                 }
             } label: {
                 Image(systemName: set.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .font(.title3.weight(.bold))
+                    .pulsarTextStyle(.sectionHeader)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(set.isCompleted ? Color(red: 0.70, green: 1.0, blue: 0.76) : .white.opacity(0.58))
                     .frame(width: 34, height: 34)
@@ -952,7 +952,7 @@ private struct GymSetEditorSheet: View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Set \(setNumber)")
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.white.opacity(0.54))
                     .textCase(.uppercase)
 
@@ -982,7 +982,7 @@ private struct GymSetEditorSheet: View {
                 dismiss()
             } label: {
                 Text("Save Set Values")
-                    .font(.headline.weight(.bold))
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
@@ -1018,10 +1018,10 @@ private struct GymSetEditorStepper: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.white.opacity(0.54))
                 Text(value)
-                    .font(.title3.weight(.black))
+                    .pulsarTextStyle(.sectionHeader)
                     .monospacedDigit()
                     .foregroundStyle(.white)
             }
@@ -1031,14 +1031,14 @@ private struct GymSetEditorStepper: View {
             HStack(spacing: 8) {
                 Button(action: onMinus) {
                     Image(systemName: "minus")
-                        .font(.subheadline.weight(.black))
+                        .pulsarTextStyle(.label)
                         .frame(width: 38, height: 38)
                         .background(.white.opacity(0.08), in: Circle())
                 }
 
                 Button(action: onPlus) {
                     Image(systemName: "plus")
-                        .font(.subheadline.weight(.black))
+                        .pulsarTextStyle(.label)
                         .frame(width: 38, height: 38)
                         .background(.white.opacity(0.12), in: Circle())
                 }
@@ -1061,16 +1061,16 @@ private struct GymRestTimerCard: View {
         VStack(spacing: 11) {
             HStack(spacing: 12) {
                 Image(systemName: "timer")
-                    .font(.headline.weight(.black))
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(Color(red: 0.84, green: 0.78, blue: 1.0))
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("\(title) \(remainingSeconds.formattedRestLabel)")
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.white.opacity(0.56))
 
                     Text(remainingSeconds.formattedGymDuration)
-                        .font(.headline.weight(.black))
+                        .pulsarTextStyle(.cardTitle)
                         .monospacedDigit()
                         .foregroundStyle(.white)
                 }
@@ -1078,7 +1078,7 @@ private struct GymRestTimerCard: View {
                 Spacer(minLength: 0)
 
                 Button("Skip Rest", action: onSkip)
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.white.opacity(0.78))
                     .buttonStyle(.plain)
             }
@@ -1112,17 +1112,17 @@ private struct GymSessionStat: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Image(systemName: symbolName)
-                .font(.subheadline.weight(.bold))
+                .pulsarTextStyle(.label)
                 .foregroundStyle(Color(red: 0.78, green: 0.71, blue: 1.0))
 
             Text(value)
-                .font(.headline.weight(.bold))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
 
             Text(title)
-                .font(.caption.weight(.semibold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.white.opacity(0.58))
         }
         .padding(13)
@@ -1144,11 +1144,11 @@ private struct GymEmptySessionExerciseView: View {
                 .foregroundStyle(.white.opacity(0.76))
 
             Text("Open session ready")
-                .font(.headline.weight(.bold))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(.white)
 
             Text("Finish when your freestyle lift is complete.")
-                .font(.subheadline.weight(.medium))
+                .pulsarTextStyle(.label)
                 .foregroundStyle(.white.opacity(0.58))
                 .multilineTextAlignment(.center)
         }
@@ -1188,18 +1188,18 @@ struct GymWorkoutSummaryOverlay: View {
                             Text(summary.routineEmoji)
                             Text(summary.routineName)
                         }
-                        .font(.subheadline.weight(.semibold))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(.white.opacity(0.62))
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
 
                         Label(summary.sourceDeviceName, systemImage: summary.source == .appleWatch || summary.source == .iPhoneRequestedWatchStart ? "applewatch" : "iphone")
-                            .font(.caption.weight(.black))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(.white.opacity(0.56))
 
                         if let heartRateSource = summary.heartRateSourceSummaryText {
                             Label(heartRateSource, systemImage: "heart.text.square.fill")
-                                .font(.caption.weight(.black))
+                                .pulsarTextStyle(.captionEmphasis)
                                 .foregroundStyle(.white.opacity(0.58))
                                 .lineLimit(2)
                                 .minimumScaleFactor(0.82)
@@ -1208,7 +1208,7 @@ struct GymWorkoutSummaryOverlay: View {
 
                         if let startedAt = summary.startedAt {
                             Text(startedAt.formatted(.dateTime.weekday(.wide).month(.abbreviated).day().hour().minute()))
-                                .font(.caption.weight(.semibold))
+                                .pulsarTextStyle(.captionEmphasis)
                                 .foregroundStyle(.white.opacity(0.50))
                                 .multilineTextAlignment(.center)
                         }
@@ -1244,7 +1244,7 @@ struct GymWorkoutSummaryOverlay: View {
                             isShowingShareComposer = true
                         } label: {
                             Label("Share", systemImage: "square.and.arrow.up")
-                                .font(.headline.weight(.bold))
+                                .pulsarTextStyle(.cardTitle)
                                 .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 16)
@@ -1261,7 +1261,7 @@ struct GymWorkoutSummaryOverlay: View {
 
                         Button(action: onDone) {
                             Text("Done")
-                                .font(.headline.weight(.bold))
+                                .pulsarTextStyle(.cardTitle)
                                 .foregroundStyle(.white.opacity(0.90))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 16)
@@ -1298,14 +1298,14 @@ private struct GymSummaryCompletedSetsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Completed Sets", systemImage: "list.bullet.rectangle.fill")
-                .font(.headline.weight(.black))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(.white)
 
             VStack(spacing: 10) {
                 ForEach(exercises) { exercise in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(exercise.exerciseName)
-                            .font(.subheadline.weight(.black))
+                            .pulsarTextStyle(.label)
                             .foregroundStyle(.white)
                             .lineLimit(2)
 
@@ -1313,18 +1313,19 @@ private struct GymSummaryCompletedSetsView: View {
                             ForEach(exercise.sets) { set in
                                 HStack(spacing: 10) {
                                     Text("Set \(set.setNumber)")
-                                        .font(.caption.weight(.black))
+                                        .pulsarTextStyle(.captionEmphasis)
                                         .foregroundStyle(.white.opacity(0.56))
                                         .frame(width: 48, alignment: .leading)
 
                                     Text("\(set.reps) reps")
-                                        .font(.caption.weight(.black))
+                                        .pulsarTextStyle(.captionEmphasis)
                                         .foregroundStyle(.white)
 
                                     Spacer(minLength: 0)
 
                                     Text("\(set.weight.formattedGymDecimal) \(exercise.weightUnit.displayName)")
-                                        .font(.caption.weight(.black).monospacedDigit())
+                                        .pulsarTextStyle(.captionEmphasis)
+                                .monospacedDigit()
                                         .foregroundStyle(.white.opacity(0.82))
                                 }
                                 .padding(.horizontal, 10)
@@ -1353,13 +1354,13 @@ private struct GymSummaryMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(value)
-                .font(.headline.weight(.black))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.74)
 
             Text(title)
-                .font(.caption.weight(.black))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.white.opacity(0.56))
         }
         .padding(12)

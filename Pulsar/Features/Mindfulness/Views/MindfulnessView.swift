@@ -8,16 +8,21 @@ import SwiftUI
 import UIKit
 
 struct MindfulnessView: View {
+    @Environment(\.calendar) private var calendar
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @ObservedObject private var homeViewModel: HomeViewModel
     @ObservedObject private var store: PulsarMindfulnessStore
     @ObservedObject private var router: PulsarMindfulnessRouter
     @ObservedObject private var bottomChromeLayoutStore: PulsarBottomChromeLayoutStore
     @State private var activeSheet: MindfulnessSheet?
-    @State private var activeTemplate: PulsarMeditationTemplate?
     @State private var activeRewind: PulsarDailyRewind?
+    @State private var dailyDraft = PulsarDailyJournalDraft()
+    @State private var displayedMonth = Date()
+    @State private var selectedHistoryDate = Date()
+    @State private var streakCelebration: MindfulnessStreakCelebration?
 
-    private let templates = PulsarMindfulnessContentLibrary.meditationTemplates
     private let rewindBuilder: DailyRewindBuilder
 
     init(
@@ -36,72 +41,81 @@ struct MindfulnessView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                PulsarSectionBackground()
-                    .ignoresSafeArea()
+            GeometryReader { proxy in
+                let topChromeClearance = Self.topChromeClearance(for: proxy.safeAreaInsets.top)
+                let weekSnapshot = PulsarMindfulnessWeekSnapshot(
+                    entries: store.state.entries,
+                    referenceDate: Date(),
+                    calendar: calendar
+                )
 
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 22) {
-                        MindfulnessPageTitleHeader()
+                ZStack {
+                    MindfulnessScenicBackground()
 
-                        MindfulnessTodayCard(
-                            dashboard: store.dashboard,
-                            onCheckIn: openCheckIn,
-                            onStartBreathing: startDefaultBreathing
-                        )
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 14) {
+                            MindfulnessPageTitleHeader()
 
-                        MindfulnessTrendCard(points: store.dashboard.trend)
+                            MindfulnessMoodLoggingCard(
+                                draft: $dailyDraft,
+                                onLog: saveDailyMood
+                            )
 
-                        meditationLibrary
+                            MindfulnessWeeklySummaryCard(
+                                snapshot: weekSnapshot,
+                                onViewMore: openMoodHistory
+                            )
 
-                        insightsSection
+                            MindfulnessCompactInsightsCard(
+                                average: weekSnapshot.wellnessAverage
+                            )
 
-                        if let latestSession = store.dashboard.latestSession {
-                            recentSessionCard(latestSession)
+                            PulsarBottomChromeSpacer(layoutStore: bottomChromeLayoutStore)
                         }
-
-                        PulsarBottomChromeSpacer(layoutStore: bottomChromeLayoutStore)
+                        .padding(.horizontal, 22)
+                        .padding(.top, topChromeClearance)
+                        .padding(.bottom, 8)
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 34)
-                    .padding(.bottom, 34)
+                    .pulsarBottomChromeScrollContainer(layoutStore: bottomChromeLayoutStore)
+                    .scrollContentBackground(.hidden)
+                    .ignoresSafeArea(edges: .bottom)
+                    .premiumScrollHeaderBlur(height: 48, fadeStart: 12, fadeEnd: 48)
+
+                    if let streakCelebration {
+                        MindfulnessStreakToast(celebration: streakCelebration)
+                            .padding(.horizontal, 22)
+                            .padding(
+                                .bottom,
+                                max(bottomChromeLayoutStore.layout.scrollContentBottomMargin, 142) + 10
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                            .transition(
+                                reduceMotion
+                                    ? .opacity
+                                    : .move(edge: .bottom)
+                                        .combined(with: .scale(scale: 0.96))
+                                        .combined(with: .opacity)
+                            )
+                            .allowsHitTesting(false)
+                            .zIndex(10)
+                    }
                 }
-                .pulsarBottomChromeScrollContainer(layoutStore: bottomChromeLayoutStore)
-                .scrollContentBackground(.hidden)
-                .premiumScrollHeaderBlur()
             }
             .navigationTitle("")
             .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button(action: openDailyRewind) {
-                        Image(systemName: "arrow.counterclockwise.circle")
-                    }
-                    .accessibilityLabel("Daily Rewind")
-
-                    Button(action: openCheckIn) {
-                        Image(systemName: "square.and.pencil")
-                    }
-                    .accessibilityLabel("Daily check-in")
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
-                case .checkIn:
-                    DailyJournalCheckInSheet(draft: store.draftForToday()) { draft in
-                        store.saveCheckIn(draft)
-                        syncDailyRewindReminder()
-                    }
+                case .moodHistory:
+                    MindfulnessHistorySheet(
+                        entries: store.state.entries,
+                        displayedMonth: $displayedMonth,
+                        selectedDate: $selectedHistoryDate
+                    )
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
-                }
-            }
-            .fullScreenCover(item: $activeTemplate, onDismiss: {
-                activeTemplate = nil
-            }) { template in
-                MindfulnessSessionView(template: template) { summary in
-                    store.saveSession(summary)
-                    activeTemplate = nil
+                    .presentationBackground(.clear)
+                    .presentationCornerRadius(38)
                 }
             }
             .fullScreenCover(item: $activeRewind, onDismiss: {
@@ -119,99 +133,68 @@ struct MindfulnessView: View {
                 )
             }
             .task {
+                refreshDailyDraft()
                 syncDailyRewindReminder()
                 consumePendingMindfulnessPresentationIfNeeded()
+            }
+            .task(id: streakCelebration?.id) {
+                guard let celebrationID = streakCelebration?.id else { return }
+                await dismissStreakCelebration(id: celebrationID)
             }
             .onChange(of: scenePhase) { _, newPhase in
                 guard newPhase == .active else { return }
                 store.reload()
+                refreshDailyDraft()
                 syncDailyRewindReminder()
+            }
+            .onChange(of: store.state.entries) { _, _ in
+                refreshDailyDraft()
             }
             .onReceive(router.$pendingPresentation.compactMap { $0 }) { presentation in
                 presentDailyRewind(presentation: presentation)
             }
         }
-        .background(PulsarSectionBackground())
+        .preferredColorScheme(.dark)
         .toolbarBackground(.hidden, for: .navigationBar)
-    }
-
-    private var meditationLibrary: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Guided sessions")
-                        .pulsarTextStyle(.sectionTitle)
-                    Text("Breath, recovery, focus, and rest")
-                        .pulsarTextStyle(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
-
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: 12),
-                    GridItem(.flexible(), spacing: 12)
-                ],
-                spacing: 12
-            ) {
-                ForEach(templates) { template in
-                    MindfulnessTemplateCard(template: template) {
-                        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-                        activeTemplate = template
-                    }
-                }
-            }
+        .sensoryFeedback(.success, trigger: streakCelebration?.id) { _, newValue in
+            newValue != nil
         }
     }
 
-    private var insightsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Intelligence")
-                .pulsarTextStyle(.sectionTitle)
-
-            ForEach(store.dashboard.insights) { insight in
-                PulsarMindfulnessInsightCard(insight: insight)
-            }
-        }
-    }
-
-    private func recentSessionCard(_ session: PulsarMindfulnessSessionSummary) -> some View {
-        PulsarMindfulnessGlassCard(cornerRadius: 24) {
-            HStack(alignment: .top, spacing: 14) {
-                Image(systemName: session.category.symbolName)
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(session.category.accent)
-                    .frame(width: 40, height: 40)
-                    .background(session.category.accent.opacity(0.13), in: Circle())
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Latest session")
-                        .pulsarTextStyle(.overline)
-                        .foregroundStyle(.secondary)
-                    Text(session.title)
-                        .pulsarTextStyle(.cardTitle)
-                    Text("\(session.durationText) · \(session.category.title)")
-                        .pulsarTextStyle(.screenSubtitle)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 0)
-            }
-        }
-    }
-
-    private func openCheckIn() {
+    private func openMoodHistory() {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        activeSheet = .checkIn
+        activeSheet = .moodHistory
     }
 
-    private func openDailyRewind() {
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        activeRewind = rewindBuilder.build(
-            dashboard: homeViewModel.dashboard,
-            mindfulness: store.state
+    private func saveDailyMood() {
+        let now = Date()
+        dailyDraft.date = now
+        dailyDraft.kind = .dailyMood
+        let savedEntry = store.saveCheckIn(
+            dailyDraft,
+            now: now,
+            playsHaptic: false
         )
+        dailyDraft = PulsarDailyJournalDraft(entry: savedEntry)
+        syncDailyRewindReminder()
+
+        guard store.lastPersistenceError == nil else { return }
+        let celebration = MindfulnessStreakCelebration(
+            dayCount: max(1, store.dashboard.streak.currentStreak)
+        )
+        withAnimation(streakAnimation) {
+            streakCelebration = celebration
+        }
+        if voiceOverEnabled {
+            AccessibilityNotification.Announcement(
+                "\(celebration.title). \(celebration.message)"
+            )
+            .post()
+        }
+    }
+
+    private func refreshDailyDraft() {
+        dailyDraft = store.draftForToday()
     }
 
     private func presentDailyRewind(presentation: PulsarMindfulnessPresentation) {
@@ -238,20 +221,35 @@ struct MindfulnessView: View {
         }
     }
 
-    private func startDefaultBreathing() {
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        activeTemplate = PulsarMindfulnessContentLibrary.template(id: "breathing-relaxation")
+    private func dismissStreakCelebration(id: UUID) async {
+        let delay: Duration = .milliseconds(voiceOverEnabled ? 5_000 : 2_800)
+        do {
+            try await Task.sleep(for: delay)
+        } catch {
+            return
+        }
+
+        guard streakCelebration?.id == id else { return }
+        withAnimation(streakAnimation) {
+            streakCelebration = nil
+        }
+    }
+
+    private var streakAnimation: Animation {
+        reduceMotion
+            ? .easeOut(duration: 0.14)
+            : .spring(response: 0.36, dampingFraction: 0.82)
+    }
+
+    private static func topChromeClearance(for safeAreaTop: CGFloat) -> CGFloat {
+        safeAreaTop > 0 ? 16 : 64
     }
 }
 
-private enum MindfulnessSheet: Identifiable {
-    case checkIn
+private enum MindfulnessSheet: String, Identifiable {
+    case moodHistory
 
-    var id: String {
-        switch self {
-        case .checkIn: "check-in"
-        }
-    }
+    var id: String { rawValue }
 }
 
 #Preview {

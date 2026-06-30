@@ -29,10 +29,10 @@ struct HomeBackgroundSettingsView: View {
 
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(mode.title)
-                                            .font(.body.weight(.medium))
+                                            .pulsarTextStyle(.bodyEmphasis)
                                             .foregroundStyle(.primary)
                                         Text(subtitle(for: mode))
-                                            .font(.footnote)
+                                            .pulsarTextStyle(.metadata)
                                             .foregroundStyle(.secondary)
                                             .lineLimit(2)
                                     }
@@ -41,7 +41,7 @@ struct HomeBackgroundSettingsView: View {
 
                                     if store.mode == mode {
                                         Image(systemName: "checkmark.circle.fill")
-                                            .font(.headline.weight(.semibold))
+                                            .pulsarTextStyle(.cardTitle)
                                             .foregroundStyle(tint(for: mode))
                                     }
                                 }

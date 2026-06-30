@@ -80,15 +80,15 @@ struct StrainCalendarView: View {
                     )
                     .frame(width: 48, height: 48)
                 Image(systemName: "calendar")
-                    .font(.title3.weight(.semibold))
+                    .pulsarTextStyle(.sectionHeader)
                     .foregroundStyle(.white.opacity(colorScheme == .dark ? 0.95 : 0.86))
             }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("Daily Calendar")
-                    .font(.title2.weight(.bold))
+                    .pulsarTextStyle(.title)
                 Text("Review saved Sleep, Recovery, Strain, and Stress history.")
-                    .font(.subheadline.weight(.medium))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -123,7 +123,7 @@ struct StrainCalendarView: View {
                 withAnimation(.snappy) { viewModel.goToPreviousMonth() }
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.callout.weight(.bold))
+                    .pulsarTextStyle(.bodyEmphasis)
                     .frame(width: 38, height: 38)
             }
             .buttonStyle(.plain)
@@ -134,10 +134,10 @@ struct StrainCalendarView: View {
 
             VStack(spacing: 2) {
                 Text(viewModel.monthTitle)
-                    .font(.title3.weight(.bold))
+                    .pulsarTextStyle(.sectionHeader)
                     .contentTransition(.numericText())
                 Text("\(viewModel.records.count) saved days")
-                    .font(.caption.weight(.medium))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
@@ -146,7 +146,7 @@ struct StrainCalendarView: View {
                 withAnimation(.snappy) { viewModel.goToNextMonth() }
             } label: {
                 Image(systemName: "chevron.right")
-                    .font(.callout.weight(.bold))
+                    .pulsarTextStyle(.bodyEmphasis)
                     .frame(width: 38, height: 38)
             }
             .buttonStyle(.plain)
@@ -162,7 +162,7 @@ struct StrainCalendarView: View {
             HStack(spacing: 0) {
                 ForEach(viewModel.weekdaySymbols, id: \.self) { weekday in
                     Text(weekday)
-                        .font(.caption2.weight(.bold))
+                        .pulsarTextStyle(.overline)
                         .tracking(0.8)
                         .foregroundStyle(.secondary.opacity(0.86))
                         .frame(maxWidth: .infinity)
@@ -208,9 +208,9 @@ struct StrainCalendarView: View {
                 HStack(alignment: .center, spacing: 14) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(viewModel.selectedDate.formatted(date: .abbreviated, time: .omitted))
-                            .font(.headline.weight(.bold))
+                            .pulsarTextStyle(.cardTitle)
                         Text("\(record.sourceName) · \(record.confidence.rawValue) confidence")
-                            .font(.caption.weight(.medium))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -227,7 +227,7 @@ struct StrainCalendarView: View {
                 }
 
                 Text("Tap any day to make it the active dashboard date.")
-                    .font(.caption.weight(.medium))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.secondary)
             }
             .padding(16)
@@ -236,15 +236,15 @@ struct StrainCalendarView: View {
         } else {
             HStack(spacing: 12) {
                 Image(systemName: "moonphase.new.moon")
-                    .font(.title3.weight(.semibold))
+                    .pulsarTextStyle(.sectionHeader)
                     .foregroundStyle(.secondary)
                     .frame(width: 42, height: 42)
                     .background(.secondary.opacity(0.10), in: Circle())
                 VStack(alignment: .leading, spacing: 5) {
                     Text(viewModel.selectedDate.formatted(date: .abbreviated, time: .omitted))
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                     Text(emptyMessage)
-                        .font(.subheadline.weight(.medium))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -263,7 +263,7 @@ struct StrainCalendarView: View {
                 handleDayTap(viewModel.validEndDate, record: viewModel.record(for: viewModel.validEndDate))
             } label: {
                 Label("Today", systemImage: "calendar")
-                    .font(.callout.weight(.semibold))
+                    .pulsarTextStyle(.bodyEmphasis)
                     .padding(.horizontal, 14)
                     .frame(height: 42)
             }
@@ -490,10 +490,10 @@ private struct CalendarSummaryMetric: View {
                 .shadow(color: tint.opacity(0.24), radius: 4)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.caption2.weight(.semibold))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(.secondary)
                 Text(value)
-                    .font(.caption.weight(.bold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
                     .monospacedDigit()

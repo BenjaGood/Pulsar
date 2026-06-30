@@ -35,7 +35,7 @@ struct DevicesView: View {
                     isShowingAddDevice = true
                 } label: {
                     Label("Add Device", systemImage: "plus.circle.fill")
-                        .font(.headline)
+                        .pulsarTextStyle(.cardTitle)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                 }
@@ -62,11 +62,11 @@ struct DevicesView: View {
                 SettingsIcon(symbol: "heart.text.square.fill", tint: healthKitStore.permissionState.tint)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Current Source")
-                        .font(.headline)
+                        .pulsarTextStyle(.cardTitle)
                     Text(currentSourceLabel)
-                        .font(.title2.weight(.semibold))
+                        .pulsarTextStyle(.title)
                     Text("Based on available HealthKit data and your current source setting.")
-                        .font(.footnote)
+                        .pulsarTextStyle(.metadata)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -141,15 +141,15 @@ struct HealthPermissionsView: View {
                         SettingsIcon(symbol: "heart.text.square.fill", tint: healthKitStore.permissionState.tint)
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Apple Health")
-                                .font(.headline)
+                                .pulsarTextStyle(.cardTitle)
                             Text(healthKitStore.permissionState.title)
-                                .font(.title2.weight(.semibold))
+                                .pulsarTextStyle(.title)
                         }
                         Spacer()
                         HealthStatusBadge(text: healthKitStore.permissionState.title, tint: healthKitStore.permissionState.tint)
                     }
                     Text("Pulsar reads compatible HealthKit data to estimate Sleep, Recovery, and Strain. You stay in control of what Apple Health shares.")
-                        .font(.footnote)
+                        .pulsarTextStyle(.metadata)
                         .foregroundStyle(.secondary)
                     Button {
                         Task {
@@ -266,9 +266,9 @@ private struct DeviceSourceRow: View {
             SettingsIcon(symbol: "checkmark.seal.fill", tint: .blue)
             VStack(alignment: .leading, spacing: 3) {
                 Text(source.name)
-                    .font(.body.weight(.medium))
+                    .pulsarTextStyle(.bodyEmphasis)
                 Text(source.detail)
-                    .font(.footnote)
+                    .pulsarTextStyle(.metadata)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -286,9 +286,9 @@ private struct HealthDataSourceRow: View {
             SettingsIcon(symbol: item.symbol, tint: item.status.tint)
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title)
-                    .font(.body.weight(.medium))
+                    .pulsarTextStyle(.bodyEmphasis)
                 Text(item.description)
-                    .font(.footnote)
+                    .pulsarTextStyle(.metadata)
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 10)

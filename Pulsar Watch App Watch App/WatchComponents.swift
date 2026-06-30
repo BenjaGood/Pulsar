@@ -155,7 +155,7 @@ struct WatchAlarmPill: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "alarm.fill")
-                .font(.caption2.weight(.bold))
+                .pulsarTextStyle(.overline)
                 .foregroundStyle(.orange)
             Text(WatchFormatters.clockTime(alarm.timeMinutesFromMidnight))
                 .pulsarMonospacedMetric(.watchMetric)
@@ -523,7 +523,7 @@ struct WatchMiniStressTimelineView: View {
                         .shadow(color: tint.opacity(0.24), radius: 4)
                 } else {
                     Text("No timeline yet")
-                        .font(.caption2)
+                        .pulsarTextStyle(.metadata)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -619,7 +619,7 @@ struct WatchEmptyState: View {
         WatchGlassCard {
             VStack(alignment: .leading, spacing: 8) {
                 Image(systemName: symbol)
-                    .font(.title3)
+                    .pulsarTextStyle(.sectionHeader)
                     .foregroundStyle(.secondary)
                 Text(title)
                     .pulsarTextStyle(.watchTitle)

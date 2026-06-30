@@ -73,7 +73,7 @@ struct PulsarRunSetupView: View {
                     .font(.system(size: 38, weight: .bold, design: .rounded))
                     .foregroundStyle(primaryText)
                 Text("GPS route, live pace, splits, heart rate, and HealthKit workout saving.")
-                    .font(.subheadline.weight(.medium))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -82,7 +82,7 @@ struct PulsarRunSetupView: View {
 
             Button(action: onCancel) {
                 Image(systemName: "xmark")
-                    .font(.caption.weight(.bold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(secondaryText)
                     .frame(width: 36, height: 36)
                     .background(.ultraThinMaterial, in: Circle())
@@ -99,17 +99,17 @@ struct PulsarRunSetupView: View {
                     Circle()
                         .fill(sourceTint.opacity(0.16))
                     Image(systemName: options.prefersWatchRecorder ? "applewatch.radiowaves.left.and.right" : "iphone.gen3.radiowaves.left.and.right")
-                        .font(.title3.weight(.semibold))
+                        .pulsarTextStyle(.sectionHeader)
                         .foregroundStyle(sourceTint)
                 }
                 .frame(width: 50, height: 50)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(sourceTitle)
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(primaryText)
                     Text(sourceSubtitle)
-                        .font(.caption.weight(.medium))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -124,11 +124,11 @@ struct PulsarRunSetupView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Label("Route", systemImage: "map.fill")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(primaryText)
                     Spacer()
                     Text("Open")
-                        .font(.caption.weight(.bold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.green)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
@@ -136,7 +136,7 @@ struct PulsarRunSetupView: View {
                 }
 
                 Text("Free \(workoutKind.actionName) today. Route planning and saved routes are a good next layer once recording is battle-tested.")
-                    .font(.subheadline.weight(.medium))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(secondaryText)
             }
         }
@@ -147,17 +147,17 @@ struct PulsarRunSetupView: View {
             VStack(spacing: 10) {
                 Toggle(isOn: $options.autoPauseEnabled) {
                     Label("Auto-pause", systemImage: "pause.circle.fill")
-                        .font(.headline.weight(.semibold))
+                        .pulsarTextStyle(.cardTitle)
                 }
 
                 Toggle(isOn: $options.audioCuesEnabled) {
                     Label("Audio cues", systemImage: "speaker.wave.2.fill")
-                        .font(.headline.weight(.semibold))
+                        .pulsarTextStyle(.cardTitle)
                 }
 
                 Toggle(isOn: $options.prefersWatchRecorder) {
                     Label("Prefer Apple Watch", systemImage: "applewatch")
-                        .font(.headline.weight(.semibold))
+                        .pulsarTextStyle(.cardTitle)
                 }
             }
             .tint(workoutKind.accentColor)
@@ -170,14 +170,14 @@ struct PulsarRunSetupView: View {
         if let message = coordinator.authorizationMessage {
             PulsarRunGlassCard {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
         } else {
             PulsarRunGlassCard {
                 Label("HealthKit and Location are used only to record this \(workoutKind.actionName), route, and summary.", systemImage: "checkmark.shield.fill")
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(.green)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -191,9 +191,9 @@ struct PulsarRunSetupView: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: workoutKind.systemImageName)
-                    .font(.title3.weight(.bold))
+                    .pulsarTextStyle(.sectionHeader)
                 Text(workoutKind.startTitle)
-                    .font(.title3.weight(.bold))
+                    .pulsarTextStyle(.sectionHeader)
             }
             .foregroundStyle(Color(red: 0.03, green: 0.14, blue: 0.08))
             .frame(maxWidth: .infinity)
@@ -217,7 +217,7 @@ struct PulsarRunSetupView: View {
             isShowingHistory = true
         } label: {
             Label("Training Log", systemImage: "calendar.badge.clock")
-                .font(.headline.weight(.semibold))
+                .pulsarTextStyle(.cardTitle)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(.ultraThinMaterial, in: Capsule(style: .continuous))
@@ -234,11 +234,11 @@ struct PulsarRunSetupView: View {
 
             VStack(spacing: 14) {
                 Text("\(value)")
-                    .font(.system(size: 104, weight: .black, design: .rounded))
+                    .font(.system(size: 104, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white)
                     .contentTransition(.numericText())
                 Text("Ready")
-                    .font(.title3.weight(.bold))
+                    .pulsarTextStyle(.sectionHeader)
                     .foregroundStyle(.white.opacity(0.72))
             }
         }

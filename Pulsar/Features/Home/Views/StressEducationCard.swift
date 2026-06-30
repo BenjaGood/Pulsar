@@ -12,10 +12,10 @@ struct StressEducationCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Image(systemName: "info.circle.fill")
-                    .font(.headline.weight(.semibold))
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(Color(red: 0.46, green: 0.64, blue: 0.92))
                 Text("About Stress")
-                    .font(.headline.weight(.semibold))
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(primaryText)
             }
 
@@ -23,7 +23,7 @@ struct StressEducationCard: View {
             Text("It can be influenced by exercise, sleep, caffeine, illness, heat, and emotional stress.")
             Text("Pulsar is not a medical device.")
         }
-        .font(.subheadline.weight(.medium))
+        .pulsarTextStyle(.label)
         .foregroundStyle(secondaryText)
         .fixedSize(horizontal: false, vertical: true)
         .padding(16)

@@ -44,10 +44,10 @@ struct StressTimelineChartView: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Daily Stress Timeline")
-                    .font(.headline.weight(.semibold))
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(primaryText)
                 Text("How your physiological load moved \(datePhrase)")
-                    .font(.caption.weight(.medium))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(secondaryText)
             }
 
@@ -58,7 +58,7 @@ struct StressTimelineChartView: View {
                     .fill(tint)
                     .frame(width: 6, height: 6)
                 Text("\(summary.displayLevelText) \(summary.score.map { "\($0)" } ?? "")")
-                    .font(.caption.weight(.bold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(tint)
                     .lineLimit(1)
                     .minimumScaleFactor(0.74)
@@ -148,10 +148,10 @@ struct StressTimelineChartView: View {
         let selectedColor = stressColor(for: selected?.score ?? Double(summary.score ?? 50))
         return HStack(spacing: 8) {
             Image(systemName: icon(for: selected?.context))
-                .font(.caption.weight(.semibold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(selectedColor)
             Text(selectedText(for: selected))
-                .font(.caption.weight(.semibold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(secondaryText)
             Spacer(minLength: 0)
         }
@@ -166,15 +166,15 @@ struct StressTimelineChartView: View {
         return VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
                 Text("Duration by zone")
-                    .font(.caption.weight(.bold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(primaryText)
                 Spacer(minLength: 4)
                 Text(total > 0 ? "Usable \(durationText(total))" : "No usable intervals")
-                    .font(.caption2.weight(.semibold))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(secondaryText)
                 if let range = timeRange, total > 0 {
                     Text("of \(durationText(range.duration))")
-                        .font(.caption2.weight(.semibold))
+                        .pulsarTextStyle(.overline)
                         .foregroundStyle(secondaryText.opacity(0.78))
                 }
             }
@@ -222,10 +222,10 @@ struct StressTimelineChartView: View {
                 .font(.system(size: 28, weight: .semibold))
                 .foregroundStyle(tint.opacity(0.82))
             Text(emptyTitle)
-                .font(.subheadline.weight(.semibold))
+                .pulsarTextStyle(.label)
                 .foregroundStyle(primaryText)
             Text("Stress confidence will improve as Pulsar learns your daily signal pattern.")
-                .font(.caption.weight(.medium))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(secondaryText)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -388,7 +388,7 @@ struct StressTimelineChartView: View {
                     .position(marker.anchor)
 
                 Image(systemName: icon(for: marker.sample.context))
-                    .font(.caption2.weight(.bold))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(stressColor(for: marker.sample.score))
                     .frame(width: 20, height: 20)
                     .background(.ultraThinMaterial, in: Circle())

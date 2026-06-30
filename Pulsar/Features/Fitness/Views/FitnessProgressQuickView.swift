@@ -392,7 +392,7 @@ private struct DailyExerciseProgressCard: View {
                 Spacer(minLength: 6)
 
                 Image(systemName: "chart.line.uptrend.xyaxis.circle.fill")
-                    .font(.title3.weight(.bold))
+                    .pulsarTextStyle(.sectionHeader)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(accent)
                     .accessibilityHidden(true)
@@ -658,11 +658,11 @@ private struct DailyProgressEmptyState: View {
 
             VStack(spacing: 6) {
                 Text(isToday ? "No exercises logged today yet" : "No exercises logged this day")
-                    .font(.headline.weight(.bold))
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
 
                 Text(date.formatted(date: .abbreviated, time: .omitted))
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
             }
 
@@ -670,9 +670,9 @@ private struct DailyProgressEmptyState: View {
                 Button(action: onStartWorkout) {
                     HStack(spacing: 8) {
                         Image(systemName: "plus")
-                            .font(.caption.weight(.black))
+                            .pulsarTextStyle(.captionEmphasis)
                         Text("Start Workout")
-                            .font(.subheadline.weight(.black))
+                            .pulsarTextStyle(.label)
                     }
                     .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
                     .padding(.horizontal, 16)
@@ -705,7 +705,7 @@ private struct DailyProgressLoadingCard: View {
             ProgressView()
                 .tint(PulsarTheme.fitnessSecondaryText(for: colorScheme))
             Text("Loading daily progress")
-                .font(.headline.weight(.semibold))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
         }
         .frame(maxWidth: .infinity, minHeight: 176)
@@ -782,7 +782,7 @@ struct ExerciseProgressHistorySheet: View {
                     Button("Done") {
                         dismiss()
                     }
-                    .font(.headline.weight(.bold))
+                    .pulsarTextStyle(.cardTitle)
                 }
             }
         }
@@ -804,17 +804,17 @@ private struct ExerciseHistoryHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(history.muscleGroupName)
-                .font(.caption.weight(.black))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(accent)
                 .textCase(.uppercase)
 
             Text("\(history.target.exerciseName) Progress")
-                .font(.system(size: 31, weight: .bold, design: .rounded))
+                .pulsarTextStyle(.displayMedium)
                 .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(history.equipment)
-                .font(.subheadline.weight(.semibold))
+                .pulsarTextStyle(.label)
                 .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
         }
     }
@@ -835,12 +835,12 @@ private struct ExerciseHistorySummaryCard: View {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(history.target.exerciseName)
-                            .font(.title3.weight(.bold))
+                            .pulsarTextStyle(.sectionHeader)
                             .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
                             .lineLimit(2)
 
                         Text(summaryLine)
-                            .font(.caption.weight(.black))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(PulsarTheme.fitnessTertiaryText(for: colorScheme))
                     }
 
@@ -848,7 +848,7 @@ private struct ExerciseHistorySummaryCard: View {
 
                     if let improvementText {
                         Text(improvementText)
-                            .font(.caption.weight(.black))
+                            .pulsarTextStyle(.captionEmphasis)
                             .monospacedDigit()
                             .foregroundStyle(improvementColor)
                             .padding(.horizontal, 9)
@@ -924,14 +924,14 @@ private struct ExerciseHistoryMetricTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(value)
-                .font(.headline.weight(.black))
+                .pulsarTextStyle(.cardTitle)
                 .monospacedDigit()
                 .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
                 .lineLimit(1)
                 .minimumScaleFactor(0.68)
 
             Text(title)
-                .font(.caption.weight(.black))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(PulsarTheme.fitnessTertiaryText(for: colorScheme))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -954,18 +954,18 @@ private struct ExerciseHistoryChartPanel: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
 
                     Text(subtitle)
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(PulsarTheme.fitnessTertiaryText(for: colorScheme))
                 }
 
                 Spacer()
 
                 Text(latestValueText)
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                     .monospacedDigit()
                     .foregroundStyle(accent)
                     .padding(.horizontal, 9)
@@ -1007,11 +1007,11 @@ private struct ExerciseNoChartDataCard: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "chart.xyaxis.line")
-                .font(.headline.weight(.bold))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(PulsarTheme.fitnessTertiaryText(for: colorScheme))
 
             Text("No load data for this chart yet")
-                .font(.subheadline.weight(.semibold))
+                .pulsarTextStyle(.label)
                 .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
         }
         .frame(maxWidth: .infinity, minHeight: 118)
@@ -1027,24 +1027,24 @@ private struct ExerciseBestSetHistoryList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Best Set History")
-                .font(.headline.weight(.bold))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
 
             ForEach(history.points.reversed()) { point in
                 HStack(spacing: 12) {
                     Text(point.date.formatted(date: .abbreviated, time: .omitted))
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(PulsarTheme.fitnessTertiaryText(for: colorScheme))
                         .frame(width: 78, alignment: .leading)
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(point.bestSet?.displayText(unit: history.displayUnit, isBodyweight: history.isBodyweight) ?? "--")
-                            .font(.subheadline.weight(.black))
+                            .pulsarTextStyle(.label)
                             .monospacedDigit()
                             .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
 
                         Text("\(point.completedSets) sets / \(point.totalReps) reps")
-                            .font(.caption.weight(.semibold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
                     }
 
@@ -1063,11 +1063,11 @@ private struct ExerciseLimitedHistoryNotice: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "sparkles")
-                .font(.headline.weight(.bold))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(Color.green)
 
             Text("Complete this exercise again to unlock trend charts.")
-                .font(.subheadline.weight(.semibold))
+                .pulsarTextStyle(.label)
                 .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1100,11 +1100,11 @@ private struct ExerciseHistoryEmptyState: View {
 
             VStack(spacing: 6) {
                 Text("No saved history yet")
-                    .font(.headline.weight(.bold))
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
 
                 Text("Finish a workout with \(history.target.exerciseName) to start the trend.")
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)

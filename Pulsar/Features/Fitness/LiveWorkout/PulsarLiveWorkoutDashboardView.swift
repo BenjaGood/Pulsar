@@ -271,7 +271,7 @@ struct PulsarLiveWorkoutDashboardView<Background: View>: View {
             )
 
             Label(state.recorderStatusText, systemImage: state.recorderStatusSymbolName)
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
@@ -339,7 +339,7 @@ struct PulsarLiveWorkoutDashboardView<Background: View>: View {
                     } icon: {
                         Image(systemName: state.symbolName)
                     }
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(statusTint)
                     .padding(.horizontal, 11)
                     .padding(.vertical, 7)
@@ -347,21 +347,21 @@ struct PulsarLiveWorkoutDashboardView<Background: View>: View {
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text("HEART RATE")
-                            .font(.caption2.weight(.black))
+                            .pulsarTextStyle(.overline)
                             .foregroundStyle(.secondary)
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(state.heartRateDisplayText)
-                                .font(.system(size: state.currentHeartRate == nil ? 28 : 64, weight: .black, design: .rounded).monospacedDigit())
+                                .font(.system(size: state.currentHeartRate == nil ? 28 : 64, weight: .semibold, design: .rounded).monospacedDigit())
                                 .lineLimit(2)
                                 .minimumScaleFactor(0.50)
                             if !state.heartRateUnitText.isEmpty {
                                 Text(state.heartRateUnitText)
-                                    .font(.headline.weight(.black))
+                                    .pulsarTextStyle(.cardTitle)
                                     .foregroundStyle(.secondary)
                             }
                         }
                         Text(state.percentOfMaxText)
-                            .font(.caption.weight(.bold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -370,22 +370,23 @@ struct PulsarLiveWorkoutDashboardView<Background: View>: View {
 
                 VStack(alignment: .trailing, spacing: 8) {
                     Text(state.zoneTitleText)
-                        .font(.system(size: 30, weight: .black, design: .rounded))
+                        .font(.system(size: 30, weight: .semibold, design: .rounded))
                         .foregroundStyle(state.activeZoneColor)
                         .lineLimit(1)
                     Text(state.zoneDetailText)
-                        .font(.caption.weight(.bold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .multilineTextAlignment(.trailing)
                     Text(state.primaryMetricValue)
-                        .font(.headline.weight(.black).monospacedDigit())
+                        .pulsarTextStyle(.cardTitle)
+                                .monospacedDigit()
                         .foregroundStyle(.primary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(state.activeZoneColor.opacity(0.15), in: Capsule(style: .continuous))
                     Text(state.primaryMetricTitle)
-                        .font(.caption2.weight(.black))
+                        .pulsarTextStyle(.overline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -675,10 +676,10 @@ private struct PulsarLiveWorkoutBannerView: View {
         Label {
             VStack(alignment: .leading, spacing: 2) {
                 Text(banner.title)
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                 if let message = banner.message {
                     Text(message)
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -729,7 +730,7 @@ private struct PulsarCompactNowPlayingCapsule: View {
 
             Button(action: onTogglePlayback) {
                 Image(systemName: track.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.subheadline.weight(.bold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(.white)
                     .frame(width: height < 50 ? 32 : 36, height: height < 50 ? 32 : 36)
                     .background(.black.opacity(0.44), in: Circle())
@@ -772,7 +773,7 @@ private struct PulsarCompactNowPlayingCapsule: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(.white.opacity(0.10))
                 Image(systemName: "music.note")
-                    .font(.caption.weight(.semibold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.white.opacity(0.72))
             }
             .frame(width: artworkSize, height: artworkSize)
@@ -799,12 +800,12 @@ private struct PulsarPremiumHeartRateCard: View {
                         .layoutPriority(1)
 
                     Image(systemName: "heart.fill")
-                        .font(.headline.weight(.bold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(.red)
                         .symbolEffect(.pulse, options: .repeating, value: currentHeartRate > 0)
 
                     Text("bpm")
-                        .font(.caption.weight(.medium))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.white.opacity(0.62))
                 }
 
@@ -814,7 +815,7 @@ private struct PulsarPremiumHeartRateCard: View {
                         .fill(.green)
                         .frame(width: 5, height: 5)
                 }
-                .font(.caption.weight(.medium))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.green)
             } else {
                 VStack(alignment: .leading, spacing: 6) {
@@ -1008,7 +1009,7 @@ private struct PulsarPremiumMetricTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: height < 68 ? 4 : 5) {
             Image(systemName: metric.symbolName)
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(metric.tint.opacity(0.92))
                 .frame(height: 13, alignment: .leading)
 
@@ -1198,7 +1199,7 @@ private struct PulsarPremiumNowPlayingCard: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.white.opacity(0.09))
                 Image(systemName: "music.note")
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(track.isAvailable ? tint : .secondary)
             }
             .frame(width: size, height: size)
@@ -1286,14 +1287,14 @@ private struct PulsarHeartRateZoneCard: View {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Heart Rate Zones")
-                        .font(.headline.weight(.black))
+                        .pulsarTextStyle(.cardTitle)
                     Text(state.zoneDetailText)
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text(state.heartRateZone.map { "Z\($0.number)" } ?? "No Zone")
-                    .font(.system(size: 26, weight: .black, design: .rounded))
+                    .font(.system(size: 26, weight: .semibold, design: .rounded))
                     .foregroundStyle(state.activeZoneColor)
             }
 
@@ -1312,7 +1313,7 @@ private struct PulsarHeartRateZoneCard: View {
                 Spacer(minLength: 10)
                 Text(state.percentOfMaxText)
             }
-            .font(.caption2.weight(.bold))
+            .pulsarTextStyle(.overline)
             .foregroundStyle(.secondary)
         }
         .padding(16)
@@ -1338,7 +1339,7 @@ private struct PulsarHeartRateZoneSegment: View {
                 .shadow(color: zone.color.opacity(isActive ? 0.40 : 0), radius: 10, y: 5)
 
             Text("Z\(zone.number)")
-                .font(.caption2.weight(.black))
+                .pulsarTextStyle(.overline)
                 .foregroundStyle(isActive ? zone.color : .secondary)
 
             Text(zone.percentRangeText)
@@ -1361,18 +1362,18 @@ private struct PulsarLiveWorkoutStatusPill: View {
     var body: some View {
         HStack(spacing: 9) {
             Image(systemName: symbolName)
-                .font(.caption.weight(.black))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(tint)
                 .frame(width: 26, height: 26)
                 .background(tint.opacity(0.14), in: Circle())
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.subheadline.weight(.black))
+                    .pulsarTextStyle(.label)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
                 Text(subtitle)
-                    .font(.caption2.weight(.bold))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -1390,13 +1391,13 @@ private struct PulsarLiveWorkoutMetricTile: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
                 Image(systemName: metric.symbolName)
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(metric.tint)
                 Spacer(minLength: 0)
             }
 
             Text(metric.value)
-                .font(.system(size: 22, weight: .black, design: .rounded).monospacedDigit())
+                .font(.system(size: 22, weight: .semibold, design: .rounded).monospacedDigit())
                 .lineLimit(2)
                 .minimumScaleFactor(0.50)
 
@@ -1406,7 +1407,7 @@ private struct PulsarLiveWorkoutMetricTile: View {
                     Text(unit)
                 }
             }
-            .font(.caption2.weight(.bold))
+            .pulsarTextStyle(.overline)
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .minimumScaleFactor(0.70)
@@ -1438,7 +1439,7 @@ private struct PulsarNowPlayingCard: View {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 6) {
                         Text(track.isPlaying ? "Now Playing" : "Music")
-                            .font(.caption2.weight(.black))
+                            .pulsarTextStyle(.overline)
                             .foregroundStyle(.secondary)
                         Circle()
                             .fill(track.isPlaying ? Color.green : Color.secondary)
@@ -1446,11 +1447,11 @@ private struct PulsarNowPlayingCard: View {
                     }
 
                     Text(track.displayTitle)
-                        .font(.subheadline.weight(.black))
+                        .pulsarTextStyle(.label)
                         .lineLimit(2)
                         .minimumScaleFactor(0.76)
                     Text(track.displaySubtitle)
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.72)
@@ -1507,7 +1508,7 @@ private struct PulsarNowPlayingCard: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color.white.opacity(0.10))
                 Image(systemName: "music.note")
-                    .font(.title3.weight(.black))
+                    .pulsarTextStyle(.sectionHeader)
                     .foregroundStyle(track.isAvailable ? tint : .secondary)
             }
             .frame(width: 54, height: 54)
@@ -1526,7 +1527,7 @@ private struct PulsarNowPlayingCard: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(prominence ? .headline.weight(.black) : .caption.weight(.black))
+                .font(prominence ? .headline.weight(.semibold) : .caption.weight(.semibold))
                 .foregroundStyle(.primary)
                 .frame(width: prominence ? 40 : 32, height: prominence ? 40 : 32)
                 .background(Color.white.opacity(prominence ? 0.13 : 0.08), in: Circle())
@@ -1565,7 +1566,7 @@ private struct PulsarLiveWorkoutLockButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.subheadline.weight(.semibold))
+            .pulsarTextStyle(.label)
             .foregroundStyle(.white.opacity(0.92))
             .padding(.vertical, height == nil ? 16 : 0)
             .frame(height: height)

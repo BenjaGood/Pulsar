@@ -26,9 +26,9 @@ struct DailyJournalCheckInSheet: View {
                 VStack(alignment: .leading, spacing: 18) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Daily check-in")
-                            .font(.largeTitle.weight(.bold))
+                            .pulsarTextStyle(.displayLarge)
                         Text(draft.prompt ?? "Let the day be simple.")
-                            .font(.subheadline)
+                            .pulsarTextStyle(.label)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -61,7 +61,7 @@ struct DailyJournalCheckInSheet: View {
                     PulsarMindfulnessGlassCard(cornerRadius: 24) {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("Emotions")
-                                .font(.headline.weight(.bold))
+                                .pulsarTextStyle(.cardTitle)
                             TagFlowLayout(spacing: 8) {
                                 ForEach(PulsarJournalEmotionLabel.allCases) { label in
                                     MindfulnessChip(
@@ -80,7 +80,7 @@ struct DailyJournalCheckInSheet: View {
                     PulsarMindfulnessGlassCard(cornerRadius: 24) {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("Contributing signals")
-                                .font(.headline.weight(.bold))
+                                .pulsarTextStyle(.cardTitle)
                             TagFlowLayout(spacing: 8) {
                                 ForEach(PulsarJournalAssociation.allCases) { association in
                                     MindfulnessChip(
@@ -100,13 +100,13 @@ struct DailyJournalCheckInSheet: View {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
                                 Text("Reflection")
-                                    .font(.headline.weight(.bold))
+                                    .pulsarTextStyle(.cardTitle)
                                 Spacer()
                                 Button {
                                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 } label: {
                                     Image(systemName: "mic.fill")
-                                        .font(.subheadline.weight(.bold))
+                                        .pulsarTextStyle(.label)
                                         .frame(width: 34, height: 34)
                                 }
                                 .buttonStyle(PulsarMindfulnessIconButtonStyle(tint: .secondary))
@@ -114,7 +114,7 @@ struct DailyJournalCheckInSheet: View {
                             }
 
                             TextEditor(text: $draft.note)
-                                .font(.body)
+                                .pulsarTextStyle(.body)
                                 .frame(minHeight: 96)
                                 .scrollContentBackground(.hidden)
                                 .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -181,15 +181,16 @@ private struct MindfulnessSignalSlider: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 9) {
                 Image(systemName: systemImage)
-                    .font(.caption.weight(.bold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(tint)
                     .frame(width: 24, height: 24)
                     .background(tint.opacity(0.13), in: Circle())
                 Text(title)
-                    .font(.subheadline.weight(.bold))
+                    .pulsarTextStyle(.label)
                 Spacer()
                 Text(scoreText)
-                    .font(.caption.weight(.bold).monospacedDigit())
+                    .pulsarTextStyle(.captionEmphasis)
+                                .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
 
@@ -201,7 +202,7 @@ private struct MindfulnessSignalSlider: View {
                 Spacer()
                 Text(highLabel)
             }
-            .font(.caption2.weight(.semibold))
+            .pulsarTextStyle(.overline)
             .foregroundStyle(.secondary)
         }
     }
@@ -222,7 +223,7 @@ private struct MindfulnessChip: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(isSelected ? .white : .primary)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 8)

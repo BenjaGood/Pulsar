@@ -163,7 +163,7 @@ struct StressHomeMeterView: View {
             Spacer(minLength: 6)
 
             Image(systemName: "chevron.right")
-                .font(.headline.weight(.semibold))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(appearance.tertiaryText)
         }
         .padding(10)

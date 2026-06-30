@@ -5,7 +5,7 @@
 
 import Foundation
 
-enum FreeExerciseDBServiceError: LocalizedError {
+enum ExercisesDatasetServiceError: LocalizedError {
     case invalidResponse
     case invalidStatusCode(Int)
     case emptyCatalog
@@ -25,29 +25,26 @@ enum FreeExerciseDBServiceError: LocalizedError {
     }
 }
 
-struct FreeExerciseDBService {
-    // Catalog source: yuhonas/free-exercise-db. License: Unlicense.
-    // The normalized PulsarExerciseAttribution preserves this source metadata.
-    static let sourceName = "free-exercise-db"
-    static let sourceURL = "https://github.com/yuhonas/free-exercise-db"
-    static let license = "Unlicense"
-    static let defaultCatalogURL = URL(string: "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json")!
-    static let defaultImageBaseURL = URL(string: "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/")!
+struct ExercisesDatasetService {
+    // Catalog source: hasaneyldrm/exercises-dataset.
+    // License: educational and non-commercial use only; media remains owned by
+    // its respective copyright holders. Attribution is preserved per exercise.
+    static let sourceName = "hasaneyldrm/exercises-dataset"
+    static let sourceURL = "https://github.com/hasaneyldrm/exercises-dataset"
+    static let license = "Educational / non-commercial only"
+    static let defaultCatalogURL = URL(string: "https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/data/exercises.json")!
 
     private let catalogURL: URL
-    private let imageBaseURL: URL
     private let bundledCatalogURL: URL?
     private let session: URLSession
     private let decoder: JSONDecoder
 
     init(
         catalogURL: URL = Self.defaultCatalogURL,
-        imageBaseURL: URL = Self.defaultImageBaseURL,
         bundledCatalogURL: URL? = nil,
         session: URLSession = .shared
     ) {
         self.catalogURL = catalogURL
-        self.imageBaseURL = imageBaseURL
         self.bundledCatalogURL = bundledCatalogURL
         self.session = session
         self.decoder = JSONDecoder()
@@ -59,31 +56,30 @@ struct FreeExerciseDBService {
 
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw FreeExerciseDBServiceError.invalidResponse
+            throw ExercisesDatasetServiceError.invalidResponse
         }
         guard (200..<300).contains(httpResponse.statusCode) else {
-            throw FreeExerciseDBServiceError.invalidStatusCode(httpResponse.statusCode)
+            throw ExercisesDatasetServiceError.invalidStatusCode(httpResponse.statusCode)
         }
 
-        return try Self.decodeCatalog(from: data, imageBaseURL: imageBaseURL, decoder: decoder)
+        return try Self.decodeCatalog(from: data, decoder: decoder)
     }
 
     func loadBundledExercises() throws -> [PulsarExercise] {
         let data = try Data(contentsOf: bundledCatalogFileURL())
-        return try Self.decodeCatalog(from: data, imageBaseURL: imageBaseURL, decoder: decoder)
+        return try Self.decodeCatalog(from: data, decoder: decoder)
     }
 
     static func decodeCatalog(
         from data: Data,
-        imageBaseURL: URL = Self.defaultImageBaseURL,
         decoder: JSONDecoder = JSONDecoder()
     ) throws -> [PulsarExercise] {
-        let exercises = try decoder.decode([FreeExerciseDBExerciseDTO].self, from: data)
-            .compactMap { FreeExerciseDBExerciseNormalizer.normalize($0, imageBaseURL: imageBaseURL) }
+        let exercises = try decoder.decode([ExercisesDatasetExerciseDTO].self, from: data)
+            .compactMap(ExercisesDatasetExerciseNormalizer.normalize)
             .uniqued(by: \.id)
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 
-        guard !exercises.isEmpty else { throw FreeExerciseDBServiceError.emptyCatalog }
+        guard !exercises.isEmpty else { throw ExercisesDatasetServiceError.emptyCatalog }
         return exercises
     }
 
@@ -92,14 +88,16 @@ struct FreeExerciseDBService {
             return bundledCatalogURL
         }
 
-        let resourceName = "free-exercise-db-exercises"
+        let resourceName = "exercises"
         if let url = Bundle.main.url(forResource: resourceName, withExtension: "json") {
             return url
         }
 
         let subdirectories = [
-            "Features/Fitness/Gym/Resources",
-            "Pulsar/Features/Fitness/Gym/Resources"
+            "Features/Fitness/Gym/Resources/ExerciseDataset/data",
+            "Pulsar/Features/Fitness/Gym/Resources/ExerciseDataset/data",
+            "ExerciseDataset/data",
+            "data"
         ]
         for subdirectory in subdirectories {
             if let url = Bundle.main.url(forResource: resourceName, withExtension: "json", subdirectory: subdirectory) {
@@ -113,226 +111,347 @@ struct FreeExerciseDBService {
             includingPropertiesForKeys: nil
            ) {
             for case let url as URL in enumerator where url.lastPathComponent == "\(resourceName).json" {
+                if url.path.contains("ExerciseDataset") {
+                    return url
+                }
+            }
+        }
+
+        throw ExercisesDatasetServiceError.bundledCatalogUnavailable
+    }
+}
+
+enum ExerciseDatasetMediaResolver {
+    nonisolated private static let remoteMediaBaseURL = URL(string: "https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/")!
+    nonisolated private static let bundledRootSubdirectories = [
+        "Features/Fitness/Gym/Resources/ExerciseDataset",
+        "Pulsar/Features/Fitness/Gym/Resources/ExerciseDataset",
+        "ExerciseDataset",
+        ""
+    ]
+
+    nonisolated static func url(for reference: String?) -> URL? {
+        guard let reference = reference.cleanedCatalogValue else { return nil }
+        if reference.hasPrefix("http://") || reference.hasPrefix("https://") || reference.hasPrefix("file://") {
+            return URL(string: reference)
+        }
+
+        if let bundledURL = bundledURL(for: reference) {
+            return bundledURL
+        }
+
+        return remoteURL(for: reference)
+    }
+
+    private nonisolated static func bundledURL(for reference: String) -> URL? {
+        let pathComponents = reference
+            .split(separator: "/", omittingEmptySubsequences: true)
+            .map(String.init)
+        guard let fileComponent = pathComponents.last else { return nil }
+
+        let fileURL = URL(fileURLWithPath: fileComponent)
+        let filename = fileURL.deletingPathExtension().lastPathComponent
+        let fileExtension = fileURL.pathExtension
+        guard !filename.isEmpty, !fileExtension.isEmpty else { return nil }
+
+        if let url = Bundle.main.url(forResource: filename, withExtension: fileExtension) {
+            return url
+        }
+
+        let relativeDirectory = pathComponents.dropLast().joined(separator: "/")
+        for root in bundledRootSubdirectories {
+            let subdirectory = [root, relativeDirectory]
+                .filter { !$0.isEmpty && $0 != "." }
+                .joined(separator: "/")
+            if let url = Bundle.main.url(forResource: filename, withExtension: fileExtension, subdirectory: subdirectory) {
                 return url
             }
         }
 
-        throw FreeExerciseDBServiceError.bundledCatalogUnavailable
+        return nil
+    }
+
+    private nonisolated static func remoteURL(for reference: String) -> URL? {
+        let encodedPath = reference
+            .split(separator: "/", omittingEmptySubsequences: true)
+            .compactMap { pathComponent in
+                String(pathComponent).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+            }
+            .joined(separator: "/")
+        guard !encodedPath.isEmpty else { return nil }
+
+        return URL(string: remoteMediaBaseURL.absoluteString + encodedPath)
     }
 }
 
-private struct FreeExerciseDBExerciseDTO: Decodable {
+private struct ExercisesDatasetExerciseDTO: Decodable {
     var id: String?
     var name: String?
-    var force: String?
-    var level: String?
-    var mechanic: String?
-    var equipment: String?
-    var primaryMuscles: [String]
-    var secondaryMuscles: [String]
-    var instructions: [String]
     var category: String?
-    var images: [String]
+    var bodyPart: String?
+    var equipment: String?
+    var instructions: [String: String]
+    var instructionSteps: [String: [String]]
+    var muscleGroup: String?
+    var secondaryMuscles: [String]
+    var target: String?
+    var image: String?
+    var gifURL: String?
+    var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case name
-        case force
-        case level
-        case mechanic
-        case equipment
-        case primaryMuscles
-        case secondaryMuscles
-        case instructions
         case category
-        case images
+        case bodyPart = "body_part"
+        case equipment
+        case instructions
+        case instructionSteps = "instruction_steps"
+        case muscleGroup = "muscle_group"
+        case secondaryMuscles = "secondary_muscles"
+        case target
+        case image
+        case gifURL = "gif_url"
+        case createdAt = "created_at"
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try? container.decodeIfPresent(String.self, forKey: .id)
         name = try? container.decodeIfPresent(String.self, forKey: .name)
-        force = try? container.decodeIfPresent(String.self, forKey: .force)
-        level = try? container.decodeIfPresent(String.self, forKey: .level)
-        mechanic = try? container.decodeIfPresent(String.self, forKey: .mechanic)
-        equipment = try? container.decodeIfPresent(String.self, forKey: .equipment)
-        primaryMuscles = container.decodeLossyStringArray(forKey: .primaryMuscles)
-        secondaryMuscles = container.decodeLossyStringArray(forKey: .secondaryMuscles)
-        instructions = container.decodeLossyStringArray(forKey: .instructions)
         category = try? container.decodeIfPresent(String.self, forKey: .category)
-        images = container.decodeLossyStringArray(forKey: .images)
+        bodyPart = try? container.decodeIfPresent(String.self, forKey: .bodyPart)
+        equipment = try? container.decodeIfPresent(String.self, forKey: .equipment)
+        instructions = (try? container.decodeIfPresent([String: String].self, forKey: .instructions)) ?? [:]
+        instructionSteps = (try? container.decodeIfPresent([String: [String]].self, forKey: .instructionSteps)) ?? [:]
+        muscleGroup = try? container.decodeIfPresent(String.self, forKey: .muscleGroup)
+        secondaryMuscles = container.decodeLossyStringArray(forKey: .secondaryMuscles)
+        target = try? container.decodeIfPresent(String.self, forKey: .target)
+        image = try? container.decodeIfPresent(String.self, forKey: .image)
+        gifURL = try? container.decodeIfPresent(String.self, forKey: .gifURL)
+        createdAt = try? container.decodeIfPresent(String.self, forKey: .createdAt)
     }
 }
 
-private enum FreeExerciseDBExerciseNormalizer {
-    nonisolated static func normalize(_ dto: FreeExerciseDBExerciseDTO, imageBaseURL: URL) -> PulsarExercise? {
-        let name = dto.name.cleanedCatalogValue
+private enum ExercisesDatasetExerciseNormalizer {
+    nonisolated static func normalize(_ dto: ExercisesDatasetExerciseDTO) -> PulsarExercise? {
+        let name = displayName(dto.name)
         guard let name else { return nil }
 
-        let sourceID = dto.id.cleanedCatalogValue ?? name.normalizedPulsarIdentifier(prefix: "free-exercise-db-source")
-        let primaryMuscles = dto.primaryMuscles.normalizedCatalogValues.map(makeMuscle)
-        let secondaryMuscles = dto.secondaryMuscles.normalizedCatalogValues.map(makeMuscle)
-        let category = displayValue(dto.category)
-        let imageURLs = dto.images.normalizedCatalogValues.compactMap {
-            absoluteImageURL($0, imageBaseURL: imageBaseURL)
-        }
+        let sourceID = dto.id.cleanedCatalogValue ?? name.normalizedPulsarIdentifier(prefix: "exercises-dataset-source")
+        let bodyPart = dto.bodyPart.cleanedCatalogValue ?? dto.category.cleanedCatalogValue
+        let target = dto.target.cleanedCatalogValue
+        let primaryGroup = group(forBodyPart: bodyPart, target: target, muscleGroup: dto.muscleGroup)
+        let primaryMuscles = primaryMuscles(target: target, muscleGroup: dto.muscleGroup, fallbackGroup: primaryGroup)
+        let secondaryMuscles = secondaryMuscles(
+            target: target,
+            muscleGroup: dto.muscleGroup,
+            secondaryMuscles: dto.secondaryMuscles,
+            primaryGroup: primaryGroup
+        )
+        let imageURL = dto.image.cleanedCatalogValue
+        let imageURLs = imageURL.map { [$0] } ?? []
+        let category = displayValue(bodyPart)
 
         return PulsarExercise(
-            id: "free-exercise-db-\(sourceID)",
+            id: "exercises-dataset-\(sourceID)",
             wgerID: nil,
             wgerUUID: nil,
             name: name,
-            instructions: instructions(from: dto.instructions),
+            instructions: instructions(from: dto),
             primaryMuscles: primaryMuscles,
             secondaryMuscles: secondaryMuscles,
-            primaryMuscleGroup: primaryMuscles.first?.group ?? group(forCategory: category),
-            equipment: equipment(from: dto.equipment, category: category, exerciseName: name),
+            primaryMuscleGroup: primaryMuscles.first?.group ?? primaryGroup,
+            equipment: equipment(from: dto.equipment),
             imageURLs: imageURLs,
-            thumbnailURL: imageURLs.first,
-            attribution: .freeExerciseDB(sourceExerciseID: sourceID),
+            thumbnailURL: imageURL,
+            animationURL: dto.gifURL.cleanedCatalogValue,
+            attribution: .exercisesDataset(sourceExerciseID: sourceID),
             category: category,
-            level: displayValue(dto.level),
-            force: displayValue(dto.force),
-            mechanic: displayValue(dto.mechanic)
+            level: nil,
+            force: nil,
+            mechanic: nil
         )
     }
 
-    private nonisolated static func makeMuscle(_ rawName: String) -> PulsarMuscle {
-        PulsarMuscle(
-            name: displayValue(rawName) ?? rawName,
+    private nonisolated static func primaryMuscles(
+        target: String?,
+        muscleGroup: String?,
+        fallbackGroup: PulsarMuscleGroup
+    ) -> [PulsarMuscle] {
+        if let target {
+            return [makeMuscle(target, fallbackGroup: fallbackGroup)]
+        }
+        if let muscleGroup = muscleGroup.cleanedCatalogValue {
+            return [makeMuscle(muscleGroup, fallbackGroup: fallbackGroup)]
+        }
+        return [
+            PulsarMuscle(
+                name: fallbackGroup.displayName,
+                englishName: fallbackGroup.displayName,
+                group: fallbackGroup
+            )
+        ]
+    }
+
+    private nonisolated static func secondaryMuscles(
+        target: String?,
+        muscleGroup: String?,
+        secondaryMuscles: [String],
+        primaryGroup: PulsarMuscleGroup
+    ) -> [PulsarMuscle] {
+        let targetKey = target?.normalizedCatalogKey
+        var candidates = secondaryMuscles.normalizedCatalogValues
+        if let muscleGroup = muscleGroup.cleanedCatalogValue {
+            candidates.insert(muscleGroup, at: 0)
+        }
+
+        var seen = Set<String>()
+        return candidates.compactMap { rawName in
+            let key = rawName.normalizedCatalogKey
+            guard key != targetKey, seen.insert(key).inserted else { return nil }
+            let muscle = makeMuscle(rawName, fallbackGroup: group(forMuscleName: rawName))
+            return muscle.group == primaryGroup ? nil : muscle
+        }
+    }
+
+    private nonisolated static func makeMuscle(
+        _ rawName: String,
+        fallbackGroup: PulsarMuscleGroup
+    ) -> PulsarMuscle {
+        let group = group(forMuscleName: rawName)
+        return PulsarMuscle(
+            name: displayValue(rawName),
             englishName: rawName,
-            group: group(forMuscleName: rawName)
+            group: group == .other ? fallbackGroup : group
         )
     }
 
-    private nonisolated static func equipment(
-        from rawEquipment: String?,
-        category: String?,
-        exerciseName: String
-    ) -> [PulsarEquipment] {
-        let normalized = rawEquipment.cleanedCatalogValue?.lowercased()
+    private nonisolated static func equipment(from rawEquipment: String?) -> [PulsarEquipment] {
         let displayName: String
-
-        switch normalized {
-        case .some("body only"):
+        switch rawEquipment.cleanedCatalogValue?.normalizedCatalogKey {
+        case .some("body weight"):
             displayName = "Bodyweight"
-        case .some("e-z curl bar"):
-            displayName = "EZ Curl Bar"
-        case .some("foam roll"):
-            displayName = "Foam Roll"
-        case .some("medicine ball"):
-            displayName = "Medicine Ball"
-        case .some("exercise ball"):
-            displayName = "Exercise Ball"
-        case .some("kettlebells"):
-            displayName = "Kettlebells"
-        case .some("other"):
-            displayName = "Other"
+        case .some("ez barbell"):
+            displayName = "EZ Barbell"
+        case .some("bosu ball"):
+            displayName = "BOSU Ball"
+        case .some("skierg machine"):
+            displayName = "SkiErg Machine"
         case .some(let value):
             displayName = value.catalogTitleCased()
         case .none:
-            displayName = fallbackEquipmentName(category: category, exerciseName: exerciseName)
+            displayName = "Bodyweight"
         }
-
         return [PulsarEquipment(name: displayName)]
     }
 
-    private nonisolated static func fallbackEquipmentName(category: String?, exerciseName: String) -> String {
-        let categoryValue = category?.lowercased() ?? ""
-        let name = exerciseName.lowercased()
-        if categoryValue.contains("strength")
-            || categoryValue.contains("stretch")
-            || categoryValue.contains("plyometric")
-            || categoryValue.contains("cardio")
-            || name.contains("push-up")
-            || name.contains("pull-up")
-            || name.contains("sit-up")
-            || name.contains("squat") {
-            return "Bodyweight"
-        }
-        return "Unknown"
-    }
-
-    private nonisolated static func instructions(from rawInstructions: [String]) -> String? {
-        let instructions = rawInstructions.normalizedCatalogValues
-        guard !instructions.isEmpty else { return nil }
-        return instructions.joined(separator: "\n\n")
-    }
-
-    private nonisolated static func absoluteImageURL(_ rawPath: String, imageBaseURL: URL) -> String? {
-        if rawPath.hasPrefix("http://") || rawPath.hasPrefix("https://") {
-            return rawPath
+    private nonisolated static func instructions(from dto: ExercisesDatasetExerciseDTO) -> String? {
+        let steps = dto.instructionSteps["en"]?.normalizedCatalogValues ?? []
+        if !steps.isEmpty {
+            return steps.joined(separator: "\n\n")
         }
 
-        let encodedPath = rawPath
-            .split(separator: "/", omittingEmptySubsequences: true)
-            .compactMap { pathComponent in
-                String(pathComponent).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
-            }
-            .joined(separator: "/")
-
-        guard !encodedPath.isEmpty else { return nil }
-        let base = imageBaseURL.absoluteString
-        let normalizedBase = base.hasSuffix("/") ? String(base.dropLast()) : base
-        return "\(normalizedBase)/\(encodedPath)"
+        return dto.instructions["en"].cleanedCatalogValue
     }
 
-    private nonisolated static func group(forMuscleName rawName: String) -> PulsarMuscleGroup {
-        let name = rawName
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .lowercased()
+    private nonisolated static func group(
+        forBodyPart bodyPart: String?,
+        target: String?,
+        muscleGroup: String?
+    ) -> PulsarMuscleGroup {
+        let targetGroup = [target, muscleGroup]
+            .compactMap { $0 }
+            .map(group(forMuscleName:))
+            .first { $0 != .other }
+        if let targetGroup {
+            return targetGroup
+        }
 
-        switch name {
-        case "abdominals":
-            return .absCore
-        case "abductors":
-            return .abductors
-        case "adductors":
-            return .adductors
-        case "biceps":
-            return .biceps
-        case "calves":
-            return .calves
-        case "chest":
+        switch bodyPart?.normalizedCatalogKey {
+        case .some("back"):
+            return .back
+        case .some("cardio"):
+            return .cardioConditioning
+        case .some("chest"):
             return .chest
-        case "forearms":
+        case .some("lower arms"):
             return .forearms
-        case "glutes":
-            return .glutes
-        case "hamstrings":
-            return .hamstrings
-        case "lats":
-            return .lats
-        case "lower back":
-            return .lowerBack
-        case "middle back":
-            return .upperMiddleBack
-        case "neck":
+        case .some("lower legs"):
+            return .calves
+        case .some("neck"):
             return .neckTraps
-        case "quadriceps":
-            return .quadriceps
-        case "shoulders":
+        case .some("shoulders"):
             return .shoulders
-        case "traps":
-            return .traps
-        case "triceps":
-            return .triceps
+        case .some("upper arms"):
+            return .biceps
+        case .some("upper legs"):
+            return .quadriceps
+        case .some("waist"):
+            return .absCore
         default:
             return .other
         }
     }
 
-    private nonisolated static func group(forCategory category: String?) -> PulsarMuscleGroup {
-        let category = category?.lowercased() ?? ""
-        if category.contains("cardio") { return .cardioConditioning }
-        if category.contains("plyometric") { return .fullBody }
+    private nonisolated static func group(forMuscleName rawName: String) -> PulsarMuscleGroup {
+        let name = rawName.normalizedCatalogKey
+
+        if name.contains("abductor") { return .abductors }
+        if name.contains("adductor") || name.contains("groin") || name.contains("inner thigh") { return .adductors }
+        if name.contains("abs") || name.contains("abdominal") || name.contains("oblique") || name.contains("core") || name.contains("hip flexor") { return .absCore }
+        if name.contains("biceps") || name.contains("brachialis") { return .biceps }
+        if name.contains("calves") || name.contains("soleus") { return .calves }
+        if name.contains("chest") || name.contains("pectoral") || name.contains("serratus") { return .chest }
+        if name.contains("deltoid") || name.contains("delt") || name.contains("shoulder") || name.contains("rotator cuff") { return .shoulders }
+        if name.contains("forearm") || name.contains("wrist") || name.contains("hand") || name.contains("grip") || name.contains("lower arm") { return .forearms }
+        if name.contains("glute") { return .glutes }
+        if name.contains("hamstring") { return .hamstrings }
+        if name.contains("latissimus") || name == "lats" { return .lats }
+        if name.contains("lower back") || name.contains("spine") { return .lowerBack }
+        if name.contains("quadriceps") || name.contains("quads") { return .quadriceps }
+        if name.contains("rhomboid") || name.contains("upper back") { return .upperMiddleBack }
+        if name.contains("trapezius") || name == "traps" { return .traps }
+        if name.contains("triceps") { return .triceps }
+        if name.contains("cardio") || name.contains("cardiovascular") { return .cardioConditioning }
+        if name.contains("neck") || name.contains("levator scapulae") || name.contains("sternocleidomastoid") { return .neckTraps }
         return .other
     }
 
+    private nonisolated static func displayName(_ value: String?) -> String? {
+        displayValue(value)
+    }
+
     private nonisolated static func displayValue(_ value: String?) -> String? {
-        value.cleanedCatalogValue?.catalogTitleCased()
+        value.cleanedCatalogValue.map(displayValue)
+    }
+
+    private nonisolated static func displayValue(_ value: String) -> String {
+        switch value.normalizedCatalogKey {
+        case "abs":
+            return "Abs"
+        case "body weight":
+            return "Bodyweight"
+        case "cardiovascular system":
+            return "Cardiovascular System"
+        case "delts":
+            return "Delts"
+        case "ez barbell":
+            return "EZ Barbell"
+        case "lats":
+            return "Lats"
+        case "quads":
+            return "Quads"
+        case "skierg machine":
+            return "SkiErg Machine"
+        default:
+            return value.catalogTitleCased()
+        }
     }
 }
+
+typealias FreeExerciseDBService = ExercisesDatasetService
+typealias FreeExerciseDBServiceError = ExercisesDatasetServiceError
 
 private extension KeyedDecodingContainer {
     func decodeLossyStringArray(forKey key: Key) -> [String] {
@@ -355,17 +474,27 @@ private extension Array where Element == String {
         var seen = Set<String>()
         return compactMap { Optional($0).cleanedCatalogValue }
             .filter { value in
-                seen.insert(value.lowercased()).inserted
+                seen.insert(value.normalizedCatalogKey).inserted
             }
     }
 }
 
 private extension String {
+    nonisolated var normalizedCatalogKey: String {
+        folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+            .replacingOccurrences(of: "[_\\-]+", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     nonisolated func catalogTitleCased() -> String {
-        split(separator: " ")
+        let uppercaseWords: Set<String> = ["ai", "bmi", "ez", "hiit", "it", "tr"]
+        return normalizedCatalogKey
+            .split(separator: " ")
             .map { word in
                 let rawWord = String(word)
-                if rawWord.count <= 2 {
+                if uppercaseWords.contains(rawWord) {
                     return rawWord.uppercased()
                 }
                 return rawWord.prefix(1).uppercased() + rawWord.dropFirst().lowercased()

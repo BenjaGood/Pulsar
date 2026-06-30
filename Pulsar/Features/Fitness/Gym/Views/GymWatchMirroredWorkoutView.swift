@@ -90,7 +90,7 @@ struct GymWatchMirroredWorkoutView: View {
                 systemImage: "music.note",
                 accessibilityLabel: "Now Playing",
                 size: 36,
-                font: .caption.weight(.black),
+                font: .caption.weight(.semibold),
                 foregroundStyle: .white.opacity(0.84)
             ) {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -101,7 +101,7 @@ struct GymWatchMirroredWorkoutView: View {
                 systemImage: "chevron.down",
                 accessibilityLabel: "Dismiss workout mirror",
                 size: 36,
-                font: .caption.weight(.black),
+                font: .caption.weight(.semibold),
                 foregroundStyle: .white.opacity(0.78)
             ) {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -112,7 +112,7 @@ struct GymWatchMirroredWorkoutView: View {
                 HStack(spacing: 7) {
                     Text(state.routineEmoji ?? "🏋️")
                     Text("Apple Watch Gym")
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.white.opacity(0.56))
                 }
 
@@ -127,7 +127,7 @@ struct GymWatchMirroredWorkoutView: View {
 
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 Text(PulsarGymFormatters.duration(displayElapsedSeconds(for: state, at: timeline.date)))
-                    .font(.system(size: 20, weight: .black, design: .rounded))
+                    .font(.system(size: 20, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.white)
                     .padding(.horizontal, 12)
@@ -147,10 +147,10 @@ struct GymWatchMirroredWorkoutView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(state.progressText)
-                            .font(.headline.weight(.black))
+                            .pulsarTextStyle(.cardTitle)
                             .foregroundStyle(.white)
                         Text(state.exerciseProgressText)
-                            .font(.caption.weight(.semibold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(.white.opacity(0.58))
                     }
 
@@ -197,12 +197,12 @@ struct GymWatchMirroredWorkoutView: View {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(state.currentExercise?.exerciseName ?? "Open Gym")
-                        .font(.title3.weight(.black))
+                        .pulsarTextStyle(.sectionHeader)
                         .foregroundStyle(.white)
                         .lineLimit(2)
                         .minimumScaleFactor(0.78)
                     Text(subtitle(for: state))
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.white.opacity(0.58))
                 }
 
@@ -239,7 +239,7 @@ struct GymWatchMirroredWorkoutView: View {
                     )
                 } label: {
                     Label("Complete Set", systemImage: "checkmark.circle.fill")
-                        .font(.headline.weight(.black))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(Color(red: 0.10, green: 0.08, blue: 0.16))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
@@ -264,15 +264,15 @@ struct GymWatchMirroredWorkoutView: View {
             GymWatchMirrorCard {
                 HStack(spacing: 12) {
                     Image(systemName: "timer")
-                        .font(.title3.weight(.black))
+                        .pulsarTextStyle(.sectionHeader)
                         .foregroundStyle(Color(red: 0.78, green: 0.72, blue: 1.0))
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Rest")
-                            .font(.caption.weight(.black))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(.white.opacity(0.56))
                         TimelineView(.periodic(from: .now, by: 1)) { timeline in
                             Text(PulsarGymFormatters.duration(displayRestRemainingSeconds(for: state, at: timeline.date) ?? remaining))
-                                .font(.system(size: 22, weight: .black, design: .rounded))
+                                .font(.system(size: 22, weight: .semibold, design: .rounded))
                                 .monospacedDigit()
                                 .foregroundStyle(.white)
                         }
@@ -282,7 +282,7 @@ struct GymWatchMirroredWorkoutView: View {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         syncStore.sendGymAction(.skipRestTimer(sessionId: state.sessionId))
                     }
-                    .font(.headline.weight(.black))
+                    .pulsarTextStyle(.cardTitle)
                     .buttonStyle(.bordered)
                     .tint(.white.opacity(0.12))
                 }
@@ -303,7 +303,7 @@ struct GymWatchMirroredWorkoutView: View {
                         .tint(.white)
                 }
                 Text(isRequestingFinish ? "Finishing workout..." : "Finish Workout")
-                    .font(.headline.weight(.black))
+                    .pulsarTextStyle(.cardTitle)
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
@@ -321,10 +321,10 @@ struct GymWatchMirroredWorkoutView: View {
     private var completedState: some View {
         VStack(spacing: 10) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 46, weight: .black))
+                .font(.system(size: 46, weight: .semibold))
                 .foregroundStyle(Color(red: 0.66, green: 1.0, blue: 0.78))
             Text("Workout finished")
-                .font(.title3.weight(.black))
+                .pulsarTextStyle(.sectionHeader)
                 .foregroundStyle(.white)
             Button("Done") {
                 onSummaryDone()
@@ -451,15 +451,15 @@ private struct GymWatchMirrorMetric: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: symbolName)
-                .font(.caption.weight(.black))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(tint)
             VStack(alignment: .trailing, spacing: 1) {
                 Text(value)
-                    .font(.subheadline.weight(.black))
+                    .pulsarTextStyle(.label)
                     .monospacedDigit()
                     .foregroundStyle(.white)
                 Text(subtitle)
-                    .font(.caption2.weight(.black))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(.white.opacity(0.54))
             }
         }
@@ -476,12 +476,12 @@ private struct GymWatchMirrorSetMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(value)
-                .font(.headline.weight(.black))
+                .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             Text(title)
-                .font(.caption.weight(.black))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.white.opacity(0.50))
         }
         .padding(11)
@@ -537,12 +537,12 @@ private struct GymWatchMirrorSetStepper: View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(value)
-                    .font(.subheadline.weight(.black))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
                 Text(title)
-                    .font(.caption.weight(.black))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.white.opacity(0.50))
             }
 
@@ -551,14 +551,14 @@ private struct GymWatchMirrorSetStepper: View {
             HStack(spacing: 6) {
                 Button(action: onMinus) {
                     Image(systemName: "minus")
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                         .frame(width: 28, height: 28)
                         .background(.white.opacity(0.08), in: Circle())
                 }
 
                 Button(action: onPlus) {
                     Image(systemName: "plus")
-                        .font(.caption.weight(.black))
+                        .pulsarTextStyle(.captionEmphasis)
                         .frame(width: 28, height: 28)
                         .background(.white.opacity(0.11), in: Circle())
                 }

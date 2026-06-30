@@ -114,8 +114,8 @@ struct MeasurementSourceSheet: View {
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
                 header
 
                 MeasurementActiveDeviceHero(device: manager.activeDevice)
@@ -130,7 +130,7 @@ struct MeasurementSourceSheet: View {
                     device: focusedDevice,
                     isPrimaryActionDisabled: manager.isPrimaryActionDisabled(for: focusedDevice)
                 ) {
-                    Task { await handlePrimaryAction(for: focusedDevice) }
+                    Task { await handlePrimaryAction(for: focusedDevice.type) }
                 } onSync: {
                     Task { await syncNow(for: focusedDevice) }
                 } onDisconnect: {
@@ -146,11 +146,16 @@ struct MeasurementSourceSheet: View {
 
                 footerNote
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 18)
+            .padding(.horizontal, 20)
+            .padding(.top, 28)
             .padding(.bottom, 42)
         }
-        .background(MeasurementSourceBackground())
+        .scrollIndicators(.hidden)
+        .background {
+            MeasurementSourceBackground()
+                .clipShape(MeasurementModalTopShape(radius: 46))
+                .ignoresSafeArea()
+        }
         .overlay(alignment: .bottom) {
             if let sourceChangeConfirmation {
                 SourceChangeConfirmationBanner(message: sourceChangeConfirmation)
@@ -159,7 +164,7 @@ struct MeasurementSourceSheet: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .presentationDragIndicator(.visible)
+        .preferredColorScheme(.dark)
         .animation(.spring(response: 0.48, dampingFraction: 0.88), value: manager.activeDeviceType)
         .animation(.spring(response: 0.42, dampingFraction: 0.86), value: focusedDeviceType)
         .animation(.easeInOut(duration: 0.18), value: manager.ouraConnectionFlowState)
@@ -176,73 +181,71 @@ struct MeasurementSourceSheet: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("Measurement Source")
-                    .font(.title2.weight(.bold))
+                    .font(.system(size: 30, weight: .bold))
                     .foregroundStyle(primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
                 Text("Choose which device powers your health metrics.")
-                    .font(.subheadline.weight(.medium))
+                    .font(.system(size: 18, weight: .regular))
                     .foregroundStyle(secondaryText)
+                    .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 10)
 
-            Button(action: onDismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(secondaryText)
-                    .frame(width: 34, height: 34)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .overlay {
-                        Circle()
-                            .stroke(cardBorder, lineWidth: 1)
-                    }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close")
+            Button("Close", systemImage: "xmark", action: onDismiss)
+                .font(.system(size: 20, weight: .semibold))
+                .labelStyle(.iconOnly)
+                .symbolRenderingMode(.monochrome)
+                .tint(.white)
+                .buttonStyle(.glass(.clear))
+                .buttonBorderShape(.circle)
+                .controlSize(.large)
+                .frame(width: 48, height: 48)
         }
+        .padding(.bottom, 8)
     }
 
     private var changeSourceSection: some View {
-        VStack(alignment: .leading, spacing: 13) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("Change source")
-                    .font(.headline.weight(.semibold))
+                    .font(.title2.bold())
                     .foregroundStyle(primaryText)
 
                 Spacer()
 
                 Text("\(manager.availableDevices.count) devices")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(secondaryText)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.white.opacity(colorScheme == .dark ? 0.07 : 0.58), in: Capsule(style: .continuous))
-                    .overlay {
-                        Capsule(style: .continuous)
-                            .stroke(cardBorder, lineWidth: 1)
-                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 8)
+                    .background(.white.opacity(0.065), in: Capsule())
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 13) {
-                    ForEach(manager.availableDevices) { device in
-                        MeasurementDeviceSourceCard(
-                            device: device,
-                            isFocused: focusedDevice.type == device.type,
-                            isPrimaryActionDisabled: manager.isPrimaryActionDisabled(for: device)
-                        ) {
-                            focusedDeviceType = device.type
-                        } onAction: {
-                            Task { await handlePrimaryAction(for: device) }
+            ScrollView(.horizontal) {
+                PulsarGlassEffectGroup(spacing: 8) {
+                    LazyHStack(spacing: 12) {
+                        ForEach(manager.availableDevices) { device in
+                            MeasurementDeviceSourceCard(
+                                device: device,
+                                isFocused: focusedDevice.type == device.type
+                            ) {
+                                selectDevice(device.type)
+                            }
+                            .containerRelativeFrame(.horizontal, count: 3, span: 1, spacing: 12)
+                            .frame(height: 252, alignment: .top)
                         }
-                        .frame(width: 268, height: 382, alignment: .top)
                     }
                 }
                 .padding(.horizontal, 1)
-                .padding(.vertical, 2)
+                .padding(.vertical, 3)
             }
+            .scrollIndicators(.hidden)
+            .frame(height: 258)
         }
     }
 
@@ -250,7 +253,7 @@ struct MeasurementSourceSheet: View {
         VStack(alignment: .leading, spacing: 13) {
             HStack {
                 Text("Current sources")
-                    .font(.headline.weight(.semibold))
+                    .pulsarTextStyle(.cardTitle)
                     .foregroundStyle(primaryText)
 
                 Spacer()
@@ -285,7 +288,7 @@ struct MeasurementSourceSheet: View {
 
     private var footerNote: some View {
         Text("Pulsar uses your current source for sleep, recovery, strain, stress, steps, and daily metrics. AirPods Pro 3 are never used there; they are only an emergency workout heart-rate backup through HealthKit.")
-            .font(.caption.weight(.medium))
+            .pulsarTextStyle(.captionEmphasis)
             .foregroundStyle(secondaryText)
             .fixedSize(horizontal: false, vertical: true)
             .padding(15)
@@ -297,24 +300,30 @@ struct MeasurementSourceSheet: View {
             }
     }
 
-    private func handlePrimaryAction(for device: MeasurementDevice) async {
-        focusedDeviceType = device.type
+    private func selectDevice(_ type: MeasurementDeviceType) {
+        focusedDeviceType = type
+        Task { await handlePrimaryAction(for: type) }
+    }
 
-        if device.type == .airPodsPro3 {
+    private func handlePrimaryAction(for type: MeasurementDeviceType) async {
+        focusedDeviceType = type
+        var device = manager.device(for: type)
+
+        if type == .airPodsPro3 {
             UIImpactFeedbackGenerator(style: .soft).impactOccurred()
             return
         }
 
-        if device.type == .ouraRing {
+        if type == .ouraRing {
             switch device.connectionStatus {
             case .setupRequired, .disconnected, .tokenExpired:
                 await manager.connectOura()
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                return
+                guard focusedDeviceType == type else { return }
+                device = manager.device(for: type)
             case .syncError:
                 await manager.syncOuraNow()
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                return
+                guard focusedDeviceType == type else { return }
+                device = manager.device(for: type)
             case .connecting:
                 UIImpactFeedbackGenerator(style: .soft).impactOccurred()
                 return
@@ -399,11 +408,11 @@ struct MeasurementSourceSheet: View {
     }
 
     private var primaryText: Color {
-        colorScheme == .dark ? .white.opacity(0.96) : Color(red: 0.07, green: 0.10, blue: 0.15)
+        colorScheme == .dark ? .white.opacity(0.97) : Color(red: 0.07, green: 0.10, blue: 0.15)
     }
 
     private var secondaryText: Color {
-        colorScheme == .dark ? .white.opacity(0.66) : Color(red: 0.34, green: 0.38, blue: 0.46)
+        colorScheme == .dark ? Color(red: 0.74, green: 0.80, blue: 0.90).opacity(0.84) : Color(red: 0.34, green: 0.38, blue: 0.46)
     }
 
     private var cardBackground: LinearGradient {
@@ -423,6 +432,42 @@ struct MeasurementSourceSheet: View {
     }
 }
 
+private enum MeasurementSourcePalette {
+    static let blueEdge = Color(red: 0.58, green: 0.76, blue: 1.0)
+    static let blueCore = Color(red: 0.30, green: 0.58, blue: 0.96)
+    static let connected = Color(red: 0.22, green: 0.92, blue: 0.58)
+    static let mutedDot = Color(red: 0.46, green: 0.53, blue: 0.62)
+}
+
+private struct MeasurementModalTopShape: Shape {
+    let radius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(
+            roundedRect: rect,
+            byRoundingCorners: [.topLeft, .topRight],
+            cornerRadii: CGSize(width: radius, height: radius)
+        )
+        return Path(path.cgPath)
+    }
+}
+
+private extension View {
+    func measurementGlassSurface(
+        cornerRadius: CGFloat,
+        tint: Color = MeasurementSourcePalette.blueEdge,
+        opacity: Double = 0.08,
+        isInteractive: Bool = false
+    ) -> some View {
+        pulsarLiquidGlass(
+            cornerRadius: cornerRadius,
+            tint: tint.opacity(opacity),
+            interactive: isInteractive
+        )
+    }
+
+}
+
 private struct OuraCloudDataPanel: View {
     let rows: [OuraVisibleDataRow]
     let lastSyncAt: Date?
@@ -433,10 +478,10 @@ private struct OuraCloudDataPanel: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Oura cloud data")
-                        .font(.headline.weight(.semibold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(primaryText)
                     Text(lastSyncText)
-                        .font(.caption.weight(.bold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(secondaryText)
                 }
 
@@ -456,17 +501,17 @@ private struct OuraCloudDataPanel: View {
                         VStack(alignment: .leading, spacing: 3) {
                             HStack(alignment: .firstTextBaseline, spacing: 7) {
                                 Text(row.title)
-                                    .font(.caption.weight(.bold))
+                                    .pulsarTextStyle(.captionEmphasis)
                                     .foregroundStyle(primaryText)
                                 Text(row.value)
-                                    .font(.caption.weight(.semibold))
+                                    .pulsarTextStyle(.captionEmphasis)
                                     .foregroundStyle(row.isAvailable ? primaryText : secondaryText)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.76)
                             }
 
                             Text(row.detail)
-                                .font(.caption2.weight(.medium))
+                                .pulsarTextStyle(.overline)
                                 .foregroundStyle(secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -551,92 +596,133 @@ private struct MeasurementActiveDeviceHero: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        GeometryReader { proxy in
+            let contentWidth = max(proxy.size.width - 36, 0)
+            let leftWidth = min(170, max(144, contentWidth * 0.46))
+
             ZStack {
-                activeAura
-                DeviceProductImageView(
-                    assetName: device.type.assetName,
-                    deviceType: device.type,
-                    mode: .hero
-                )
-                    .frame(height: 260)
-                    .padding(.horizontal, 4)
-                    .padding(.top, 4)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 272)
+                heroSpotlight
 
-            VStack(alignment: .leading, spacing: 11) {
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text(device.name)
-                            .font(.title3.weight(.bold))
-                            .foregroundStyle(primaryText)
-                        HStack(spacing: 8) {
-                            DeviceStatusPill(text: device.connectionStatus.label, tint: statusTint)
-                            DeviceStatusPill(text: HealthSourceDisplayCopy.preferredSource, tint: tint)
-                        }
+                VStack(spacing: 12) {
+                    HStack(alignment: .center, spacing: 12) {
+                        heroInformation
+                            .frame(width: leftWidth, alignment: .leading)
+                            .zIndex(2)
+
+                        heroProductStage
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 274)
                     }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 278)
 
-                    Spacer(minLength: 8)
-
-                    MeasurementDeviceIconView(type: device.type, size: 26, tint: tint)
-                        .frame(width: 42, height: 42)
-                        .background(tint.opacity(colorScheme == .dark ? 0.14 : 0.10), in: Circle())
-                        .overlay {
-                            Circle()
-                                .stroke(tint.opacity(colorScheme == .dark ? 0.22 : 0.16), lineWidth: 1)
-                        }
+                    MetricPreviewStrip(metrics: device.supportedMetrics, tint: tint)
                 }
+                .padding(.horizontal, 18)
+                .padding(.top, 20)
+                .padding(.bottom, 16)
+            }
+        }
+        .frame(height: 400)
+        .measurementGlassSurface(
+            cornerRadius: 32,
+            tint: tint,
+            opacity: 0.035
+        )
+        .shadow(color: .black.opacity(0.16), radius: 22, y: 14)
+        .accessibilityElement(children: .contain)
+    }
 
-                HStack(spacing: 11) {
-                    PremiumBatteryStatusView(percentage: device.batteryPercentage, style: .hero, tint: tint)
+    private var heroInformation: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: device.type == .appleWatch ? "apple.logo" : device.type.symbolName)
+                    .font(.system(size: 23, weight: .semibold))
+                    .foregroundStyle(primaryText)
+                    .frame(width: 26)
 
-                    VStack(alignment: .leading, spacing: 4) {
+                Text(device.name)
+                    .font(.system(size: 23, weight: .bold))
+                    .foregroundStyle(primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.70)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                MeasurementStatusChip(text: device.connectionStatus.label, tint: statusTint, kind: .dot)
+                MeasurementStatusChip(text: HealthSourceDisplayCopy.preferredSource, tint: tint, kind: .symbol("star"))
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                PremiumBatteryStatusView(percentage: device.batteryPercentage, style: .hero, tint: tint)
+
+                HStack(spacing: 10) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(tint)
+                        .frame(width: 32, height: 32)
+                        .background(tint.opacity(0.09), in: Circle())
+
+                    VStack(alignment: .leading, spacing: 2) {
                         Text("Last sync")
-                            .font(.caption.weight(.bold))
+                            .font(.caption)
                             .foregroundStyle(secondaryText)
                         Text(lastSyncText)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(primaryText)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.80)
-                    }
-                    .padding(13)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(insetBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(cardBorder, lineWidth: 1)
+                            .minimumScaleFactor(0.72)
                     }
                 }
-
-                MetricPreviewStrip(metrics: Array(device.supportedMetrics.prefix(5)), tint: tint)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 18))
             }
+
+            Spacer(minLength: 0)
         }
-        .padding(18)
-        .background(heroBackground, in: RoundedRectangle(cornerRadius: 34, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 34, style: .continuous)
-                .stroke(heroBorder, lineWidth: 1)
-        }
-        .shadow(color: tint.opacity(colorScheme == .dark ? 0.18 : 0.10), radius: 28, y: 18)
-        .accessibilityElement(children: .contain)
     }
 
-    private var activeAura: some View {
-        ZStack {
-            Circle()
-                .fill(tint.opacity(colorScheme == .dark ? 0.18 : 0.10))
-                .frame(width: 250, height: 250)
-                .blur(radius: 34)
-                .offset(x: 50, y: -8)
-            Circle()
-                .fill(Color(red: 0.42, green: 0.72, blue: 1.0).opacity(colorScheme == .dark ? 0.12 : 0.07))
-                .frame(width: 170, height: 170)
-                .blur(radius: 26)
-                .offset(x: -70, y: 30)
+    private var heroProductStage: some View {
+        GeometryReader { proxy in
+            let stageWidth = proxy.size.width
+            let stageHeight = proxy.size.height
+
+            ZStack {
+                Ellipse()
+                    .fill(
+                        RadialGradient(
+                            colors: [tint.opacity(0.12), .black.opacity(0.16), .clear],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: stageWidth * 0.46
+                        )
+                    )
+                    .frame(width: stageWidth * 0.88, height: stageHeight * 0.18)
+                    .blur(radius: 10)
+                    .offset(y: stageHeight * 0.34)
+
+                DeviceProductImageView(
+                    assetName: device.type.assetName,
+                    deviceType: device.type,
+                    mode: .hero
+                )
+                .frame(width: stageWidth * imageStageWidthMultiplier, height: stageHeight * imageStageHeightMultiplier)
+                .offset(x: productOffsetX(stageWidth), y: productOffsetY(stageHeight))
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
+    }
+
+    private var heroSpotlight: some View {
+        RadialGradient(
+            colors: [tint.opacity(0.12), .clear],
+            center: UnitPoint(x: 0.78, y: 0.32),
+            startRadius: 0,
+            endRadius: 220
+        )
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private var lastSyncText: String {
@@ -673,261 +759,236 @@ private struct MeasurementActiveDeviceHero: View {
     }
 
     private var secondaryText: Color {
-        colorScheme == .dark ? .white.opacity(0.64) : Color(red: 0.35, green: 0.39, blue: 0.47)
+        colorScheme == .dark ? Color(red: 0.76, green: 0.82, blue: 0.91).opacity(0.84) : Color(red: 0.35, green: 0.39, blue: 0.47)
     }
 
-    private var heroBackground: LinearGradient {
-        LinearGradient(
-            colors: colorScheme == .dark
-                ? [
-                    Color.white.opacity(0.13),
-                    Color(red: 0.07, green: 0.09, blue: 0.14).opacity(0.92),
-                    tint.opacity(0.10)
-                ]
-                : [
-                    Color.white.opacity(0.94),
-                    Color(red: 0.93, green: 0.97, blue: 1.0).opacity(0.82),
-                    tint.opacity(0.08)
-                ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+    private var imageStageWidthMultiplier: CGFloat {
+        switch device.type {
+        case .appleWatch:
+            return 1.14
+        case .ouraRing:
+            return 0.98
+        case .airPodsPro3:
+            return 0.94
+        }
     }
 
-    private var insetBackground: LinearGradient {
-        LinearGradient(
-            colors: colorScheme == .dark
-                ? [.white.opacity(0.075), .white.opacity(0.035)]
-                : [Color.white.opacity(0.70), Color(red: 0.91, green: 0.96, blue: 1.0).opacity(0.42)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+    private var imageStageHeightMultiplier: CGFloat {
+        switch device.type {
+        case .appleWatch:
+            return 1.08
+        case .ouraRing:
+            return 0.92
+        case .airPodsPro3:
+            return 0.88
+        }
     }
 
-    private var heroBorder: LinearGradient {
-        LinearGradient(
-            colors: colorScheme == .dark
-                ? [.white.opacity(0.24), tint.opacity(0.20), .white.opacity(0.08)]
-                : [.white.opacity(0.92), tint.opacity(0.18), Color(red: 0.44, green: 0.56, blue: 0.70).opacity(0.20)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+    private func productOffsetX(_ width: CGFloat) -> CGFloat {
+        switch device.type {
+        case .appleWatch:
+            return -width * 0.04
+        case .ouraRing:
+            return -width * 0.02
+        case .airPodsPro3:
+            return -width * 0.02
+        }
     }
 
-    private var cardBorder: Color {
-        colorScheme == .dark
-            ? .white.opacity(0.12)
-            : Color(red: 0.44, green: 0.56, blue: 0.70).opacity(0.22)
+    private func productOffsetY(_ height: CGFloat) -> CGFloat {
+        switch device.type {
+        case .appleWatch:
+            return -height * 0.04
+        case .ouraRing:
+            return height * 0.02
+        case .airPodsPro3:
+            return height * 0.03
+        }
     }
 }
 
 private struct MeasurementDeviceSourceCard: View {
     let device: MeasurementDevice
     let isFocused: Bool
-    let isPrimaryActionDisabled: Bool
-    let onFocus: () -> Void
-    let onAction: () -> Void
+    let onSelect: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            DeviceProductImageView(
-                assetName: device.type.assetName,
-                deviceType: device.type,
-                mode: .card
-            )
-                .frame(height: 160)
-                .frame(maxWidth: .infinity)
+        Button(action: onSelect) {
+            ZStack(alignment: .topTrailing) {
+                VStack(spacing: 8) {
+                    DeviceProductImageView(
+                        assetName: device.type.assetName,
+                        deviceType: device.type,
+                        mode: .card
+                    )
+                    .frame(height: 116)
+                    .frame(maxWidth: .infinity)
+                    .offset(y: imageOffsetY)
+                    .padding(.top, 10)
 
-            VStack(alignment: .leading, spacing: 9) {
-                HStack(alignment: .top, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 5) {
+                    VStack(spacing: 7) {
                         Text(device.name)
-                            .font(.subheadline.weight(.bold))
+                            .font(.subheadline.bold())
                             .foregroundStyle(primaryText)
                             .lineLimit(2)
-                            .minimumScaleFactor(0.86)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(device.connectionStatus.label)
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(statusTint)
-                    }
+                            .multilineTextAlignment(.center)
+                            .minimumScaleFactor(0.72)
+                            .frame(maxWidth: .infinity)
 
-                    Spacer(minLength: 0)
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(statusDotTint)
+                                .frame(width: 7, height: 7)
+                            Text(selectorStatusText)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(selectorStatusTextColor)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.72)
+                        }
 
-                    if device.isActiveSource {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(tint)
+                        if device.type == .airPodsPro3 {
+                            Label("Battery unavailable", systemImage: "battery.0")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.62)
+
+                            Text("Workout backup only")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.60)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 7)
+                                .frame(maxWidth: .infinity)
+                                .background(.white.opacity(0.055), in: Capsule())
+                        }
                     }
+                    .padding(.horizontal, 9)
+
+                    Spacer(minLength: 8)
                 }
 
-                PremiumBatteryStatusView(percentage: device.batteryPercentage, style: .compact, tint: tint)
-
-                Text(metricSummary)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(secondaryText)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if device.type == .ouraRing || device.type == .airPodsPro3 {
-                    Text(device.type == .airPodsPro3 ? airPodsCardCaption : ouraCardCaption)
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(statusTint)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.74)
+                if device.isActiveSource {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 30, height: 30)
+                        .background(MeasurementSourcePalette.blueCore, in: Circle())
+                        .shadow(color: MeasurementSourcePalette.blueCore.opacity(0.26), radius: 8, y: 4)
+                        .offset(x: -9, y: 9)
                 }
             }
-
-            Spacer(minLength: 0)
-
-            Button(action: onAction) {
-                Text(device.primaryActionTitle)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(buttonText)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 11)
-                    .background(buttonBackground, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 15, style: .continuous)
-                            .stroke(buttonBorder, lineWidth: 1)
-                    }
+            .measurementGlassSurface(
+                cornerRadius: 26,
+                tint: cardTint,
+                opacity: device.isActiveSource ? 0.075 : 0.018,
+                isInteractive: true
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 26)
+                    .stroke(selectionStroke, lineWidth: device.isActiveSource ? 1 : 0.6)
             }
-            .buttonStyle(.plain)
-            .disabled(isPrimaryActionDisabled)
+            .contentShape(RoundedRectangle(cornerRadius: 26))
         }
-        .padding(14)
-        .background(cardBackground, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(isFocused ? tint.opacity(colorScheme == .dark ? 0.42 : 0.28) : cardBorder, lineWidth: isFocused ? 1.4 : 1)
-        }
-        .shadow(color: tint.opacity(isFocused ? (colorScheme == .dark ? 0.16 : 0.08) : 0.04), radius: isFocused ? 22 : 12, y: isFocused ? 14 : 8)
-        .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .onTapGesture(perform: onFocus)
+        .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isFocused ? .isSelected : [])
+        .accessibilityLabel("\(device.name), \(selectorStatusText)")
+        .accessibilityHint(accessibilityHint)
+        .accessibilityAddTraits(device.isActiveSource ? .isSelected : [])
     }
 
-    private var metricSummary: String {
-        if device.type == .ouraRing {
-            return "Sleep · Recovery · HRV · Temp · Activity"
-        }
-        if device.type == .airPodsPro3 {
-            return "Workout HR backup · no daily tracking"
-        }
-        return device.supportedMetrics.prefix(4).map(\.label).joined(separator: " • ")
-    }
-
-    private var airPodsCardCaption: String {
-        "Emergency fallback only"
-    }
-
-    private var ouraCardCaption: String {
-        switch device.connectionStatus {
-        case .connected:
-            return "Cloud sync connected"
-        case .syncError:
-            return "Last sync needs attention"
-        case .tokenExpired:
-            return "Authorization expired"
-        case .connecting:
-            return "Authorization in progress"
-        case .setupRequired:
-            #if DEBUG
-            return "Backend setup required"
-            #else
-            return "Setup unavailable"
-            #endif
-        case .available, .disconnected:
-            return "Not connected"
-        }
-    }
-
-    private var tint: Color {
-        switch device.type {
-        case .appleWatch:
-            return colorScheme == .dark ? Color(red: 0.72, green: 0.86, blue: 1.0) : Color(red: 0.08, green: 0.34, blue: 0.58)
-        case .ouraRing:
-            return colorScheme == .dark ? Color(red: 0.72, green: 0.78, blue: 0.90) : Color(red: 0.18, green: 0.24, blue: 0.34)
-        case .airPodsPro3:
-            return colorScheme == .dark ? .white.opacity(0.88) : Color(red: 0.45, green: 0.50, blue: 0.58)
-        }
-    }
-
-    private var statusTint: Color {
-        switch device.connectionStatus {
-        case .connected:
-            return colorScheme == .dark ? Color(red: 0.36, green: 0.94, blue: 0.68) : Color(red: 0.00, green: 0.47, blue: 0.30)
-        case .available, .connecting:
-            return tint
-        case .setupRequired, .tokenExpired, .syncError:
-            return colorScheme == .dark ? Color(red: 1.0, green: 0.70, blue: 0.38) : Color(red: 0.76, green: 0.34, blue: 0.08)
-        case .disconnected:
-            return secondaryText
-        }
+    private var cardTint: Color {
+        device.isActiveSource ? MeasurementSourcePalette.blueEdge : .white
     }
 
     private var primaryText: Color {
-        colorScheme == .dark ? .white.opacity(0.96) : Color(red: 0.07, green: 0.10, blue: 0.15)
+        colorScheme == .dark ? .white.opacity(0.94) : Color(red: 0.07, green: 0.10, blue: 0.15)
     }
 
-    private var secondaryText: Color {
-        colorScheme == .dark ? .white.opacity(0.62) : Color(red: 0.35, green: 0.39, blue: 0.47)
-    }
-
-    private var cardBackground: LinearGradient {
-        LinearGradient(
-            colors: colorScheme == .dark
-                ? [.white.opacity(isFocused ? 0.13 : 0.10), Color(red: 0.05, green: 0.07, blue: 0.11).opacity(0.90)]
-                : [.white.opacity(0.92), Color(red: 0.93, green: 0.97, blue: 1.0).opacity(isFocused ? 0.78 : 0.66)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    private var buttonBackground: LinearGradient {
+    private var selectionStroke: Color {
         if device.isActiveSource {
-            return LinearGradient(
-                colors: colorScheme == .dark ? [.white.opacity(0.07), .white.opacity(0.04)] : [Color.white.opacity(0.64), Color.white.opacity(0.34)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            return MeasurementSourcePalette.blueEdge.opacity(0.34)
         }
+        return isFocused ? .white.opacity(0.12) : .clear
+    }
 
-        if !device.canBecomeActiveSource {
-            return LinearGradient(
-                colors: colorScheme == .dark
-                    ? [Color(red: 1.0, green: 0.64, blue: 0.28).opacity(0.15), .white.opacity(0.04)]
-                    : [Color(red: 1.0, green: 0.75, blue: 0.42).opacity(0.24), Color.white.opacity(0.46)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+    private var selectorStatusText: String {
+        switch device.type {
+        case .appleWatch:
+            return device.connectionStatus.label
+        case .ouraRing:
+            return device.connectionStatus == .connected ? "Connected" : "Available"
+        case .airPodsPro3:
+            return "Available"
         }
-
-        return LinearGradient(
-            colors: colorScheme == .dark ? [tint.opacity(0.24), tint.opacity(0.11)] : [tint.opacity(0.18), Color.white.opacity(0.58)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
     }
 
-    private var buttonText: Color {
-        if device.isActiveSource { return secondaryText }
-        if !device.canBecomeActiveSource { return statusTint }
-        return colorScheme == .dark ? .white.opacity(0.94) : tint
+    private var selectorStatusTextColor: Color {
+        device.connectionStatus == .connected ? MeasurementSourcePalette.connected : .white.opacity(0.70)
     }
 
-    private var buttonBorder: Color {
-        if device.isActiveSource { return cardBorder }
-        return tint.opacity(colorScheme == .dark ? 0.22 : 0.18)
+    private var statusDotTint: Color {
+        device.connectionStatus == .connected ? MeasurementSourcePalette.connected : MeasurementSourcePalette.mutedDot
     }
 
-    private var cardBorder: Color {
-        colorScheme == .dark
-            ? .white.opacity(0.12)
-            : Color(red: 0.44, green: 0.56, blue: 0.70).opacity(0.22)
+    private var accessibilityHint: String {
+        if device.isActiveSource {
+            return "Current measurement source"
+        }
+        if device.canBecomeActiveSource {
+            return "Use as measurement source"
+        }
+        return device.type == .airPodsPro3 ? "Workout backup only" : device.primaryActionTitle
+    }
+
+    private var imageOffsetY: CGFloat {
+        switch device.type {
+        case .appleWatch:
+            return 2
+        case .ouraRing:
+            return 4
+        case .airPodsPro3:
+            return 0
+        }
+    }
+
+}
+
+private enum MeasurementStatusChipKind {
+    case dot
+    case symbol(String)
+}
+
+private struct MeasurementStatusChip: View {
+    let text: String
+    let tint: Color
+    let kind: MeasurementStatusChipKind
+
+    var body: some View {
+        HStack(spacing: 8) {
+            switch kind {
+            case .dot:
+                Circle()
+                    .fill(tint)
+                    .frame(width: 8, height: 8)
+            case .symbol(let systemName):
+                Image(systemName: systemName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(tint)
+            }
+
+            Text(text)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(text == "Connected" ? .white.opacity(0.92) : tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.68)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(tint.opacity(0.09), in: Capsule())
     }
 }
 
@@ -945,10 +1006,10 @@ private struct SourcePriorityCategoryRow: View {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(category.title)
-                        .font(.subheadline.weight(.bold))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(primaryText)
                     Text(activeSourceText)
-                        .font(.caption.weight(.semibold))
+                        .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(decision.isFallback || decision.displayedSource == nil ? fallbackTint : secondaryText)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -971,11 +1032,11 @@ private struct SourcePriorityCategoryRow: View {
                 } label: {
                     HStack(spacing: 7) {
                         Text(preference.currentSource.priorityDisplayName)
-                            .font(.caption.weight(.bold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .lineLimit(1)
                             .minimumScaleFactor(0.74)
                         Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption2.weight(.bold))
+                            .pulsarTextStyle(.overline)
                     }
                     .foregroundStyle(primaryText)
                     .padding(.horizontal, 11)
@@ -993,7 +1054,7 @@ private struct SourcePriorityCategoryRow: View {
                 set: onFallbackChange
             )) {
                 Text("Auto fallback")
-                    .font(.caption.weight(.bold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(secondaryText)
             }
             .toggleStyle(.switch)
@@ -1117,7 +1178,7 @@ private struct SourceChangeConfirmationBanner: View {
                 .foregroundStyle(Color(red: 0.18, green: 0.62, blue: 0.39))
 
             Text(message)
-                .font(.caption.weight(.semibold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(primaryText)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1147,7 +1208,7 @@ private struct SourceRoutingDebugPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Source routing debug", systemImage: "ladybug")
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(primaryText)
 
             VStack(alignment: .leading, spacing: 9) {
@@ -1157,7 +1218,7 @@ private struct SourceRoutingDebugPanel: View {
                     let resolutions = manager.metricRoutingResolutions(for: category)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(category.confirmationTitle)
-                            .font(.caption2.weight(.bold))
+                            .pulsarTextStyle(.overline)
                             .foregroundStyle(primaryText)
                         Text("Current \(preference.currentSource.priorityDisplayName) · Displayed \(decision.displayedSource?.priorityDisplayName ?? "none")\(decision.isFallback ? " · fallback" : "")")
                         Text("Switched \(relativeText(for: preference.sourceSwitchTimestamp)) · Last metric data \(relativeText(for: decision.lastDataAt))")
@@ -1170,7 +1231,7 @@ private struct SourceRoutingDebugPanel: View {
                             }
                         }
                     }
-                    .font(.caption2.weight(.medium))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(secondaryText)
                 }
             }
@@ -1180,11 +1241,11 @@ private struct SourceRoutingDebugPanel: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 Text("Connections")
-                    .font(.caption2.weight(.bold))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(primaryText)
                 ForEach(manager.sourcePrioritySnapshots, id: \.sourceID) { snapshot in
                     Text("\(snapshot.sourceID.priorityDisplayName): sync \(relativeText(for: snapshot.lastSyncAt)) · \(snapshot.connectionState.debugLabel)")
-                        .font(.caption2.weight(.medium))
+                        .pulsarTextStyle(.overline)
                         .foregroundStyle(secondaryText)
                 }
             }
@@ -1278,10 +1339,10 @@ private struct MeasurementDeviceDetailPanel: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(detailTitle)
-                        .font(.headline.weight(.semibold))
+                        .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(primaryText)
                     Text(detailSubtitle)
-                        .font(.subheadline.weight(.medium))
+                        .pulsarTextStyle(.label)
                         .foregroundStyle(secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1301,7 +1362,7 @@ private struct MeasurementDeviceDetailPanel: View {
 
                 VStack(alignment: .leading, spacing: 11) {
                     Text(device.name)
-                        .font(.title3.weight(.bold))
+                        .pulsarTextStyle(.sectionHeader)
                         .foregroundStyle(primaryText)
                         .lineLimit(2)
 
@@ -1309,10 +1370,10 @@ private struct MeasurementDeviceDetailPanel: View {
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Last sync")
-                            .font(.caption2.weight(.bold))
+                            .pulsarTextStyle(.overline)
                             .foregroundStyle(secondaryText)
                         Text(lastSyncText)
-                            .font(.caption.weight(.semibold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(primaryText)
                     }
                 }
@@ -1322,7 +1383,7 @@ private struct MeasurementDeviceDetailPanel: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 94), spacing: 8)], alignment: .leading, spacing: 8) {
                 ForEach(device.supportedMetrics) { metric in
                     Text(metric.label)
-                        .font(.caption2.weight(.bold))
+                        .pulsarTextStyle(.overline)
                         .foregroundStyle(metricText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.72)
@@ -1338,7 +1399,7 @@ private struct MeasurementDeviceDetailPanel: View {
             }
 
             Text(explanation)
-                .font(.caption.weight(.medium))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(13)
@@ -1351,7 +1412,7 @@ private struct MeasurementDeviceDetailPanel: View {
 
             Button(action: onAction) {
                 Text(device.primaryActionTitle)
-                    .font(.subheadline.weight(.bold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(buttonText)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
@@ -1368,7 +1429,7 @@ private struct MeasurementDeviceDetailPanel: View {
                 HStack(spacing: 10) {
                     Button(action: onSync) {
                         Label("Sync now", systemImage: "arrow.triangle.2.circlepath")
-                            .font(.caption.weight(.bold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(tint)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
@@ -1383,7 +1444,7 @@ private struct MeasurementDeviceDetailPanel: View {
                     if device.type == .ouraRing {
                         Button(action: onDisconnect) {
                             Label("Disconnect", systemImage: "xmark.circle")
-                                .font(.caption.weight(.bold))
+                                .pulsarTextStyle(.captionEmphasis)
                                 .foregroundStyle(statusTint)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
@@ -1598,11 +1659,12 @@ private struct PremiumBatteryStatusView: View {
         }
     }
 
+    @ViewBuilder
     private func chargedView(percentage: Int) -> some View {
-        HStack(spacing: style == .hero ? 11 : 8) {
+        let content = HStack(spacing: style == .hero ? 13 : 8) {
             ZStack {
                 Circle()
-                    .stroke(tint.opacity(colorScheme == .dark ? 0.16 : 0.12), lineWidth: style == .hero ? 6 : 4)
+                    .stroke(.white.opacity(colorScheme == .dark ? 0.09 : 0.16), lineWidth: style == .hero ? 7 : 4)
                 Circle()
                     .trim(from: 0, to: animatedLevel)
                     .stroke(
@@ -1610,39 +1672,35 @@ private struct PremiumBatteryStatusView: View {
                         style: StrokeStyle(lineWidth: style == .hero ? 6 : 4, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
-                    .shadow(color: batteryTint.opacity(colorScheme == .dark ? 0.34 : 0.16), radius: 8)
                 Image(systemName: "bolt.fill")
                     .font(.system(size: style == .hero ? 10 : 7, weight: .bold))
                     .foregroundStyle(batteryTint)
                     .opacity(0.0)
             }
-            .frame(width: style == .hero ? 42 : 26, height: style == .hero ? 42 : 26)
+            .frame(width: style == .hero ? 48 : 26, height: style == .hero ? 48 : 26)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(percentage)%")
-                    .font(style == .hero ? .subheadline.weight(.bold) : .caption.weight(.bold))
+                    .font(style == .hero ? .system(size: 21, weight: .bold, design: .default) : .caption.weight(.bold))
                     .foregroundStyle(primaryText)
                 Text("Battery")
-                    .font(.caption2.weight(.bold))
+                    .font(.system(size: style == .hero ? 14 : 11, weight: .medium, design: .default))
                     .foregroundStyle(secondaryText)
             }
         }
-        .padding(style == .hero ? 13 : 0)
+        .padding(style == .hero ? 12 : 0)
         .frame(maxWidth: style == .hero ? .infinity : nil, alignment: .leading)
-        .background {
-            if style == .hero {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(insetBackground)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(cardBorder, lineWidth: 1)
-                    }
-            }
+
+        if style == .hero {
+            content.background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 18))
+        } else {
+            content
         }
     }
 
+    @ViewBuilder
     private var unavailableView: some View {
-        HStack(spacing: style == .hero ? 11 : 8) {
+        let content = HStack(spacing: style == .hero ? 11 : 8) {
             ZStack {
                 Circle()
                     .fill(colorScheme == .dark ? .white.opacity(0.065) : Color.white.opacity(0.58))
@@ -1653,14 +1711,14 @@ private struct PremiumBatteryStatusView: View {
             .frame(width: style == .hero ? 42 : 26, height: style == .hero ? 42 : 26)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Battery unavailable")
-                    .font(style == .hero ? .subheadline.weight(.bold) : .caption.weight(.bold))
+                Text(style == .hero ? "No data" : "Battery unavailable")
+                    .font(style == .hero ? .system(size: 20, weight: .bold, design: .default) : .caption.weight(.bold))
                     .foregroundStyle(primaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
                 if style == .hero {
-                    Text("No real device battery data")
-                        .font(.caption2.weight(.bold))
+                    Text("Battery")
+                        .font(.system(size: 14, weight: .medium, design: .default))
                         .foregroundStyle(secondaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.72)
@@ -1669,20 +1727,19 @@ private struct PremiumBatteryStatusView: View {
         }
         .padding(style == .hero ? 13 : 0)
         .frame(maxWidth: style == .hero ? .infinity : nil, alignment: .leading)
-        .background {
-            if style == .hero {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(insetBackground)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(cardBorder, lineWidth: 1)
-                    }
-            }
+
+        if style == .hero {
+            content.background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 18))
+        } else {
+            content
         }
     }
 
     private var batteryTint: Color {
         guard let percentage else { return secondaryText }
+        if style == .hero {
+            return colorScheme == .dark ? Color(red: 0.42, green: 0.66, blue: 1.0) : Color(red: 0.08, green: 0.34, blue: 0.58)
+        }
         switch percentage {
         case 0..<20:
             return colorScheme == .dark ? Color(red: 1.0, green: 0.33, blue: 0.34) : Color(red: 0.78, green: 0.07, blue: 0.12)
@@ -1731,6 +1788,7 @@ private struct DeviceProductImageView: View {
     var maxHeight: CGFloat?
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hasAppeared = false
 
     var body: some View {
@@ -1749,23 +1807,18 @@ private struct DeviceProductImageView: View {
                     .scaleEffect(deviceScale)
                     .offset(y: imageVerticalOffset)
                     .shadow(
-                        color: Color.black.opacity(colorScheme == .dark ? 0.36 : 0.16),
-                        radius: mode == .hero ? 18 : 10,
-                        y: mode == .hero ? 16 : 8
-                    )
-                    .shadow(
-                        color: tint.opacity(colorScheme == .dark ? 0.28 : 0.13),
-                        radius: mode == .hero ? 28 : 16,
-                        y: mode == .hero ? 18 : 10
+                        color: Color.black.opacity(colorScheme == .dark ? 0.28 : 0.12),
+                        radius: mode == .hero ? 15 : 8,
+                        y: mode == .hero ? 12 : 6
                     )
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .opacity(hasAppeared ? 1 : 0)
-            .scaleEffect(hasAppeared ? 1 : 0.965)
+            .scaleEffect(hasAppeared || reduceMotion ? 1 : 0.98)
         }
         .onAppear {
             guard !hasAppeared else { return }
-            withAnimation(.spring(response: 0.52, dampingFraction: 0.86)) {
+            withAnimation(reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.48, dampingFraction: 0.90)) {
                 hasAppeared = true
             }
         }
@@ -1801,29 +1854,17 @@ private struct DeviceProductImageView: View {
     }
 
     private func productGlow(in size: CGSize) -> some View {
-        ZStack {
-            Ellipse()
-                .fill(tint.opacity(colorScheme == .dark ? 0.20 : 0.11))
-                .frame(width: size.width * glowWidthMultiplier, height: size.height * 0.24)
-                .blur(radius: mode == .hero ? 24 : 16)
-                .offset(y: size.height * 0.34)
-
-            Ellipse()
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            tint.opacity(colorScheme == .dark ? 0.15 : 0.08),
-                            tint.opacity(colorScheme == .dark ? 0.07 : 0.035),
-                            .clear
-                        ],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: size.height * 0.48
-                    )
-                )
-                .frame(width: size.height * 0.98, height: size.height * 0.82)
-                .blur(radius: mode == .hero ? 18 : 12)
-        }
+        RadialGradient(
+            colors: [
+                tint.opacity(colorScheme == .dark ? (mode == .hero ? 0.10 : 0.055) : 0.05),
+                .clear
+            ],
+            center: .center,
+            startRadius: 0,
+            endRadius: size.height * 0.48
+        )
+        .frame(width: size.height * 0.90, height: size.height * 0.74)
+        .blur(radius: mode == .hero ? 12 : 8)
     }
 
     private var imageWidthMultiplier: CGFloat {
@@ -1868,20 +1909,6 @@ private struct DeviceProductImageView: View {
             return 0.94
         case (.airPodsPro3, .detail):
             return 0.96
-        }
-    }
-
-    private var glowWidthMultiplier: CGFloat {
-        switch mode {
-        case .hero:
-            if deviceType == .appleWatch { return 0.72 }
-            return deviceType == .airPodsPro3 ? 0.68 : 0.62
-        case .card:
-            if deviceType == .appleWatch { return 0.70 }
-            return deviceType == .airPodsPro3 ? 0.66 : 0.60
-        case .detail:
-            if deviceType == .appleWatch { return 0.76 }
-            return deviceType == .airPodsPro3 ? 0.70 : 0.64
         }
     }
 
@@ -2127,26 +2154,62 @@ private struct OuraRingDeviceIllustrationView: View {
 private struct MetricPreviewStrip: View {
     let metrics: [MeasurementHealthMetricType]
     let tint: Color
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 7) {
-                ForEach(metrics) { metric in
-                    Text(metric.label)
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(colorScheme == .dark ? .white.opacity(0.74) : Color(red: 0.24, green: 0.30, blue: 0.38))
-                        .lineLimit(1)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 7)
-                        .background(.white.opacity(colorScheme == .dark ? 0.07 : 0.62), in: Capsule(style: .continuous))
-                        .overlay {
-                            Capsule(style: .continuous)
-                                .stroke(tint.opacity(colorScheme == .dark ? 0.15 : 0.10), lineWidth: 1)
-                        }
-                }
+        let visibleMetrics = displayMetrics
+        let columnCount = max(visibleMetrics.count, 1)
+        let columns = Array(
+            repeating: GridItem(.flexible(minimum: 0), spacing: 4, alignment: .center),
+            count: columnCount
+        )
+        let preferredWidth = CGFloat(columnCount * 64 + max(columnCount - 1, 0) * 4)
+
+        LazyVGrid(columns: columns, alignment: .center, spacing: 0) {
+            ForEach(visibleMetrics) { metric in
+                MetricPill(metric: metric, tint: tint)
+                    .frame(maxWidth: .infinity)
             }
         }
+        .frame(maxWidth: preferredWidth)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.horizontal, 8)
+        .padding(.top, 12)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(.white.opacity(0.08))
+                .frame(height: 0.5)
+        }
+    }
+
+    private var displayMetrics: [MeasurementHealthMetricType] {
+        let preferred: [MeasurementHealthMetricType] = [.heartRate, .hrv, .respiratoryRate, .sleep, .activity]
+        let available = preferred.filter { metrics.contains($0) }
+        return available.isEmpty ? Array(metrics.prefix(5)) : available
+    }
+}
+
+private struct MetricPill: View {
+    let metric: MeasurementHealthMetricType
+    let tint: Color
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: metric.symbolName)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(.white.opacity(0.88))
+                .frame(width: 36, height: 36)
+                .background(tint.opacity(0.065), in: Circle())
+
+            Text(metric.heroLabel)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.52)
+                .allowsTightening(true)
+                .frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -2157,7 +2220,7 @@ private struct DeviceStatusPill: View {
 
     var body: some View {
         Text(text)
-            .font(.caption2.weight(.bold))
+            .pulsarTextStyle(.overline)
             .foregroundStyle(tint)
             .lineLimit(1)
             .minimumScaleFactor(0.72)
@@ -2171,29 +2234,96 @@ private struct DeviceStatusPill: View {
     }
 }
 
-private struct MeasurementSourceBackground: View {
-    @Environment(\.colorScheme) private var colorScheme
+private extension MeasurementDeviceType {
+    var symbolName: String {
+        switch self {
+        case .appleWatch:
+            return "applewatch"
+        case .ouraRing:
+            return "circle"
+        case .airPodsPro3:
+            return "airpodspro"
+        }
+    }
+}
 
+private extension MeasurementHealthMetricType {
+    var symbolName: String {
+        switch self {
+        case .heartRate:
+            return "heart"
+        case .hrv:
+            return "waveform.path.ecg"
+        case .respiratoryRate:
+            return "lungs"
+        case .sleep:
+            return "moon"
+        case .activity, .strain:
+            return "figure.run"
+        case .workouts:
+            return "figure.strengthtraining.traditional"
+        case .recovery, .readiness:
+            return "sparkles"
+        case .restingHeartRate:
+            return "heart.circle"
+        case .oxygenSaturation:
+            return "drop"
+        case .stress:
+            return "brain.head.profile"
+        case .temperature:
+            return "thermometer.medium"
+        case .cycle:
+            return "moonphase.waxing.crescent"
+        }
+    }
+
+    var heroLabel: String {
+        switch self {
+        case .respiratoryRate:
+            return "Respiratory"
+        case .heartRate:
+            return "Heart rate"
+        default:
+            return label
+        }
+    }
+}
+
+private struct MeasurementSourceBackground: View {
     var body: some View {
         ZStack {
-            PulsarSectionBackground()
             LinearGradient(
-                colors: colorScheme == .dark
-                    ? [
-                        Color(red: 0.05, green: 0.07, blue: 0.10).opacity(0.97),
-                        Color(red: 0.08, green: 0.12, blue: 0.18).opacity(0.88),
-                        Color(red: 0.02, green: 0.16, blue: 0.15).opacity(0.38)
-                    ]
-                    : [
-                        Color.white.opacity(0.99),
-                        Color(red: 0.92, green: 0.97, blue: 1.0).opacity(0.92),
-                        Color(red: 0.84, green: 0.96, blue: 0.93).opacity(0.54)
-                    ],
+                colors: [
+                    Color(red: 0.006, green: 0.025, blue: 0.052),
+                    Color(red: 0.012, green: 0.046, blue: 0.084),
+                    Color(red: 0.010, green: 0.041, blue: 0.065),
+                    Color(red: 0.004, green: 0.018, blue: 0.034)
+                ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            .ignoresSafeArea()
+
+            RadialGradient(
+                colors: [
+                    MeasurementSourcePalette.blueCore.opacity(0.16),
+                    .clear
+                ],
+                center: UnitPoint(x: 0.82, y: 0.16),
+                startRadius: 0,
+                endRadius: 310
+            )
+
+            RadialGradient(
+                colors: [
+                    Color(red: 0.10, green: 0.30, blue: 0.42).opacity(0.10),
+                    .clear
+                ],
+                center: UnitPoint(x: 0.15, y: 0.74),
+                startRadius: 0,
+                endRadius: 380
+            )
         }
+        .ignoresSafeArea()
     }
 }
 

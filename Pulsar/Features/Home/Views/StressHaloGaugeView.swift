@@ -168,7 +168,7 @@ struct StressHaloGaugeView: View {
 
             if style == .detail, let updated = summary.lastUpdated {
                 Text("Updated \(updated.formatted(date: .omitted, time: .shortened))")
-                    .font(.caption2.weight(.medium))
+                    .pulsarTextStyle(.overline)
                     .foregroundStyle(secondaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)

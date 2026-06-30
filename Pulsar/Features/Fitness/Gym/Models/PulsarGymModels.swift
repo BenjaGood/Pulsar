@@ -110,6 +110,18 @@ struct PulsarExerciseAttribution: Codable, Hashable {
         )
     }
 
+    nonisolated static func exercisesDataset(sourceExerciseID: String?) -> PulsarExerciseAttribution {
+        PulsarExerciseAttribution(
+            sourceName: "hasaneyldrm/exercises-dataset",
+            sourceURL: "https://github.com/hasaneyldrm/exercises-dataset",
+            sourceExerciseID: sourceExerciseID,
+            licenseTitle: "Educational / non-commercial only",
+            licenseObjectURL: "https://github.com/hasaneyldrm/exercises-dataset#-license",
+            licenseAuthor: "hasaneyldrm",
+            licenseAuthorURL: "https://github.com/hasaneyldrm"
+        )
+    }
+
     nonisolated static func wger(
         sourceExerciseID: String?,
         licenseTitle: String?,
@@ -153,6 +165,7 @@ struct PulsarExercise: Identifiable, Codable, Hashable {
     var equipment: [PulsarEquipment]
     var imageURLs: [String]
     var thumbnailURL: String?
+    var animationURL: String? = nil
     var attribution: PulsarExerciseAttribution
     var category: String? = nil
     var level: String? = nil
@@ -200,6 +213,7 @@ struct PulsarExercise: Identifiable, Codable, Hashable {
             equipment: [PulsarEquipment(name: "Custom")],
             imageURLs: imageURLs,
             thumbnailURL: thumbnailURL,
+            animationURL: nil,
             attribution: .custom(sourceExerciseID: id),
             category: "Custom",
             level: nil,

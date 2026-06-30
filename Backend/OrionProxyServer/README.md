@@ -58,6 +58,8 @@ ORION_BACKEND_BASE_URL[sdk=iphoneos*] = http:/$()/<MAC_LOCAL_IP>:8788
 - `GET /healthz`
 - `POST /orion/chat`
 - `POST /api/orion/chat`
+- `POST /orion/meal-scan`
+- `POST /api/orion/meal-scan`
 
 ## Request Contract
 
@@ -85,3 +87,35 @@ ORION_BACKEND_BASE_URL[sdk=iphoneos*] = http:/$()/<MAC_LOCAL_IP>:8788
 ```
 
 The backend does not log request bodies, OpenAI responses, API keys, HealthKit data, or user messages.
+
+## Meal Scanner Route
+
+The iOS 3D Meal Scanner sends a compact JPEG and scan metadata to `POST /api/orion/meal-scan`. The OpenAI API key stays only in this backend environment.
+
+```json
+{
+  "prompt": "Analyze this meal scan for Pulsar...",
+  "instructions": "Return strict JSON only...",
+  "imageBase64": "/9j/4AAQSkZJRgABAQ...",
+  "payload": {
+    "metadata": {},
+    "quality": {},
+    "depthStats": {},
+    "clientHints": {}
+  }
+}
+```
+
+The response is wrapped for the iOS decoder:
+
+```json
+{
+  "id": "resp_...",
+  "created_at": "2026-06-25T23:30:00.000Z",
+  "result": {
+    "title": "Scanned meal",
+    "ingredients": []
+  },
+  "model": "gpt-5.5"
+}
+```

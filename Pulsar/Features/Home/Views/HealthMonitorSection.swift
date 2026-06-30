@@ -39,10 +39,10 @@ struct HealthMonitorSection: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Health Monitor")
-                    .font(.title3.weight(.bold))
+                    .pulsarTextStyle(.sectionHeader)
                     .foregroundStyle(primaryText)
                 Text("Vitals and sleep signals for the selected day.")
-                    .font(.subheadline.weight(.medium))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -50,7 +50,7 @@ struct HealthMonitorSection: View {
             Spacer(minLength: 0)
 
             Text(summary.availableMetricCount > 0 ? "\(summary.availableMetricCount) live" : "Waiting")
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(summary.availableMetricCount > 0 ? Color.green.opacity(0.92) : secondaryText)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
@@ -90,16 +90,16 @@ struct HealthMetricCard: View {
                         Spacer(minLength: 0)
 
                         Image(systemName: "chevron.right")
-                            .font(.caption.weight(.bold))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(secondaryText.opacity(0.75))
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(metric.abbreviation)
-                            .font(.subheadline.weight(.bold))
+                            .pulsarTextStyle(.label)
                             .foregroundStyle(primaryText)
                         Text(metric.title)
-                            .font(.caption.weight(.medium))
+                            .pulsarTextStyle(.captionEmphasis)
                             .foregroundStyle(secondaryText)
                             .lineLimit(2)
                     }
@@ -108,9 +108,9 @@ struct HealthMetricCard: View {
 
                     HStack(spacing: 6) {
                         Image(systemName: metric.status.systemImageName)
-                            .font(.caption.weight(.bold))
+                            .pulsarTextStyle(.captionEmphasis)
                         Text(metric.status.rawValue)
-                            .font(.caption.weight(.bold))
+                            .pulsarTextStyle(.captionEmphasis)
                     }
                     .foregroundStyle(statusColor)
                     .padding(.horizontal, 10)
@@ -118,7 +118,7 @@ struct HealthMetricCard: View {
                     .background(statusColor.opacity(colorScheme == .dark ? 0.13 : 0.10), in: Capsule())
 
                     Text(metric.comparisonText)
-                        .font(.caption2.weight(.medium))
+                        .pulsarTextStyle(.overline)
                         .foregroundStyle(secondaryText)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -145,7 +145,7 @@ struct HealthMetricCard: View {
     private var valueBlock: some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
             Text(metric.displayValueText)
-                .font(metric.hasData ? .system(size: 26, weight: .bold, design: .rounded) : .system(.headline, design: .rounded).weight(.semibold))
+                .pulsarTextStyle(metric.hasData ? .metricMedium : .cardTitle)
                 .foregroundStyle(primaryText)
                 .monospacedDigit()
                 .lineLimit(1)
@@ -153,7 +153,7 @@ struct HealthMetricCard: View {
 
             if let unitText = metric.unitText {
                 Text(unitText)
-                    .font(.subheadline.weight(.semibold))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(secondaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -325,10 +325,10 @@ struct HealthMetricDetailSheet: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(metric.title)
-                            .font(.title3.weight(.bold))
+                            .pulsarTextStyle(.sectionHeader)
                             .foregroundStyle(primaryText)
                         Text(metric.abbreviation)
-                            .font(.subheadline.weight(.semibold))
+                            .pulsarTextStyle(.label)
                             .foregroundStyle(secondaryText)
                     }
 
@@ -336,9 +336,9 @@ struct HealthMetricDetailSheet: View {
 
                     HStack(spacing: 6) {
                         Image(systemName: metric.status.systemImageName)
-                            .font(.caption.weight(.bold))
+                            .pulsarTextStyle(.captionEmphasis)
                         Text(metric.status.rawValue)
-                            .font(.caption.weight(.bold))
+                            .pulsarTextStyle(.captionEmphasis)
                     }
                     .foregroundStyle(palette.accent)
                     .padding(.horizontal, 10)
@@ -347,12 +347,12 @@ struct HealthMetricDetailSheet: View {
                 }
 
                 Text(metric.detailValueText)
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .pulsarTextStyle(.metricLarge)
                     .foregroundStyle(primaryText)
                     .monospacedDigit()
 
                 Text(metric.descriptionText)
-                    .font(.subheadline.weight(.medium))
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -508,11 +508,11 @@ private struct HealthMetricDetailCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
             Text(value)
-                .font(.subheadline.weight(.semibold))
+                .pulsarTextStyle(.label)
                 .foregroundStyle(colorScheme == .dark ? .white.opacity(0.94) : Color(red: 0.08, green: 0.10, blue: 0.15))
                 .fixedSize(horizontal: false, vertical: true)
         }

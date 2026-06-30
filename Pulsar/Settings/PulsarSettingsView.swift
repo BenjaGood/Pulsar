@@ -140,11 +140,11 @@ private struct GymSettingsView: View {
                                 HStack(spacing: 14) {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(preference.title)
-                                            .font(.body.weight(.medium))
+                                            .pulsarTextStyle(.bodyEmphasis)
                                             .foregroundStyle(.primary)
                                         if preference == .followApp {
                                             Text("Currently resolves to \(preference.resolvedUnit(appUnits: appUnits).displayName)")
-                                                .font(.footnote)
+                                                .pulsarTextStyle(.metadata)
                                                 .foregroundStyle(.secondary)
                                         }
                                     }
@@ -153,7 +153,7 @@ private struct GymSettingsView: View {
 
                                     if gymSettingsStore.weightUnitPreference == preference {
                                         Image(systemName: "checkmark.circle.fill")
-                                            .font(.headline.weight(.semibold))
+                                            .pulsarTextStyle(.cardTitle)
                                             .foregroundStyle(.purple)
                                     }
                                 }
@@ -190,19 +190,19 @@ private struct ProfileSummaryCard: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(displayName)
-                    .font(.title3.weight(.semibold))
+                    .pulsarTextStyle(.sectionHeader)
                     .foregroundStyle(.primary)
                 Text("Personal details for better insights")
-                    .font(.subheadline)
+                    .pulsarTextStyle(.label)
                     .foregroundStyle(.secondary)
                 Text("Pulsar Profile")
-                    .font(.caption.weight(.semibold))
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.tint)
             }
 
             Spacer()
             Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
+                .pulsarTextStyle(.captionEmphasis)
                 .foregroundStyle(.tertiary)
         }
         .padding(18)
