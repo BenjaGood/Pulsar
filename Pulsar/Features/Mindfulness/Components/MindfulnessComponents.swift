@@ -12,17 +12,14 @@ enum MindfulnessVisualStyle {
     static let lavender = Color(red: 0.70, green: 0.60, blue: 0.98)
     static let softGold = Color(red: 0.94, green: 0.73, blue: 0.38)
     static let softRose = Color(red: 0.96, green: 0.56, blue: 0.60)
+    static let neonViolet = Color(red: 0.78, green: 0.30, blue: 1.00)
+    static let neonBlue = Color(red: 0.24, green: 0.48, blue: 1.00)
+    static let neonAmber = Color(red: 1.00, green: 0.70, blue: 0.12)
+    static let neonCyan = Color(red: 0.10, green: 0.72, blue: 1.00)
+    static let neonMint = Color(red: 0.16, green: 1.00, blue: 0.58)
+    static let neonFlame = Color(red: 1.00, green: 0.46, blue: 0.08)
     static let secondaryText = Color.white.opacity(0.70)
     static let tertiaryText = Color.white.opacity(0.52)
-    static let cardBase = LinearGradient(
-        colors: [
-            Color.white.opacity(0.08),
-            Color(red: 0.08, green: 0.20, blue: 0.34).opacity(0.30),
-            Color(red: 0.03, green: 0.08, blue: 0.15).opacity(0.44)
-        ],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
 
     static func moodColor(for wellnessAverage: Double?) -> Color {
         guard let wellnessAverage else { return Color.white.opacity(0.22) }
@@ -57,79 +54,46 @@ struct PulsarMindfulnessGlassCard<Content: View>: View {
 
     @ViewBuilder
     var body: some View {
-        if let tint {
-            let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
+        if tint != nil {
             baseContent
                 .background {
-                    ZStack {
-                        shape.fill(MindfulnessVisualStyle.cardBase)
-
-                        shape.fill(
-                            RadialGradient(
-                                colors: [
-                                    .white.opacity(0.14),
-                                    MindfulnessVisualStyle.calmBlue.opacity(0.055),
-                                    .clear
-                                ],
-                                center: .topLeading,
-                                startRadius: 0,
-                                endRadius: 280
-                            )
-                        )
-                        .opacity(reduceTransparency ? 0 : 1)
-
-                        shape.fill(
-                            RadialGradient(
-                                colors: [
-                                    MindfulnessVisualStyle.mint.opacity(0.045),
-                                    .clear
-                                ],
-                                center: .bottomTrailing,
-                                startRadius: 0,
-                                endRadius: 220
-                            )
-                        )
-                        .opacity(reduceTransparency ? 0 : 1)
-
-                        shape.fill(
-                            Color(red: 0.025, green: 0.07, blue: 0.13)
-                                .opacity(reduceTransparency ? 0.80 : 0.10)
-                        )
-                    }
-                }
-                .overlay {
-                    shape.strokeBorder(
-                        LinearGradient(
-                            colors: [
-                                .white.opacity(0.34),
-                                MindfulnessVisualStyle.calmBlue.opacity(0.25),
-                                MindfulnessVisualStyle.mint.opacity(0.12),
-                                .white.opacity(0.06)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 0.9
+                    shape.fill(
+                        Color.black
+                            .opacity(reduceTransparency ? 0.84 : 0.22)
                     )
                 }
                 .overlay {
-                    shape
-                        .inset(by: 1.5)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [.white.opacity(0.14), .clear, .clear],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 0.75
+                    shape.fill(
+                        LinearGradient(
+                            colors: [
+                                .white.opacity(reduceTransparency ? 0.05 : 0.10),
+                                .white.opacity(0.02),
+                                Color.black.opacity(reduceTransparency ? 0.06 : 0.14)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
                         )
+                    )
+                    .allowsHitTesting(false)
                 }
-                .shadow(color: .black.opacity(0.26), radius: 18, y: 10)
-                .shadow(color: tint.opacity(0.09), radius: 12, y: 2)
-                .pulsarLiquidGlass(cornerRadius: cornerRadius, tint: tint, isClear: false)
+                .overlay {
+                    shape.strokeBorder(.white.opacity(reduceTransparency ? 0.26 : 0.18), lineWidth: 0.9)
+                }
+                .shadow(color: .black.opacity(0.18), radius: 16, y: 9)
+                .pulsarLiquidGlass(cornerRadius: cornerRadius, isClear: true)
         } else {
             baseContent
+                .background {
+                    shape.fill(
+                        Color.black
+                            .opacity(reduceTransparency ? 0.84 : 0.18)
+                    )
+                }
+                .overlay {
+                    shape.strokeBorder(.white.opacity(reduceTransparency ? 0.24 : 0.14), lineWidth: 0.8)
+                }
                 .pulsarLiquidGlass(cornerRadius: cornerRadius)
         }
     }
@@ -234,11 +198,11 @@ private enum MindfulnessMoodLevel: Int, CaseIterable, Identifiable {
 
     var tint: Color {
         switch self {
-        case .veryLow: MindfulnessVisualStyle.lavender
-        case .low: Color(red: 0.38, green: 0.56, blue: 0.98)
-        case .neutral: MindfulnessVisualStyle.softGold
-        case .good: MindfulnessVisualStyle.calmBlue
-        case .great: MindfulnessVisualStyle.mint
+        case .veryLow: MindfulnessVisualStyle.neonViolet
+        case .low: MindfulnessVisualStyle.neonBlue
+        case .neutral: MindfulnessVisualStyle.neonAmber
+        case .good: MindfulnessVisualStyle.neonCyan
+        case .great: MindfulnessVisualStyle.neonMint
         }
     }
 
@@ -321,10 +285,14 @@ private enum MindfulnessMetricKind: String, CaseIterable, Identifiable {
 
 struct MindfulnessMoodLoggingCard: View {
     @Binding var draft: PulsarDailyJournalDraft
-    var onLog: () -> Void
+    var loggedEntry: PulsarDailyJournalEntry?
+    var loggedStreakDays: Int = 0
+    var isCelebratingStreak = false
+    var onLog: () -> Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var isEditingLoggedMood = false
     @State private var moodFeedbackSequence = 0
 
     var body: some View {
@@ -339,9 +307,11 @@ struct MindfulnessMoodLoggingCard: View {
                 PulsarGlassEffectGroup(spacing: 8) {
                     LazyVGrid(columns: moodColumns, spacing: 8) {
                         ForEach(MindfulnessMoodLevel.allCases) { mood in
+                            let isLogged = loggedMood == mood
                             MindfulnessMoodButton(
                                 mood: mood,
-                                isSelected: selectedMood == mood
+                                isSelected: selectedMood == mood,
+                                isLogged: isLogged
                             ) {
                                 guard selectedMood != mood else { return }
                                 withAnimation(reduceMotion ? nil : .smooth(duration: 0.22)) {
@@ -352,23 +322,43 @@ struct MindfulnessMoodLoggingCard: View {
                         }
                     }
                 }
+                .disabled(!showsSignalEditor)
                 .sensoryFeedback(.selection, trigger: moodFeedbackSequence)
 
                 Rectangle()
                     .fill(.white.opacity(0.12))
                     .frame(height: 0.75)
 
-                LazyVGrid(columns: signalColumns, alignment: .leading, spacing: 4) {
-                    ForEach(MindfulnessMetricKind.allCases) { metric in
-                        MindfulnessInlineSignalSlider(
-                            metric: metric,
-                            value: $draft[dynamicMember: metric.keyPath]
+                Group {
+                    if showsSignalEditor {
+                        LazyVGrid(columns: signalColumns, alignment: .leading, spacing: 4) {
+                            ForEach(MindfulnessMetricKind.allCases) { metric in
+                                MindfulnessInlineSignalSlider(
+                                    metric: metric,
+                                    value: $draft[dynamicMember: metric.keyPath]
+                                )
+                            }
+                        }
+                        .transition(.opacity)
+                    } else {
+                        MindfulnessLoggedStreakSummary(
+                            dayCount: max(1, loggedStreakDays),
+                            isCelebrating: isCelebratingStreak
+                        )
+                        .transition(
+                            reduceMotion
+                                ? .opacity
+                                : .scale(scale: 0.96).combined(with: .opacity)
                         )
                     }
                 }
+                .animation(
+                    reduceMotion ? .linear(duration: 0.01) : .spring(response: 0.38, dampingFraction: 0.84),
+                    value: showsSignalEditor
+                )
 
-                Button(action: onLog) {
-                    Text("Log Mood")
+                Button(action: handlePrimaryAction) {
+                    Text(primaryActionTitle)
                         .pulsarTextStyle(.buttonTitle)
                         .frame(maxWidth: .infinity, minHeight: 24)
                 }
@@ -377,8 +367,12 @@ struct MindfulnessMoodLoggingCard: View {
                 .controlSize(.regular)
                 .tint(MindfulnessVisualStyle.calmBlue.opacity(0.48))
                 .foregroundStyle(.white)
-                .accessibilityHint("Saves today's mood and wellness signals")
+                .accessibilityHint(primaryActionHint)
             }
+        }
+        .onChange(of: loggedEntry?.id) { _, newEntryID in
+            guard newEntryID == nil else { return }
+            isEditingLoggedMood = false
         }
     }
 
@@ -402,14 +396,66 @@ struct MindfulnessMoodLoggingCard: View {
         MindfulnessMoodLevel.nearest(to: draft.valence)
     }
 
+    private var loggedMood: MindfulnessMoodLevel? {
+        loggedEntry.map { MindfulnessMoodLevel.nearest(to: $0.valence) }
+    }
+
+    private var showsSignalEditor: Bool {
+        loggedEntry == nil || isEditingLoggedMood
+    }
+
+    private var primaryActionTitle: String {
+        if loggedEntry == nil { return "Log Mood" }
+        return isEditingLoggedMood ? "Save Update" : "Update Mood"
+    }
+
+    private var primaryActionHint: String {
+        if loggedEntry == nil {
+            return "Saves today's mood and wellness signals"
+        }
+        if isEditingLoggedMood {
+            return "Saves the changes and returns to the streak summary"
+        }
+        return "Shows the wellness sliders to edit today's mood"
+    }
+
+    private func handlePrimaryAction() {
+        if loggedEntry != nil, !isEditingLoggedMood {
+            withAnimation(editorAnimation) {
+                isEditingLoggedMood = true
+            }
+            return
+        }
+
+        let didSave = onLog()
+        withAnimation(editorAnimation) {
+            isEditingLoggedMood = !didSave
+        }
+    }
+
+    private var editorAnimation: Animation {
+        reduceMotion
+            ? .linear(duration: 0.01)
+            : .spring(response: 0.38, dampingFraction: 0.84)
+    }
+
     private var moodHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("How are you feeling?")
-                .font(.headline)
-                .foregroundStyle(.white)
-            Text("Select and log your mood")
-                .pulsarTextStyle(.caption)
-                .foregroundStyle(MindfulnessVisualStyle.secondaryText)
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("How are you feeling?")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                Text("Select and log your mood")
+                    .pulsarTextStyle(.caption)
+                    .foregroundStyle(MindfulnessVisualStyle.secondaryText)
+            }
+
+            Spacer(minLength: 4)
+
+            if loggedEntry == nil {
+                MindfulnessStreakStatusCapsule(dayCount: max(0, loggedStreakDays))
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            }
         }
     }
 }
@@ -417,34 +463,50 @@ struct MindfulnessMoodLoggingCard: View {
 private struct MindfulnessMoodButton: View {
     var mood: MindfulnessMoodLevel
     var isSelected: Bool
+    var isLogged: Bool
     var action: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 6) {
+            VStack(spacing: 4) {
                 MindfulnessMoodOrb(
                     mood: mood,
-                    state: isSelected ? .selected : .muted,
+                    state: orbState,
                     size: 52,
                     isInteractive: true
                 )
-                .scaleEffect(isSelected && !reduceMotion ? 1.06 : 1)
+                .scaleEffect((isSelected || isLogged) && !reduceMotion ? 1.06 : 1)
 
                 Text(mood.title)
                     .pulsarTextStyle(.caption)
-                    .foregroundStyle(isSelected ? .white : MindfulnessVisualStyle.secondaryText)
+                    .foregroundStyle(isSelected || isLogged ? .white : MindfulnessVisualStyle.secondaryText)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
+
             }
             .frame(maxWidth: .infinity, minHeight: 78, alignment: .top)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(mood.title)
-        .accessibilityValue(isSelected ? "Selected" : "")
+        .accessibilityValue(accessibilityValue)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var orbState: MindfulnessMoodOrbState {
+        if isLogged { return .logged }
+        return isSelected ? .selected : .muted
+    }
+
+    private var accessibilityValue: String {
+        if isLogged {
+            return isSelected
+                ? "Logged today, selected"
+                : "Logged today"
+        }
+        return isSelected ? "Selected, not logged" : "Not selected"
     }
 }
 
@@ -469,33 +531,41 @@ private struct MindfulnessMoodOrb: View {
 
     private var colorStrength: Double {
         switch state {
-        case .muted: 0.05
-        case .logged: 0.28
-        case .selected: 0.50
+        case .muted: 0.035
+        case .logged: 0.14
+        case .selected: 0.18
         }
     }
 
     private var rimStrength: Double {
         switch state {
-        case .muted: 0.13
-        case .logged: 0.46
-        case .selected: 0.92
+        case .muted: 0.32
+        case .logged: 0.88
+        case .selected: 1.0
         }
     }
 
     private var faceStrength: Double {
         switch state {
-        case .muted: 0.56
-        case .logged: 0.90
+        case .muted: 0.66
+        case .logged: 0.96
         case .selected: 1.0
         }
     }
 
     private var glowStrength: Double {
         switch state {
-        case .muted: 0
-        case .logged: 0.22
-        case .selected: 0.40
+        case .muted: 0.08
+        case .logged: 0.58
+        case .selected: 0.72
+        }
+    }
+
+    private var rimWidth: CGFloat {
+        switch state {
+        case .muted: 0.9
+        case .logged: 1.7
+        case .selected: 1.9
         }
     }
 
@@ -505,9 +575,9 @@ private struct MindfulnessMoodOrb: View {
                 .fill(
                     LinearGradient(
                         colors: [
-                            .white.opacity(state == .muted ? 0.075 : 0.14),
+                            .white.opacity(state == .muted ? 0.045 : 0.10),
                             tintColor.opacity(colorStrength),
-                            Color(red: 0.025, green: 0.08, blue: 0.15).opacity(0.64)
+                            tintColor.opacity(0.015)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -533,14 +603,14 @@ private struct MindfulnessMoodOrb: View {
                 .strokeBorder(
                     LinearGradient(
                         colors: [
-                            .white.opacity(state == .muted ? 0.18 : 0.50),
+                            .white.opacity(state == .muted ? 0.16 : 0.44),
                             tintColor.opacity(rimStrength),
-                            .white.opacity(0.07)
+                            tintColor.opacity(state == .muted ? 0.16 : 0.44)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    lineWidth: state == .selected ? 1.5 : 0.8
+                    lineWidth: rimWidth
                 )
 
             Circle()
@@ -555,13 +625,13 @@ private struct MindfulnessMoodOrb: View {
                 )
         }
         .frame(width: size, height: size)
-        .shadow(color: tintColor.opacity(glowStrength), radius: state == .selected ? 11 : 6)
-        .shadow(color: .black.opacity(0.20), radius: 5, y: 3)
+        .shadow(color: tintColor.opacity(glowStrength), radius: state == .muted ? 4 : 13)
+        .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
         .pulsarLiquidGlass(
             cornerRadius: size / 2,
-            tint: tintColor.opacity(state == .selected ? 0.34 : 0.08),
+            tint: tintColor.opacity(state == .muted ? 0.035 : 0.16),
             interactive: isInteractive,
-            isClear: false
+            isClear: true
         )
         .accessibilityHidden(true)
     }
@@ -943,6 +1013,160 @@ struct MindfulnessCompactInsightsCard: View {
         case 0.40..<0.56: "Your week has had a mix of lighter and heavier days."
         default: "Your signals suggest making room for gentle recovery."
         }
+    }
+}
+
+struct MindfulnessGuidedMeditationSection: View {
+    var snapshot: PulsarMindfulnessMeditationWeekSnapshot
+    var templates: [PulsarMeditationTemplate]
+    var onStart: (PulsarMeditationTemplate) -> Void
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PulsarMindfulnessGlassCard(
+                cornerRadius: 24,
+                contentPadding: 12,
+                tint: MindfulnessVisualStyle.mint.opacity(0.10)
+            ) {
+                VStack(alignment: .leading, spacing: 12) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: 12) {
+                            sectionTitle
+                            Spacer(minLength: 8)
+                            weekCount
+                        }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            sectionTitle
+                            weekCount
+                        }
+                    }
+
+                    meditationWeekRow
+                }
+            }
+
+            PulsarGlassEffectGroup(spacing: 12) {
+                LazyVGrid(columns: templateColumns, alignment: .leading, spacing: 12) {
+                    ForEach(templates) { template in
+                        MindfulnessTemplateCard(template: template) {
+                            onStart(template)
+                        }
+                    }
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var templateColumns: [GridItem] {
+        if dynamicTypeSize.isAccessibilitySize {
+            return [GridItem(.flexible(minimum: 220), spacing: 12, alignment: .top)]
+        }
+        return [
+            GridItem(.flexible(minimum: 140), spacing: 12, alignment: .top),
+            GridItem(.flexible(minimum: 140), spacing: 12, alignment: .top)
+        ]
+    }
+
+    private var sectionTitle: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label("Meditation exercises", systemImage: "figure.mind.and.body")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.white)
+                .accessibilityAddTraits(.isHeader)
+
+            Text("Guided sessions")
+                .pulsarTextStyle(.caption)
+                .foregroundStyle(MindfulnessVisualStyle.secondaryText)
+        }
+    }
+
+    private var weekCount: some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            Text("\(snapshot.meditatedDayCount)/7")
+                .font(.title3.weight(.bold))
+                .monospacedDigit()
+                .foregroundStyle(MindfulnessVisualStyle.mint)
+                .contentTransition(.numericText(value: Double(snapshot.meditatedDayCount)))
+
+            Text("days this week")
+                .pulsarTextStyle(.overline)
+                .foregroundStyle(MindfulnessVisualStyle.secondaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Meditated \(snapshot.meditatedDayCount) out of 7 days this week")
+    }
+
+    private var meditationWeekRow: some View {
+        HStack(spacing: 6) {
+            ForEach(snapshot.days) { day in
+                MindfulnessMeditationWeekDayDot(day: day)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+}
+
+private struct MindfulnessMeditationWeekDayDot: View {
+    var day: PulsarMindfulnessMeditationWeekSnapshot.Day
+
+    @Environment(\.calendar) private var calendar
+
+    private var isToday: Bool {
+        calendar.isDateInToday(day.date)
+    }
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text(day.date, format: .dateTime.weekday(.abbreviated))
+                .pulsarTextStyle(.overline)
+                .foregroundStyle(labelColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.76)
+
+            ZStack {
+                Circle()
+                    .fill(dotFill)
+                    .frame(width: 30, height: 30)
+                    .overlay {
+                        Circle()
+                            .strokeBorder(.white.opacity(day.hasSession ? 0.28 : 0.10), lineWidth: 0.8)
+                    }
+
+                Image(systemName: day.hasSession ? "checkmark" : "minus")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(day.hasSession ? .white : MindfulnessVisualStyle.tertiaryText)
+            }
+            .shadow(color: day.hasSession ? MindfulnessVisualStyle.mint.opacity(0.22) : .clear, radius: 7)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(day.date.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+        .accessibilityValue(accessibilityValue)
+    }
+
+    private var labelColor: Color {
+        if day.hasSession { return MindfulnessVisualStyle.mint.opacity(isToday ? 1 : 0.88) }
+        return isToday ? .white.opacity(0.82) : MindfulnessVisualStyle.tertiaryText
+    }
+
+    private var dotFill: LinearGradient {
+        LinearGradient(
+            colors: day.hasSession
+                ? [MindfulnessVisualStyle.mint.opacity(0.88), MindfulnessVisualStyle.softGold.opacity(0.54)]
+                : [.white.opacity(0.09), .black.opacity(0.16)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var accessibilityValue: String {
+        guard day.hasSession else { return "No meditation logged" }
+        return "\(Int(day.mindfulMinutes.rounded())) mindful minutes"
     }
 }
 
@@ -1743,51 +1967,103 @@ struct MindfulnessTemplateCard: View {
     var template: PulsarMeditationTemplate
     var action: () -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 13) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top) {
                     Image(systemName: template.category.symbolName)
-                        .font(.system(size: 19, weight: .bold))
+                        .font(.system(size: 18, weight: .bold))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(template.category.accent)
-                        .frame(width: 42, height: 42)
-                        .background(template.category.accent.opacity(colorScheme == .dark ? 0.20 : 0.13), in: Circle())
+                        .frame(width: 40, height: 40)
+                        .background {
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            template.category.accent.opacity(0.22),
+                                            Color.black.opacity(0.18)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                        }
+                        .overlay {
+                            Circle()
+                                .strokeBorder(.white.opacity(0.12), lineWidth: 0.8)
+                        }
                     Spacer(minLength: 0)
                     Text(template.durationText)
                         .pulsarTextStyle(.metricLabel)
                         .foregroundStyle(template.category.accent)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 5)
-                        .background(template.category.accent.opacity(colorScheme == .dark ? 0.14 : 0.10), in: Capsule())
+                        .background {
+                            Capsule()
+                                .fill(template.category.accent.opacity(0.13))
+                                .overlay {
+                                    Capsule()
+                                        .strokeBorder(.white.opacity(0.10), lineWidth: 0.7)
+                                }
+                        }
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(template.title)
                         .pulsarTextStyle(.appBodyEmphasis)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.82)
                     Text(template.category.title)
                         .pulsarTextStyle(.metricLabel)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(MindfulnessVisualStyle.secondaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
                     Text(template.subtitle)
                         .pulsarTextStyle(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(MindfulnessVisualStyle.secondaryText)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(14)
-            .frame(maxWidth: .infinity, minHeight: 162, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 152, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.black.opacity(0.20),
+                                Color(red: 0.04, green: 0.12, blue: 0.20).opacity(0.30)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        .white.opacity(0.10),
+                                        .clear,
+                                        template.category.accent.opacity(0.045)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+            }
             .overlay {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .strokeBorder(.white.opacity(0.12), lineWidth: 0.75)
+                    .strokeBorder(.white.opacity(0.16), lineWidth: 0.85)
             }
+            .shadow(color: .black.opacity(0.16), radius: 12, y: 6)
             .pulsarLiquidGlass(
                 cornerRadius: 24,
-                tint: template.category.accent.opacity(0.08),
+                tint: MindfulnessVisualStyle.calmBlue.opacity(0.06),
                 interactive: true,
                 isClear: true
             )
@@ -1871,6 +2147,44 @@ struct PulsarMindfulnessPressStyle: ButtonStyle {
             .shadow(color: glowColor.opacity(configuration.isPressed ? 0.22 : 0), radius: 18, y: 8)
             .animation(.spring(response: 0.28, dampingFraction: 0.78), value: configuration.isPressed)
     }
+}
+
+#Preview("Mood Logging Before") {
+    @Previewable @State var draft = PulsarDailyJournalDraft()
+
+    ZStack {
+        MindfulnessScenicBackground()
+
+        MindfulnessMoodLoggingCard(
+            draft: $draft,
+            loggedEntry: nil,
+            loggedStreakDays: 2,
+            onLog: { true }
+        )
+        .padding(22)
+    }
+    .frame(width: 393, height: 700)
+    .preferredColorScheme(.dark)
+}
+
+#Preview("Mood Logging Logged") {
+    @Previewable @State var entry = PulsarDailyJournalDraft().entry()
+    @Previewable @State var draft = PulsarDailyJournalDraft()
+
+    ZStack {
+        MindfulnessScenicBackground()
+
+        MindfulnessMoodLoggingCard(
+            draft: $draft,
+            loggedEntry: entry,
+            loggedStreakDays: 2,
+            isCelebratingStreak: true,
+            onLog: { true }
+        )
+        .padding(22)
+    }
+    .frame(width: 393, height: 700)
+    .preferredColorScheme(.dark)
 }
 
 #Preview("Mood History Sheet") {

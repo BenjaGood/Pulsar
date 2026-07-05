@@ -9,9 +9,16 @@ import HealthKit
 enum PulsarHealthKitLogger {
     nonisolated static func log(_ message: @autoclosure () -> String) {
         #if DEBUG
+        guard isEnabled else { return }
         print("[PulsarHealthKit] \(message())")
         #endif
     }
+
+    #if DEBUG
+    private nonisolated static var isEnabled: Bool {
+        ProcessInfo.processInfo.environment["PULSAR_HEALTHKIT_DEBUG_LOGS"] == "1"
+    }
+    #endif
 }
 
 enum PulsarHealthKitIncrementalMetric {

@@ -10,6 +10,7 @@ struct FuelCaptureSheet: View {
     @ObservedObject var store: PulsarNutritionStore
 
     var initialMoment: PulsarNutritionMealMoment
+    var initialCategoryID: UUID?
     var editingEntry: PulsarNutritionEntry?
 
     @State private var foodName: String
@@ -18,7 +19,7 @@ struct FuelCaptureSheet: View {
     @State private var carbsText: String
     @State private var fatText: String
     @State private var servingAmountText: String
-    @State private var mealMoment: PulsarNutritionMealMoment
+    @State private var selectedCategoryID: UUID
     @State private var loggedAt: Date
     @State private var searchText = ""
     @State private var saveAsPrivateFood: Bool
@@ -28,20 +29,26 @@ struct FuelCaptureSheet: View {
     init(
         store: PulsarNutritionStore,
         initialMoment: PulsarNutritionMealMoment,
+        initialCategoryID: UUID? = nil,
         editingEntry: PulsarNutritionEntry? = nil
     ) {
         self.store = store
         self.initialMoment = initialMoment
+        self.initialCategoryID = initialCategoryID
         self.editingEntry = editingEntry
 
         let entryFood = editingEntry?.food
+        let resolvedCategory = store.resolvedMealCategory(
+            id: editingEntry?.categoryID ?? initialCategoryID,
+            fallback: editingEntry?.mealMoment ?? initialMoment
+        )
         _foodName = State(initialValue: entryFood?.name ?? "")
         _caloriesText = State(initialValue: entryFood.map { PulsarNutritionFormatters.decimal($0.nutritionPerServing.calories) } ?? "")
         _proteinText = State(initialValue: entryFood.map { PulsarNutritionFormatters.decimal($0.nutritionPerServing.protein) } ?? "")
         _carbsText = State(initialValue: entryFood.map { PulsarNutritionFormatters.decimal($0.nutritionPerServing.carbohydrates) } ?? "")
         _fatText = State(initialValue: entryFood.map { PulsarNutritionFormatters.decimal($0.nutritionPerServing.fat) } ?? "")
         _servingAmountText = State(initialValue: PulsarNutritionFormatters.decimal(editingEntry?.servingMultiplier ?? 1))
-        _mealMoment = State(initialValue: editingEntry?.mealMoment ?? initialMoment)
+        _selectedCategoryID = State(initialValue: resolvedCategory.id)
         _loggedAt = State(initialValue: editingEntry?.loggedAt ?? Date())
         _saveAsPrivateFood = State(initialValue: entryFood?.source == .privateFood)
         _selectedFood = State(initialValue: entryFood)
@@ -149,9 +156,9 @@ struct FuelCaptureSheet: View {
             VStack(alignment: .leading, spacing: 14) {
                 NutritionSectionHeader(title: "Logged At")
 
-                Picker("Meal category", selection: $mealMoment) {
-                    ForEach(PulsarNutritionMealMoment.allCases) { moment in
-                        Label(moment.title, systemImage: moment.symbolName).tag(moment)
+                Picker("Meal category", selection: $selectedCategoryID) {
+                    ForEach(store.state.mealCategories) { category in
+                        Label(category.name, systemImage: category.symbolName).tag(category.id)
                     }
                 }
                 .pickerStyle(.menu)
@@ -326,6 +333,10 @@ struct FuelCaptureSheet: View {
         )
     }
 
+    private var selectedCategory: PulsarMealCategory {
+        store.resolvedMealCategory(id: selectedCategoryID, fallback: initialMoment)
+    }
+
     private var trimmedFoodName: String {
         foodName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -351,7 +362,8 @@ struct FuelCaptureSheet: View {
         store.logFood(
             food,
             servingMultiplier: servingMultiplier,
-            mealMoment: mealMoment,
+            mealMoment: selectedCategory.baseMoment,
+            categoryID: selectedCategory.id,
             confidence: 1,
             source: food.source,
             loggedAt: loggedAt
@@ -370,7 +382,8 @@ struct FuelCaptureSheet: View {
         if var editingEntry {
             editingEntry.food = food
             editingEntry.servingMultiplier = max(0.05, servingAmount)
-            editingEntry.mealMoment = mealMoment
+            editingEntry.mealMoment = selectedCategory.baseMoment
+            editingEntry.categoryID = selectedCategory.id
             editingEntry.loggedAt = loggedAt
             editingEntry.confidence = 1
             editingEntry.source = food.source
@@ -379,7 +392,8 @@ struct FuelCaptureSheet: View {
             store.logFood(
                 food,
                 servingMultiplier: max(0.05, servingAmount),
-                mealMoment: mealMoment,
+                mealMoment: selectedCategory.baseMoment,
+                categoryID: selectedCategory.id,
                 confidence: 1,
                 source: food.source,
                 loggedAt: loggedAt

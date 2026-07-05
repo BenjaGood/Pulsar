@@ -317,6 +317,7 @@ extension SleepAnalysisInterval: SleepIntervalDuration {}
 enum SleepDebugLogger {
     nonisolated static func logQuery(platform: String, start: Date, end: Date, samples: [SleepAnalysisSample]) {
         #if DEBUG
+        guard isEnabled else { return }
         print("[PulsarSleep][\(platform)] query start=\(start) end=\(end) samples=\(samples.count)")
         for sample in samples {
             print("[PulsarSleep][\(platform)] sample uuid=\(sample.id) source=\(sample.sourceName) device=\(sample.deviceName ?? "-") start=\(sample.start) end=\(sample.end) value=\(sample.stage.displayName)")
@@ -326,6 +327,7 @@ enum SleepDebugLogger {
 
     nonisolated static func logAnalysis(_ summary: SleepAnalysisSummary) {
         #if DEBUG
+        guard isEnabled else { return }
         print("[PulsarSleep] analysis wakeUpDate=\(summary.wakeUpDate) queryStart=\(summary.queryStart) queryEnd=\(summary.queryEnd) raw=\(summary.rawSampleCount) used=\(summary.usedSampleCount)")
         for interval in summary.mergedIntervals {
             print("[PulsarSleep] merged stage=\(interval.stage.displayName) start=\(interval.start) end=\(interval.end) minutes=\(interval.durationMinutes) sources=\(interval.sourceNames.joined(separator: ","))")
@@ -333,4 +335,10 @@ enum SleepDebugLogger {
         print("[PulsarSleep] totals sleep=\(summary.totalSleepMinutes) deep=\(summary.deepMinutes) rem=\(summary.remMinutes) core=\(summary.coreMinutes) unspecified=\(summary.asleepUnspecifiedMinutes) awake=\(summary.awakeMinutes) awakenings=\(summary.awakenings) inBed=\(summary.timeInBedMinutes) waso=\(summary.wasoMinutes) efficiency=\(summary.sleepEfficiency)")
         #endif
     }
+
+    #if DEBUG
+    private nonisolated static var isEnabled: Bool {
+        ProcessInfo.processInfo.environment["PULSAR_SLEEP_DEBUG_LOGS"] == "1"
+    }
+    #endif
 }

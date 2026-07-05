@@ -92,6 +92,14 @@ enum MealScanMicronutrientUnit: String, CaseIterable, Codable, Identifiable, Has
     var id: String { rawValue }
 }
 
+enum MealIngredientAmbiguityType: String, Codable, Hashable, Sendable {
+    case protein
+    case sauce
+    case topping
+    case ingredient
+    case unknown
+}
+
 struct Micronutrient: Codable, Identifiable, Hashable, Sendable {
     var id: UUID
     var name: String
@@ -281,33 +289,81 @@ struct MealIngredient: Codable, Identifiable, Hashable, Sendable {
     var id: UUID
     var name: String
     var grams: Double
+    var estimatedVolumeMilliliters: Double?
+    var densityUsed: Double?
+    var gramsLow: Double?
+    var gramsHigh: Double?
     var nutrition: MealNutritionTotals
     var micronutrients: [Micronutrient]
     var confidence: Double
     var regionID: UUID?
     var reasoning: String?
     var notes: String?
+    var isAmbiguous: Bool?
+    var ambiguityType: MealIngredientAmbiguityType?
+    var clarificationQuestion: String?
+    var suggestions: [String]?
+    var visualEvidence: String?
+    var requiresUserConfirmation: Bool?
+    var originalName: String?
+    var userResolvedName: String?
+    var wasUserCorrected: Bool
+    var nutritionNeedsRecalculation: Bool
+    var wasKeptAsUnknown: Bool
 
     init(
         id: UUID = UUID(),
         name: String,
         grams: Double,
+        estimatedVolumeMilliliters: Double? = nil,
+        densityUsed: Double? = nil,
+        gramsLow: Double? = nil,
+        gramsHigh: Double? = nil,
         nutrition: MealNutritionTotals,
         micronutrients: [Micronutrient] = [],
         confidence: Double = 0,
         regionID: UUID? = nil,
         reasoning: String? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        isAmbiguous: Bool? = nil,
+        ambiguityType: MealIngredientAmbiguityType? = nil,
+        clarificationQuestion: String? = nil,
+        suggestions: [String]? = nil,
+        visualEvidence: String? = nil,
+        requiresUserConfirmation: Bool? = nil,
+        originalName: String? = nil,
+        userResolvedName: String? = nil,
+        wasUserCorrected: Bool = false,
+        nutritionNeedsRecalculation: Bool = false,
+        wasKeptAsUnknown: Bool = false
     ) {
         self.id = id
         self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         self.grams = max(0, grams)
+        self.estimatedVolumeMilliliters = estimatedVolumeMilliliters.map { max(0, $0) }
+        self.densityUsed = densityUsed.map { max(0, $0) }
+        self.gramsLow = gramsLow.map { max(0, $0) }
+        self.gramsHigh = gramsHigh.map { max(0, $0) }
         self.nutrition = nutrition
         self.micronutrients = micronutrients
         self.confidence = min(max(confidence, 0), 1)
         self.regionID = regionID
         self.reasoning = reasoning?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.notes = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.isAmbiguous = isAmbiguous
+        self.ambiguityType = ambiguityType
+        self.clarificationQuestion = clarificationQuestion?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sanitizedSuggestions = suggestions?
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        self.suggestions = sanitizedSuggestions?.isEmpty == true ? nil : sanitizedSuggestions
+        self.visualEvidence = visualEvidence?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.requiresUserConfirmation = requiresUserConfirmation
+        self.originalName = originalName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.userResolvedName = userResolvedName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.wasUserCorrected = wasUserCorrected
+        self.nutritionNeedsRecalculation = nutritionNeedsRecalculation
+        self.wasKeptAsUnknown = wasKeptAsUnknown
     }
 
     var estimatedGrams: Double {
@@ -337,12 +393,27 @@ struct MealIngredient: Codable, Identifiable, Hashable, Sendable {
             id: id,
             name: name,
             grams: clampedGrams,
+            estimatedVolumeMilliliters: estimatedVolumeMilliliters.map { $0 * multiplier },
+            densityUsed: densityUsed,
+            gramsLow: gramsLow.map { $0 * multiplier },
+            gramsHigh: gramsHigh.map { $0 * multiplier },
             nutrition: nutrition.scaled(by: multiplier),
             micronutrients: micronutrients.map { $0.scaled(by: multiplier) },
             confidence: confidence,
             regionID: regionID,
             reasoning: reasoning,
-            notes: notes
+            notes: notes,
+            isAmbiguous: isAmbiguous,
+            ambiguityType: ambiguityType,
+            clarificationQuestion: clarificationQuestion,
+            suggestions: suggestions,
+            visualEvidence: visualEvidence,
+            requiresUserConfirmation: requiresUserConfirmation,
+            originalName: originalName,
+            userResolvedName: userResolvedName,
+            wasUserCorrected: wasUserCorrected,
+            nutritionNeedsRecalculation: nutritionNeedsRecalculation,
+            wasKeptAsUnknown: wasKeptAsUnknown
         )
     }
 
@@ -356,6 +427,14 @@ struct MealIngredient: Codable, Identifiable, Hashable, Sendable {
         case grams
         case estimatedGrams
         case estimated_grams
+        case estimatedVolumeMilliliters
+        case estimated_volume_milliliters
+        case densityUsed
+        case density_used
+        case gramsLow
+        case grams_low
+        case gramsHigh
+        case grams_high
         case nutrition
         case calories
         case carbs
@@ -372,6 +451,27 @@ struct MealIngredient: Codable, Identifiable, Hashable, Sendable {
         case region_id
         case reasoning
         case notes
+        case isAmbiguous
+        case is_ambiguous
+        case ambiguityType
+        case ambiguity_type
+        case clarificationQuestion
+        case clarification_question
+        case suggestions
+        case visualEvidence
+        case visual_evidence
+        case requiresUserConfirmation
+        case requires_user_confirmation
+        case originalName
+        case original_name
+        case userResolvedName
+        case user_resolved_name
+        case wasUserCorrected
+        case was_user_corrected
+        case nutritionNeedsRecalculation
+        case nutrition_needs_recalculation
+        case wasKeptAsUnknown
+        case was_kept_as_unknown
     }
 
     init(from decoder: Decoder) throws {
@@ -395,13 +495,41 @@ struct MealIngredient: Codable, Identifiable, Hashable, Sendable {
             id: (try? container.decode(UUID.self, forKey: .id)) ?? UUID(),
             name: (try? container.decode(String.self, forKey: .name)) ?? "Detected food",
             grams: try container.decodeFirstDouble(.estimatedGrams, .estimated_grams, .grams) ?? 0,
+            estimatedVolumeMilliliters: try container.decodeFirstDouble(.estimatedVolumeMilliliters, .estimated_volume_milliliters),
+            densityUsed: try container.decodeFirstDouble(.densityUsed, .density_used),
+            gramsLow: try container.decodeFirstDouble(.gramsLow, .grams_low),
+            gramsHigh: try container.decodeFirstDouble(.gramsHigh, .grams_high),
             nutrition: nutrition,
             micronutrients: (try? container.decode([Micronutrient].self, forKey: .micronutrients)) ?? [],
             confidence: try container.decodeFirstDouble(.confidence) ?? 0,
             regionID: (try? container.decode(UUID.self, forKey: .regionID))
                 ?? (try? container.decode(UUID.self, forKey: .region_id)),
             reasoning: try? container.decode(String.self, forKey: .reasoning),
-            notes: try? container.decode(String.self, forKey: .notes)
+            notes: try? container.decode(String.self, forKey: .notes),
+            isAmbiguous: (try? container.decode(Bool.self, forKey: .isAmbiguous))
+                ?? (try? container.decode(Bool.self, forKey: .is_ambiguous)),
+            ambiguityType: (try? container.decode(MealIngredientAmbiguityType.self, forKey: .ambiguityType))
+                ?? (try? container.decode(MealIngredientAmbiguityType.self, forKey: .ambiguity_type)),
+            clarificationQuestion: (try? container.decode(String.self, forKey: .clarificationQuestion))
+                ?? (try? container.decode(String.self, forKey: .clarification_question)),
+            suggestions: try? container.decode([String].self, forKey: .suggestions),
+            visualEvidence: (try? container.decode(String.self, forKey: .visualEvidence))
+                ?? (try? container.decode(String.self, forKey: .visual_evidence)),
+            requiresUserConfirmation: (try? container.decode(Bool.self, forKey: .requiresUserConfirmation))
+                ?? (try? container.decode(Bool.self, forKey: .requires_user_confirmation)),
+            originalName: (try? container.decode(String.self, forKey: .originalName))
+                ?? (try? container.decode(String.self, forKey: .original_name)),
+            userResolvedName: (try? container.decode(String.self, forKey: .userResolvedName))
+                ?? (try? container.decode(String.self, forKey: .user_resolved_name)),
+            wasUserCorrected: (try? container.decode(Bool.self, forKey: .wasUserCorrected))
+                ?? (try? container.decode(Bool.self, forKey: .was_user_corrected))
+                ?? false,
+            nutritionNeedsRecalculation: (try? container.decode(Bool.self, forKey: .nutritionNeedsRecalculation))
+                ?? (try? container.decode(Bool.self, forKey: .nutrition_needs_recalculation))
+                ?? false,
+            wasKeptAsUnknown: (try? container.decode(Bool.self, forKey: .wasKeptAsUnknown))
+                ?? (try? container.decode(Bool.self, forKey: .was_kept_as_unknown))
+                ?? false
         )
     }
 
@@ -410,12 +538,210 @@ struct MealIngredient: Codable, Identifiable, Hashable, Sendable {
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
         try container.encode(grams, forKey: .grams)
+        try container.encodeIfPresent(estimatedVolumeMilliliters, forKey: .estimatedVolumeMilliliters)
+        try container.encodeIfPresent(densityUsed, forKey: .densityUsed)
+        try container.encodeIfPresent(gramsLow, forKey: .gramsLow)
+        try container.encodeIfPresent(gramsHigh, forKey: .gramsHigh)
         try container.encode(nutrition, forKey: .nutrition)
         try container.encode(micronutrients, forKey: .micronutrients)
         try container.encode(confidence, forKey: .confidence)
         try container.encodeIfPresent(regionID, forKey: .regionID)
         try container.encodeIfPresent(reasoning, forKey: .reasoning)
         try container.encodeIfPresent(notes, forKey: .notes)
+        try container.encodeIfPresent(isAmbiguous, forKey: .isAmbiguous)
+        try container.encodeIfPresent(ambiguityType, forKey: .ambiguityType)
+        try container.encodeIfPresent(clarificationQuestion, forKey: .clarificationQuestion)
+        try container.encodeIfPresent(suggestions, forKey: .suggestions)
+        try container.encodeIfPresent(visualEvidence, forKey: .visualEvidence)
+        try container.encodeIfPresent(requiresUserConfirmation, forKey: .requiresUserConfirmation)
+        try container.encodeIfPresent(originalName, forKey: .originalName)
+        try container.encodeIfPresent(userResolvedName, forKey: .userResolvedName)
+        try container.encode(wasUserCorrected, forKey: .wasUserCorrected)
+        try container.encode(nutritionNeedsRecalculation, forKey: .nutritionNeedsRecalculation)
+        try container.encode(wasKeptAsUnknown, forKey: .wasKeptAsUnknown)
+    }
+}
+
+extension MealIngredient {
+    var resolvedIsAmbiguous: Bool {
+        if isAmbiguous == true { return true }
+        return Self.detectAmbiguityType(name: name, reasoning: reasoning) != nil
+    }
+
+    var resolvedAmbiguityType: MealIngredientAmbiguityType {
+        ambiguityType ?? Self.detectAmbiguityType(name: name, reasoning: reasoning) ?? .unknown
+    }
+
+    var needsUserClarification: Bool {
+        resolvedIsAmbiguous && !wasUserCorrected && !wasKeptAsUnknown
+    }
+
+    var mealScannerCanSave: Bool {
+        estimatedGrams > 0 && !needsUserClarification
+    }
+
+    var ambiguityEvidenceText: String? {
+        let evidence = visualEvidence?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let evidence, !evidence.isEmpty { return evidence }
+        let reason = reasoning?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return reason?.isEmpty == false ? reason : nil
+    }
+
+    var ambiguitySuggestions: [String] {
+        let backendSuggestions = suggestions?.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? []
+        if !backendSuggestions.isEmpty { return backendSuggestions }
+        switch resolvedAmbiguityType {
+        case .protein:
+            return ["Chicken", "Beef", "Pork", "Fish", "Shrimp", "Tofu", "Egg", "Turkey"]
+        case .sauce:
+            return ["Salsa", "Cream sauce", "Cheese sauce", "Dressing", "Guacamole"]
+        case .topping:
+            return ["Onion", "Cilantro", "Cheese", "Tomato", "Avocado"]
+        case .ingredient:
+            return ["Rice", "Beans", "Vegetables", "Potato", "Bread"]
+        case .unknown:
+            return ["Chicken", "Beef", "Tofu", "Rice", "Beans"]
+        }
+    }
+
+    var mealScannerSaveDetail: String {
+        if wasKeptAsUnknown {
+            return "3D Meal Scanner estimate - needs review"
+        }
+        if nutritionNeedsRecalculation {
+            return "3D Meal Scanner estimate - nutrition pending verification"
+        }
+        if wasUserCorrected {
+            return "3D Meal Scanner estimate - user confirmed"
+        }
+        return "3D Meal Scanner estimate"
+    }
+
+    var mealScannerAuditNote: String? {
+        var parts: [String] = []
+        if let originalName, originalName.caseInsensitiveCompare(name) != .orderedSame {
+            parts.append("Original scan label: \(originalName)")
+        }
+        if nutritionNeedsRecalculation {
+            parts.append("Nutrition pending recalculation; verify portion/type.")
+        }
+        if wasKeptAsUnknown {
+            parts.append("Ingredient kept as unknown by user; needs review.")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
+    func resolvingAmbiguity(as replacementName: String) -> MealIngredient {
+        let resolvedName = replacementName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !resolvedName.isEmpty else { return self }
+        var copy = self
+        if copy.originalName?.isEmpty != false {
+            copy.originalName = name
+        }
+        copy.name = resolvedName
+        copy.userResolvedName = resolvedName
+        copy.wasUserCorrected = true
+        copy.wasKeptAsUnknown = false
+        copy.nutritionNeedsRecalculation = true
+        copy.requiresUserConfirmation = false
+        copy.isAmbiguous = false
+        return copy
+    }
+
+    func keepingAsUnknown() -> MealIngredient {
+        var copy = self
+        if copy.originalName?.isEmpty != false {
+            copy.originalName = name
+        }
+        copy.wasKeptAsUnknown = true
+        copy.wasUserCorrected = false
+        copy.requiresUserConfirmation = false
+        copy.confidence = min(confidence, 0.35)
+        copy.isAmbiguous = true
+        copy.notes = Self.appendNote("Needs review: user kept ambiguous scanner label.", to: notes)
+        return copy
+    }
+
+    /// Phase 3: merges a backend-recalculated ingredient's nutrition into this (already
+    /// user-resolved) ingredient. Preserves id, corrected name, and grams; scales the
+    /// backend's per-gram nutrition to this ingredient's actual grams so a mismatch
+    /// between the requested and returned mass never silently changes the portion size.
+    func mergingRecalculatedNutrition(from recalculated: MealIngredient) -> MealIngredient {
+        let backendGrams = recalculated.grams > 0 ? recalculated.grams : estimatedGrams
+        let scaleFactor = backendGrams > 0 ? estimatedGrams / backendGrams : 1
+        var copy = self
+        copy.nutrition = recalculated.nutrition.scaled(by: scaleFactor)
+        copy.micronutrients = recalculated.micronutrients.map { $0.scaled(by: scaleFactor) }
+        copy.densityUsed = recalculated.densityUsed ?? densityUsed
+        copy.gramsLow = recalculated.gramsLow.map { $0 * scaleFactor }
+        copy.gramsHigh = recalculated.gramsHigh.map { $0 * scaleFactor }
+        copy.confidence = max(confidence, recalculated.confidence)
+        copy.nutritionNeedsRecalculation = false
+        return copy
+    }
+
+    func reclassifyingAmbiguityAsGenericIngredient() -> MealIngredient {
+        var copy = self
+        if copy.originalName?.isEmpty != false {
+            copy.originalName = name
+        }
+        copy.name = "Unspecified ingredient"
+        copy.userResolvedName = copy.name
+        copy.wasUserCorrected = true
+        copy.wasKeptAsUnknown = false
+        copy.nutritionNeedsRecalculation = false
+        copy.ambiguityType = .ingredient
+        copy.requiresUserConfirmation = false
+        copy.isAmbiguous = false
+        copy.confidence = min(confidence, 0.45)
+        copy.notes = Self.appendNote("Reclassified by user as a generic ingredient.", to: notes)
+        return copy
+    }
+
+    static func detectAmbiguityType(name: String, reasoning: String? = nil) -> MealIngredientAmbiguityType? {
+        let haystack = ([name, reasoning ?? ""])
+            .joined(separator: " ")
+            .lowercased()
+        let ambiguousTokens = [
+            "unknown",
+            "unidentified",
+            "unclear",
+            "uncertain",
+            "type uncertain",
+            "generic protein",
+            "meat-like",
+            "detected food",
+            "unknown protein",
+            "unknown meat",
+            "unknown sauce",
+            "unknown topping",
+            "unknown ingredient"
+        ]
+        guard ambiguousTokens.contains(where: { haystack.contains($0) }) else { return nil }
+        if haystack.contains("protein")
+            || haystack.contains("meat")
+            || haystack.contains("poultry")
+            || haystack.contains("seafood")
+            || haystack.contains("fish") {
+            return .protein
+        }
+        if haystack.contains("sauce") || haystack.contains("dressing") {
+            return .sauce
+        }
+        if haystack.contains("topping") || haystack.contains("garnish") {
+            return .topping
+        }
+        if haystack.contains("detected food") || haystack.contains("ingredient") || haystack.contains("generic") {
+            return .ingredient
+        }
+        return .unknown
+    }
+
+    private static func appendNote(_ note: String, to existing: String?) -> String {
+        let trimmedExisting = existing?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmedExisting, !trimmedExisting.isEmpty else { return note }
+        if trimmedExisting.contains(note) { return trimmedExisting }
+        return "\(trimmedExisting) \(note)"
     }
 }
 
@@ -487,6 +813,10 @@ struct MealScanResult: Codable, Identifiable, Hashable, Sendable {
     var totalSugar: Double { totals.sugarGrams }
     var totalSodium: Double { totals.sodiumMilligrams }
     var confidence: Double { quality.confidence }
+    var usesMeasuredDepthForPortionEstimate: Bool { quality.depthContributedToEstimate == true }
+    var ambiguousIngredients: [MealIngredient] { ingredients.filter(\.needsUserClarification) }
+    var hasUnresolvedAmbiguousIngredients: Bool { !ambiguousIngredients.isEmpty }
+    var hasSavableMealScannerIngredients: Bool { ingredients.contains(where: \.mealScannerCanSave) }
 
     mutating func updateIngredient(id ingredientID: MealIngredient.ID, estimatedGrams: Double) {
         updateIngredientGrams(id: ingredientID, grams: estimatedGrams)
@@ -495,6 +825,12 @@ struct MealScanResult: Codable, Identifiable, Hashable, Sendable {
     mutating func updateIngredientGrams(id ingredientID: UUID, grams newGrams: Double) {
         guard let index = ingredients.firstIndex(where: { $0.id == ingredientID }) else { return }
         ingredients[index].setGramsProportionally(newGrams)
+        recomputeTotals()
+    }
+
+    mutating func updateIngredient(_ ingredient: MealIngredient) {
+        guard let index = ingredients.firstIndex(where: { $0.id == ingredient.id }) else { return }
+        ingredients[index] = ingredient
         recomputeTotals()
     }
 
@@ -546,6 +882,14 @@ struct MealScanResult: Codable, Identifiable, Hashable, Sendable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard Self.containsMealResultSignal(in: container) else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "MealScanResult payload did not include meal result fields."
+                )
+            )
+        }
         let ingredients = (try? container.decode([MealIngredient].self, forKey: .ingredients)) ?? []
         let metadata = (try? container.decode(MealScanResultMetadata.self, forKey: .metadata)) ?? MealScanResultMetadata()
         let decodedTotals = try container.decodeIfPresent(MealNutritionTotals.self, forKey: .totals)
@@ -606,6 +950,34 @@ struct MealScanResult: Codable, Identifiable, Hashable, Sendable {
         )
     }
 
+    private static func containsMealResultSignal(in container: KeyedDecodingContainer<CodingKeys>) -> Bool {
+        [
+            .title,
+            .ingredients,
+            .totals,
+            .totalCalories,
+            .total_calories,
+            .totalCarbs,
+            .total_carbs,
+            .totalProtein,
+            .total_protein,
+            .totalFat,
+            .total_fat,
+            .totalFiber,
+            .total_fiber,
+            .totalSugar,
+            .total_sugar,
+            .totalSodium,
+            .total_sodium,
+            .micronutrients,
+            .quality,
+            .plateEstimate,
+            .plate_estimate,
+            .foodRegions,
+            .food_regions
+        ].contains { container.contains($0) }
+    }
+
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
@@ -652,6 +1024,8 @@ struct MealScanQuality: Codable, Hashable, Sendable {
     var confidence: Double
     var hasDepth: Bool
     var hasLiDAR: Bool
+    var depthContributedToEstimate: Bool?
+    var confidenceBreakdown: MealScanConfidenceBreakdown?
     var depthSource: MealScanDepthSource
     var imageSharpnessEstimate: Double?
     var lightingEstimate: Double?
@@ -663,6 +1037,8 @@ struct MealScanQuality: Codable, Hashable, Sendable {
         confidence: Double,
         hasDepth: Bool = false,
         hasLiDAR: Bool = false,
+        depthContributedToEstimate: Bool? = nil,
+        confidenceBreakdown: MealScanConfidenceBreakdown? = nil,
         depthSource: MealScanDepthSource = .none,
         imageSharpnessEstimate: Double? = nil,
         lightingEstimate: Double? = nil,
@@ -673,11 +1049,35 @@ struct MealScanQuality: Codable, Hashable, Sendable {
         self.confidence = min(max(confidence, 0), 1)
         self.hasDepth = hasDepth
         self.hasLiDAR = hasLiDAR
+        self.depthContributedToEstimate = depthContributedToEstimate
+        self.confidenceBreakdown = confidenceBreakdown
         self.depthSource = depthSource
         self.imageSharpnessEstimate = imageSharpnessEstimate.map { min(max($0, 0), 1) }
         self.lightingEstimate = lightingEstimate.map { min(max($0, 0), 1) }
         self.occlusionRisk = min(max(occlusionRisk, 0), 1)
         self.warnings = warnings
+    }
+}
+
+struct MealScanConfidenceBreakdown: Codable, Hashable, Sendable {
+    var foodRecognition: Double?
+    var depthCoverage: Double?
+    var portionVolume: Double?
+    var density: Double?
+    var overall: Double?
+
+    init(
+        foodRecognition: Double? = nil,
+        depthCoverage: Double? = nil,
+        portionVolume: Double? = nil,
+        density: Double? = nil,
+        overall: Double? = nil
+    ) {
+        self.foodRecognition = foodRecognition.map { min(max($0, 0), 1) }
+        self.depthCoverage = depthCoverage.map { min(max($0, 0), 1) }
+        self.portionVolume = portionVolume.map { min(max($0, 0), 1) }
+        self.density = density.map { min(max($0, 0), 1) }
+        self.overall = overall.map { min(max($0, 0), 1) }
     }
 }
 
@@ -748,6 +1148,12 @@ struct MealScanCapturePayload: Codable, Hashable, Sendable {
     var depthStats: MealScanDepthStats?
     var camera: MealScanCameraMetadata?
     var plateEstimate: MealPlateEstimate?
+    var volumeEstimate: MealVolumeEstimate?
+    var foodRegions: [MealFoodRegion]?
+    /// Per-food-form calibration correction factors learned from user-confirmed gram measurements.
+    /// Keys are food form category strings (e.g. "loose_grains", "solid_protein").
+    /// Values are bounded to [0.6, 1.7]. Only non-neutral factors are included.
+    var calibrationFactors: [String: Double]?
     var clientHints: [String: String]
 
     init(
@@ -756,6 +1162,9 @@ struct MealScanCapturePayload: Codable, Hashable, Sendable {
         depthStats: MealScanDepthStats? = nil,
         camera: MealScanCameraMetadata? = nil,
         plateEstimate: MealPlateEstimate? = nil,
+        volumeEstimate: MealVolumeEstimate? = nil,
+        foodRegions: [MealFoodRegion]? = nil,
+        calibrationFactors: [String: Double]? = nil,
         clientHints: [String: String] = [:]
     ) {
         self.metadata = metadata
@@ -763,6 +1172,11 @@ struct MealScanCapturePayload: Codable, Hashable, Sendable {
         self.depthStats = depthStats
         self.camera = camera
         self.plateEstimate = plateEstimate
+        self.volumeEstimate = volumeEstimate
+        self.foodRegions = foodRegions?.isEmpty == true ? nil : foodRegions
+        self.calibrationFactors = calibrationFactors.map { dict in
+            dict.filter { abs($0.value - 1.0) > 0.03 }
+        }.flatMap { $0.isEmpty ? nil : $0 }
         self.clientHints = clientHints
     }
 }
@@ -845,6 +1259,7 @@ struct MealScanCameraMetadata: Codable, Hashable, Sendable {
     var exposureDurationSeconds: Double?
     var iso: Float?
     var cameraIntrinsics: [Float]?
+    var cameraTransform: [Float]?
     var imageResolutionWidth: Int?
     var imageResolutionHeight: Int?
 
@@ -853,6 +1268,7 @@ struct MealScanCameraMetadata: Codable, Hashable, Sendable {
         exposureDurationSeconds: Double? = nil,
         iso: Float? = nil,
         cameraIntrinsics: [Float]? = nil,
+        cameraTransform: [Float]? = nil,
         imageResolutionWidth: Int? = nil,
         imageResolutionHeight: Int? = nil
     ) {
@@ -860,8 +1276,37 @@ struct MealScanCameraMetadata: Codable, Hashable, Sendable {
         self.exposureDurationSeconds = exposureDurationSeconds
         self.iso = iso
         self.cameraIntrinsics = cameraIntrinsics
+        self.cameraTransform = cameraTransform
         self.imageResolutionWidth = imageResolutionWidth
         self.imageResolutionHeight = imageResolutionHeight
+    }
+}
+
+struct MealVolumeEstimate: Codable, Hashable, Sendable {
+    var volumeMilliliters: Double
+    var method: String
+    var supportPlaneConfidence: Double
+    var coverage: Double
+    var uncertaintyMlLow: Double
+    var uncertaintyMlHigh: Double
+    var frameCount: Int?
+
+    init(
+        volumeMilliliters: Double,
+        method: String,
+        supportPlaneConfidence: Double,
+        coverage: Double,
+        uncertaintyMlLow: Double,
+        uncertaintyMlHigh: Double,
+        frameCount: Int? = nil
+    ) {
+        self.volumeMilliliters = max(0, volumeMilliliters)
+        self.method = method.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.supportPlaneConfidence = min(max(supportPlaneConfidence, 0), 1)
+        self.coverage = min(max(coverage, 0), 1)
+        self.uncertaintyMlLow = max(0, uncertaintyMlLow)
+        self.uncertaintyMlHigh = max(0, uncertaintyMlHigh)
+        self.frameCount = frameCount.map { max(1, $0) }
     }
 }
 
@@ -917,6 +1362,38 @@ struct MealScanAnalysisRequest: Encodable, Sendable {
 
 struct MealScanAnalysisResponse: Decodable, Sendable {
     var result: MealScanResult
+}
+
+/// Phase 3: compact context sent alongside a resolve-ingredient request so the backend
+/// can (optionally) fold the recalculated ingredient back into honest meal totals.
+/// The client always recomputes authoritative totals locally regardless of this context.
+struct MealIngredientResolveContext: Encodable, Sendable {
+    var mode: MealScanMode? = nil
+    var currentMealTotals: MealNutritionTotals? = nil
+    var currentIngredientNutrition: MealNutritionTotals? = nil
+    var volumeEstimate: MealVolumeEstimate? = nil
+    var calibrationFactors: [String: Double]? = nil
+}
+
+/// Phase 3: request to recalculate honest nutrition for a single ingredient the user
+/// just identified. The backend must not re-downgrade the confirmed identity.
+struct MealIngredientResolveRequest: Encodable, Sendable {
+    var ingredientId: String
+    var originalName: String
+    var replacementName: String
+    var grams: Double
+    var ambiguityType: String
+    var recalculateNutrition: Bool = true
+    var payloadContext: MealIngredientResolveContext? = nil
+    var imageBase64: String? = nil
+}
+
+/// Phase 3: backend response carrying the recalculated ingredient. `updatedMealTotals`
+/// is advisory only; the client always calls `MealScanResult.recomputeTotals()` after
+/// merging `updatedIngredient` so totals stay authoritative on-device.
+struct MealIngredientResolveResponse: Decodable, Sendable {
+    var updatedIngredient: MealIngredient
+    var updatedMealTotals: MealNutritionTotals?
 }
 
 private extension KeyedDecodingContainer {

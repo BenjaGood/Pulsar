@@ -5,33 +5,42 @@
 
 import AVFoundation
 import ARKit
+import OSLog
 import SwiftUI
 import UIKit
 
 struct MealScannerView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var nutritionStore: PulsarNutritionStore
+    var initialCategoryID: UUID?
 
     @State private var captureController = MealScannerARCaptureController()
     @State private var scanPhase: ScanPhase = .intro
     @State private var scanMode: MealScanMode = MealScanProcessingService.supportsLiDARDepth ? .depthAssisted : .photoOnly
     @State private var startedAt: Date?
     @State private var result: MealScanResult?
+    @State private var pendingClarificationResult: MealScanResult?
     @State private var errorMessage: String?
     @State private var liveFrameFeedback = MealScannerLiveFrameFeedback()
     @State private var guidedScanProgress = 0.0
     @State private var guidedScanStep: MealGuidedScanStep = .capturePhoto
     @State private var lidarScanState = MealLidarScanState()
     @State private var photoCapture: MealScannerPhotoCapture?
+    @State private var guidedScanAutoCompleteTask: Task<Void, Never>?
+    @State private var frameFeedbackLogCounter = 0
 
     private let processingService = MealScanProcessingService()
     private let nutritionAIService: MealNutritionAIServicing
+    private static let logger = Logger(subsystem: "tech.aetherial.pulsar", category: "MealScanner")
+    private static let guidedScanAutoCompleteDelayNanoseconds: UInt64 = 15_000_000_000
 
     init(
         nutritionStore: PulsarNutritionStore,
+        initialCategoryID: UUID? = nil,
         nutritionAIService: MealNutritionAIServicing = MealNutritionAIService()
     ) {
         self.nutritionStore = nutritionStore
+        self.initialCategoryID = initialCategoryID
         self.nutritionAIService = nutritionAIService
     }
 
@@ -42,6 +51,7 @@ struct MealScannerView: View {
                     MealScanResultView(
                         result: resultBinding,
                         nutritionStore: nutritionStore,
+                        initialCategoryID: initialCategoryID,
                         onRescan: resetForRescan
                     )
                 } else if scanPhase.usesCamera {
@@ -72,6 +82,17 @@ struct MealScannerView: View {
         .toolbar(.hidden, for: .navigationBar)
         .onDisappear {
             cancelGuidedScan()
+        }
+        .sheet(item: $pendingClarificationResult) { pendingResult in
+            MealIngredientClarificationView(
+                result: pendingResult,
+                nutritionAIService: nutritionAIService
+            ) { resolvedResult in
+                completeClarifiedResult(resolvedResult)
+            }
+            .interactiveDismissDisabled(true)
+            .presentationDetents([.large])
+            .presentationDragIndicator(.hidden)
         }
     }
 
@@ -542,7 +563,7 @@ struct MealScannerView: View {
         case .ready:
             captureReferencePhoto()
         case .scanning:
-            break
+            completeGuidedScan()
         case .complete:
             Task { await captureAndAnalyze() }
         case .checkingPermission, .analyzing:
@@ -555,9 +576,11 @@ struct MealScannerView: View {
         resetGuidedScanState()
         scanMode = MealScanProcessingService.supportsLiDARDepth ? .depthAssisted : .photoOnly
         scanPhase = .checkingPermission
+        Self.logger.debug("Starting meal scan mode=\(scanMode.rawValue, privacy: .public) supportsLiDARDepth=\(MealScanProcessingService.supportsLiDARDepth, privacy: .public)")
         playImpact(.soft)
 
         let status = MealScanProcessingService.cameraAuthorizationStatus()
+        Self.logger.debug("Meal scanner camera authorization status=\(String(describing: status), privacy: .public)")
         let isAuthorized: Bool
         switch status {
         case .authorized:
@@ -571,6 +594,7 @@ struct MealScannerView: View {
         }
 
         guard isAuthorized else {
+            Self.logger.error("Meal scanner camera permission denied")
             errorMessage = "Camera permission is required to scan meals. Enable camera access in Settings and try again."
             scanPhase = .error
             playNotification(.warning)
@@ -586,6 +610,7 @@ struct MealScannerView: View {
     private func captureAndAnalyze() async {
         cancelGuidedScan()
         scanPhase = .analyzing
+        Self.logger.debug("Starting meal scan analysis mode=\(scanMode.rawValue, privacy: .public) hasStoredPhoto=\(photoCapture != nil, privacy: .public)")
         playImpact(.medium)
         let duration = Date().timeIntervalSince(startedAt ?? Date())
 
@@ -593,30 +618,43 @@ struct MealScannerView: View {
             let storedCapture = photoCapture
             let liveCapture = storedCapture == nil ? captureController.captureImage() : nil
             guard let analysisImage = storedCapture?.image ?? liveCapture?.image else {
+                Self.logger.error("Meal scan analysis aborted: missing analysis image")
                 errorMessage = "Pulsar could not capture a camera frame. Move the phone slightly and try again."
                 scanPhase = .error
                 playNotification(.error)
                 return
             }
             let analysisFrame = captureController.currentFrameSnapshot() ?? storedCapture?.frame ?? liveCapture?.frame
+            Self.logger.debug("Meal scan payload capture imageSource=\(storedCapture == nil ? "live" : "stored", privacy: .public) hasFrame=\(analysisFrame != nil, privacy: .public)")
             let scanSession = lidarScanState.summary(photoCaptured: storedCapture != nil || liveCapture != nil, mode: scanMode)
             let payload = try processingService.makePayload(
                 from: analysisImage,
                 frame: analysisFrame,
                 scanMode: scanMode,
                 scanDuration: duration,
-                scanSession: scanSession
+                scanSession: scanSession,
+                accumulator: captureController.frameAccumulator,
+                calibrationStore: MealScanCalibrationStore.shared
             )
             let imageBase64 = try processingService.preparedJPEGBase64(from: analysisImage)
+            Self.logger.debug("Meal scan request prepared imageBase64Bytes=\(imageBase64.count, privacy: .public) duration=\(duration, privacy: .public) depthCompleted=\(scanSession.depthScanCompleted, privacy: .public)")
             var analyzedResult = try await nutritionAIService.analyzeMeal(imageBase64: imageBase64, payload: payload)
             analyzedResult.mode = scanMode
             if analyzedResult.accuracyDisclaimer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 analyzedResult.accuracyDisclaimer = MealScanResultMetadata().disclaimer
             }
-            result = analyzedResult
-            scanPhase = .intro
-            resetGuidedScanState()
+            Self.logger.debug("Meal scan analysis succeeded title=\(analyzedResult.title, privacy: .public) ingredients=\(analyzedResult.ingredients.count, privacy: .public) model=\(analyzedResult.metadata.modelName ?? "unknown", privacy: .public)")
+            if analyzedResult.hasUnresolvedAmbiguousIngredients {
+                pendingClarificationResult = analyzedResult
+                scanPhase = .intro
+                resetGuidedScanState()
+            } else {
+                result = analyzedResult
+                scanPhase = .intro
+                resetGuidedScanState()
+            }
         } catch {
+            Self.logger.error("Meal scan analysis failed type=\(String(describing: type(of: error)), privacy: .public) description=\(((error as? LocalizedError)?.errorDescription ?? error.localizedDescription), privacy: .public)")
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             scanPhase = .error
             playNotification(.error)
@@ -625,6 +663,7 @@ struct MealScannerView: View {
 
     private func resetForRescan() {
         result = nil
+        pendingClarificationResult = nil
         errorMessage = nil
         scanPhase = .ready
         startedAt = nil
@@ -638,6 +677,14 @@ struct MealScannerView: View {
         dismiss()
     }
 
+    private func completeClarifiedResult(_ resolvedResult: MealScanResult) {
+        pendingClarificationResult = nil
+        result = resolvedResult
+        scanPhase = .intro
+        resetGuidedScanState()
+        playNotification(.success)
+    }
+
     private func handleFrameFeedback(_ feedback: MealScannerLiveFrameFeedback) {
         let frameChanged = feedback != liveFrameFeedback
         if frameChanged {
@@ -648,11 +695,14 @@ struct MealScannerView: View {
         let previousStep = guidedScanStep
         let previousMilestone = lidarScanState.milestone
         lidarScanState.record(feedback)
+        frameFeedbackLogCounter += 1
 
         withAnimation(.linear(duration: 0.16)) {
             guidedScanProgress = lidarScanState.progress
             guidedScanStep = lidarScanState.currentStep
         }
+
+        logLidarProgressIfNeeded(previousStep: previousStep, previousMilestone: previousMilestone)
 
         if guidedScanStep != previousStep {
             playImpact(.light)
@@ -667,6 +717,7 @@ struct MealScannerView: View {
 
     private func captureReferencePhoto() {
         guard let capture = captureController.captureImage() else {
+            Self.logger.error("Meal scanner reference photo capture failed mode=\(scanMode.rawValue, privacy: .public)")
             errorMessage = "Pulsar could not capture the plate photo. Center the plate and try again."
             scanPhase = .error
             playNotification(.error)
@@ -679,6 +730,7 @@ struct MealScannerView: View {
         guidedScanProgress = 0.16
         guidedScanStep = scanMode == .depthAssisted ? .mapCenter : .complete
         playNotification(.success)
+        Self.logger.debug("Meal scanner reference photo captured mode=\(scanMode.rawValue, privacy: .public) hasFrame=true branch=\(scanMode == .depthAssisted ? "guided" : "complete", privacy: .public)")
 
         if scanMode == .depthAssisted {
             beginGuidedScan()
@@ -690,9 +742,13 @@ struct MealScannerView: View {
     private func beginGuidedScan() {
         cancelGuidedScan()
         lidarScanState.reset()
+        captureController.startAccumulating()
         guidedScanProgress = 0.16
         guidedScanStep = .mapCenter
         errorMessage = nil
+        frameFeedbackLogCounter = 0
+        scheduleGuidedScanAutoComplete()
+        Self.logger.debug("LiDAR guided meal scan started")
 
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
             scanPhase = .scanning
@@ -701,6 +757,9 @@ struct MealScannerView: View {
     }
 
     private func completeGuidedScan() {
+        cancelGuidedScan()
+        captureController.stopAccumulating()
+        Self.logger.debug("Completing guided meal scan progress=\(lidarScanState.progress, privacy: .public) acceptedFrames=\(lidarScanState.acceptedFrameCount, privacy: .public) stableFrames=\(lidarScanState.stableFrameCount, privacy: .public) points=\(lidarScanState.pointCloud.count, privacy: .public) coverage=\(lidarScanState.coverageRatio, privacy: .public) coveredCells=\(lidarScanState.coveredCellRatio, privacy: .public) movement=\(lidarScanState.movementScore, privacy: .public) automaticThreshold=\(lidarScanState.isComplete, privacy: .public) keyFrames=\(captureController.frameAccumulator.frameCount, privacy: .public)")
         guidedScanProgress = 1
         guidedScanStep = .complete
         withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
@@ -709,13 +768,42 @@ struct MealScannerView: View {
         playNotification(.success)
     }
 
-    private func cancelGuidedScan() {}
+    private func scheduleGuidedScanAutoComplete() {
+        guidedScanAutoCompleteTask?.cancel()
+        guidedScanAutoCompleteTask = Task {
+            try? await Task.sleep(nanoseconds: Self.guidedScanAutoCompleteDelayNanoseconds)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard scanPhase == .scanning, photoCapture != nil else { return }
+                Self.logger.debug("LiDAR guided meal scan auto-completing after timeout progress=\(lidarScanState.progress, privacy: .public)")
+                completeGuidedScan()
+            }
+        }
+    }
+
+    private func cancelGuidedScan() {
+        guidedScanAutoCompleteTask?.cancel()
+        guidedScanAutoCompleteTask = nil
+        captureController.stopAccumulating()
+    }
+
+    private func logLidarProgressIfNeeded(previousStep: MealGuidedScanStep, previousMilestone: Int) {
+        guard frameFeedbackLogCounter.isMultiple(of: 30)
+                || guidedScanStep != previousStep
+                || lidarScanState.milestone > previousMilestone
+                || lidarScanState.isComplete else {
+            return
+        }
+
+        Self.logger.debug("LiDAR meal scan progress=\(lidarScanState.progress, privacy: .public) step=\(lidarScanState.currentStep.rawValue, privacy: .public) acceptedFrames=\(lidarScanState.acceptedFrameCount, privacy: .public) stableFrames=\(lidarScanState.stableFrameCount, privacy: .public) points=\(lidarScanState.pointCloud.count, privacy: .public) coverage=\(lidarScanState.coverageRatio, privacy: .public) coveredCells=\(lidarScanState.coveredCellRatio, privacy: .public) movement=\(lidarScanState.movementScore, privacy: .public) isComplete=\(lidarScanState.isComplete, privacy: .public)")
+    }
 
     private func resetGuidedScanState() {
         cancelGuidedScan()
         guidedScanProgress = 0
         guidedScanStep = .capturePhoto
         lidarScanState.reset()
+        captureController.resetAccumulator()
         photoCapture = nil
     }
 
@@ -771,6 +859,9 @@ struct MealScannerView: View {
         }
         if scanPhase == .ready {
             return "Center the full plate in good light. This photo is the visual evidence the AI will analyze."
+        }
+        if scanPhase == .scanning, guidedScanProgress >= 0.34 {
+            return "Keep moving for more depth, or tap Finish Scan when the plate is mapped well enough."
         }
         if !liveFrameFeedback.isCaptureReady {
             return "\(liveFrameFeedback.trackingMessage). \(liveFrameFeedback.lightingMessage)."
@@ -845,7 +936,7 @@ struct MealScannerView: View {
             [
                 "Watch the LiDAR mesh attach to the plate and food.",
                 "Move left, right, then tilt for tall food.",
-                "Pulsar will mark complete automatically."
+                "Tap Finish Scan if depth progress stalls."
             ]
         case .complete:
             [
@@ -921,7 +1012,7 @@ private enum ScanPhase: Equatable {
         case .intro, .error: "Start Scan"
         case .checkingPermission: "Checking..."
         case .ready: "Capture Photo"
-        case .scanning: "Scanning..."
+        case .scanning: "Finish Scan"
         case .complete: "Analyze Meal"
         case .analyzing: "Analyzing..."
         }
@@ -972,9 +1063,9 @@ private enum ScanPhase: Equatable {
 
     var canTapPrimary: Bool {
         switch self {
-        case .checkingPermission, .scanning, .analyzing:
+        case .checkingPermission, .analyzing:
             false
-        case .intro, .ready, .complete, .error:
+        case .intro, .ready, .scanning, .complete, .error:
             true
         }
     }
@@ -1224,7 +1315,7 @@ private struct MealLidarScanState {
         })
     }
 
-    private static func cellIndex(for point: MealScannerDepthPoint) -> Int? {
+    nonisolated private static func cellIndex(for point: MealScannerDepthPoint) -> Int? {
         let normalizedX = min(max((point.x + 1) / 2, 0), 0.999)
         let normalizedY = min(max((point.y + 1) / 2, 0), 0.999)
         let cellX = Int(normalizedX * Double(MealScannerDepthGrid.columns))

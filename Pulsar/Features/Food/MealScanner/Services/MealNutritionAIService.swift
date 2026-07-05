@@ -4,14 +4,17 @@
 //
 
 import Foundation
+import OSLog
 
 protocol MealNutritionAIServicing {
     func analyzeMeal(imageBase64: String, payload: MealScanPayload) async throws -> MealScanResult
+    func resolveIngredient(_ request: MealIngredientResolveRequest) async throws -> MealIngredientResolveResponse
 }
 
 struct MealScannerConfiguration: Equatable, Sendable {
     var backendBaseURL: URL?
     var analysisPath: String
+    var resolvePath: String
     var mockMode: Bool
     var timeoutSeconds: TimeInterval
 
@@ -21,11 +24,13 @@ struct MealScannerConfiguration: Equatable, Sendable {
     init(
         backendBaseURL: URL? = nil,
         analysisPath: String = "/api/orion/meal-scan",
+        resolvePath: String = "/api/orion/meal-scan/resolve-ingredient",
         mockMode: Bool = false,
         timeoutSeconds: TimeInterval = 45
     ) {
         self.backendBaseURL = backendBaseURL
         self.analysisPath = analysisPath.isEmpty ? "/api/orion/meal-scan" : analysisPath
+        self.resolvePath = resolvePath.isEmpty ? "/api/orion/meal-scan/resolve-ingredient" : resolvePath
         self.mockMode = mockMode
         self.timeoutSeconds = timeoutSeconds
     }
@@ -33,6 +38,11 @@ struct MealScannerConfiguration: Equatable, Sendable {
     var analysisEndpoint: URL? {
         guard let backendBaseURL else { return nil }
         return Self.endpoint(baseURL: backendBaseURL, path: analysisPath)
+    }
+
+    var resolveEndpoint: URL? {
+        guard let backendBaseURL else { return nil }
+        return Self.endpoint(baseURL: backendBaseURL, path: resolvePath)
     }
 
     var isConfigured: Bool {
@@ -49,6 +59,7 @@ struct MealScannerConfiguration: Equatable, Sendable {
             backendBaseURL: urlValue(named: "MealScannerBackendBaseURL", bundle: bundle)
                 ?? urlValue(named: "OrionBackendBaseURL", bundle: bundle),
             analysisPath: stringValue(named: "MealScannerAnalyzePath", bundle: bundle) ?? "/api/orion/meal-scan",
+            resolvePath: stringValue(named: "MealScannerResolvePath", bundle: bundle) ?? "/api/orion/meal-scan/resolve-ingredient",
             mockMode: defaults.bool(forKey: MealScannerDefaultsKeys.mockMode)
                 || defaults.bool(forKey: MealScannerDefaultsKeys.orionMockMode)
                 || boolValue(named: "MealScannerMockMode", bundle: bundle)
@@ -127,6 +138,7 @@ final class MealNutritionAIService: MealNutritionAIServicing {
     private let session: URLSession
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+    private static let logger = Logger(subsystem: "tech.aetherial.pulsar", category: "MealScanner")
 
     init(
         configuration: MealScannerConfiguration = .load(),
@@ -141,11 +153,14 @@ final class MealNutritionAIService: MealNutritionAIServicing {
     }
 
     func analyzeMeal(imageBase64: String, payload: MealScanPayload) async throws -> MealScanResult {
+        Self.logger.debug("Meal scan AI analyze requested mockMode=\(self.configuration.mockMode, privacy: .public) endpoint=\(self.configuration.analysisEndpoint?.absoluteString ?? "nil", privacy: .public) missingConfiguration=\(self.configuration.missingConfigurationKeys().joined(separator: ","), privacy: .public)")
         if configuration.mockMode {
+            Self.logger.debug("Meal scan AI returning mock result")
             return Self.mockResult(payload: payload)
         }
 
         guard let endpoint = configuration.analysisEndpoint else {
+            Self.logger.error("Meal scan AI is not configured missingConfiguration=\(self.configuration.missingConfigurationKeys().joined(separator: ","), privacy: .public)")
             throw MealNutritionAIServiceError.notConfigured(configuration.missingConfigurationKeys())
         }
 
@@ -162,71 +177,184 @@ final class MealNutritionAIService: MealNutritionAIServicing {
                 payload: payload
             )
         )
+        Self.logger.debug("Meal scan AI request encoded bodyBytes=\(request.httpBody?.count ?? 0, privacy: .public)")
 
         let data: Data
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: request)
         } catch let error as URLError {
+            Self.logger.error("Meal scan AI transport failed code=\(error.code.rawValue, privacy: .public) endpoint=\(endpoint.absoluteString, privacy: .public)")
             throw MealNutritionAIServiceError.transport(Self.transportMessage(endpoint: endpoint, error: error))
         } catch {
+            Self.logger.error("Meal scan AI transport failed error=\(error.localizedDescription, privacy: .public)")
             throw MealNutritionAIServiceError.transport(error.localizedDescription)
         }
 
         guard let httpResponse = response as? HTTPURLResponse else {
+            Self.logger.error("Meal scan AI returned non-HTTP response")
             throw MealNutritionAIServiceError.invalidResponse
         }
+        Self.logger.debug("Meal scan AI HTTP status=\(httpResponse.statusCode, privacy: .public) responseBytes=\(data.count, privacy: .public)")
         guard (200..<300).contains(httpResponse.statusCode) else {
             if Self.shouldUseLocalFallback(for: httpResponse.statusCode) {
-                return Self.unavailableFallbackResult(
-                    payload: payload,
-                    fallbackReason: Self.backendFallbackWarning(statusCode: httpResponse.statusCode)
+                Self.logger.error("Meal scan AI backend unavailable status=\(httpResponse.statusCode, privacy: .public) responseBytes=\(data.count, privacy: .public)")
+                throw MealNutritionAIServiceError.http(
+                    statusCode: httpResponse.statusCode,
+                    message: Self.unavailableBackendMessage(statusCode: httpResponse.statusCode)
                 )
             }
+            Self.logger.error("Meal scan AI HTTP failure status=\(httpResponse.statusCode, privacy: .public) responseBytes=\(data.count, privacy: .public)")
             throw MealNutritionAIServiceError.http(
                 statusCode: httpResponse.statusCode,
                 message: errorMessage(from: data) ?? "Meal Scanner backend returned HTTP \(httpResponse.statusCode)."
             )
         }
         guard !data.isEmpty else {
+            Self.logger.error("Meal scan AI returned empty 2xx response")
             throw MealNutritionAIServiceError.emptyResponse
         }
 
         do {
-            return try decodeResult(from: data)
+            let result = Self.normalizedResult(try decodeResult(from: data), for: payload)
+            guard !result.isEmptyNutritionEstimate else {
+                Self.logger.warning("Meal scan AI decoded empty nutrition result ingredients=0 totalsZero=true")
+                throw MealNutritionAIServiceError.emptyResponse
+            }
+            return result
         } catch let error as MealNutritionAIServiceError {
+            Self.logger.error("Meal scan AI decode failed error=\(error.errorDescription ?? String(describing: error), privacy: .public) responseBytes=\(data.count, privacy: .public)")
             throw error
         } catch {
+            Self.logger.error("Meal scan AI decode failed error=\(error.localizedDescription, privacy: .public) responseBytes=\(data.count, privacy: .public)")
+            throw MealNutritionAIServiceError.decoding(error.localizedDescription)
+        }
+    }
+
+    /// Phase 3: recalculates honest nutrition for a single ingredient the user just
+    /// identified. Throws on any failure so callers can apply the Phase 1 fallback
+    /// (rename + keep grams + nutritionNeedsRecalculation = true) rather than faking data.
+    func resolveIngredient(_ request: MealIngredientResolveRequest) async throws -> MealIngredientResolveResponse {
+        Self.logger.debug("Meal scan ingredient resolve requested mockMode=\(self.configuration.mockMode, privacy: .public) endpoint=\(self.configuration.resolveEndpoint?.absoluteString ?? "nil", privacy: .public)")
+        if configuration.mockMode {
+            Self.logger.debug("Meal scan ingredient resolve returning mock result")
+            return Self.mockResolveResponse(for: request)
+        }
+
+        guard let endpoint = configuration.resolveEndpoint else {
+            Self.logger.error("Meal scan ingredient resolve is not configured")
+            throw MealNutritionAIServiceError.notConfigured(configuration.missingConfigurationKeys())
+        }
+
+        var urlRequest = URLRequest(url: endpoint)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+        urlRequest.timeoutInterval = configuration.timeoutSeconds
+        urlRequest.httpBody = try encoder.encode(request)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: urlRequest)
+        } catch let error as URLError {
+            Self.logger.error("Meal scan ingredient resolve transport failed code=\(error.code.rawValue, privacy: .public)")
+            throw MealNutritionAIServiceError.transport(Self.transportMessage(endpoint: endpoint, error: error))
+        } catch {
+            Self.logger.error("Meal scan ingredient resolve transport failed error=\(error.localizedDescription, privacy: .public)")
+            throw MealNutritionAIServiceError.transport(error.localizedDescription)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            Self.logger.error("Meal scan ingredient resolve returned non-HTTP response")
+            throw MealNutritionAIServiceError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            Self.logger.error("Meal scan ingredient resolve HTTP failure status=\(httpResponse.statusCode, privacy: .public)")
+            throw MealNutritionAIServiceError.http(
+                statusCode: httpResponse.statusCode,
+                message: errorMessage(from: data) ?? "Ingredient recalculation failed (HTTP \(httpResponse.statusCode))."
+            )
+        }
+        guard !data.isEmpty else {
+            Self.logger.error("Meal scan ingredient resolve returned empty 2xx response")
+            throw MealNutritionAIServiceError.emptyResponse
+        }
+
+        do {
+            return try decoder.decode(MealIngredientResolveResponse.self, from: data)
+        } catch {
+            Self.logger.error("Meal scan ingredient resolve decode failed error=\(error.localizedDescription, privacy: .public)")
             throw MealNutritionAIServiceError.decoding(error.localizedDescription)
         }
     }
 
     private func decodeResult(from data: Data) throws -> MealScanResult {
-        if let direct = try? decoder.decode(MealScanResult.self, from: data) {
-            return direct
+        if let envelopeResult = decodeEnvelopeResult(from: data, branchPrefix: "response-envelope", remainingTextDepth: 2) {
+            return envelopeResult
         }
         if let response = try? decoder.decode(MealScanAnalysisResponse.self, from: data) {
+            Self.logger.debug("Meal scan AI decode branch=analysis-response")
             return response.result
         }
+        if let direct = try? decoder.decode(MealScanResult.self, from: data) {
+            Self.logger.debug("Meal scan AI decode branch=direct")
+            return direct
+        }
 
-        let container = try decoder.decode(MealScanResponseEnvelope.self, from: data)
+        throw MealNutritionAIServiceError.emptyResponse
+    }
+
+    private func decodeEnvelopeResult(
+        from data: Data,
+        branchPrefix: String,
+        remainingTextDepth: Int
+    ) -> MealScanResult? {
+        guard let container = try? decoder.decode(MealScanResponseEnvelope.self, from: data) else {
+            return nil
+        }
         if let result = container.result {
+            Self.logger.debug("Meal scan AI decode branch=\(branchPrefix, privacy: .public)-result")
             return result
+        }
+        guard remainingTextDepth > 0 else {
+            return nil
         }
 
         for text in container.textCandidates where !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard let nestedData = trimmed.data(using: .utf8) else { continue }
 
-            if let direct = try? decoder.decode(MealScanResult.self, from: nestedData) {
-                return direct
+            if let result = decodeEnvelopeResult(
+                from: nestedData,
+                branchPrefix: "\(branchPrefix)-text-envelope",
+                remainingTextDepth: remainingTextDepth - 1
+            ) {
+                return result
             }
             if let response = try? decoder.decode(MealScanAnalysisResponse.self, from: nestedData) {
+                Self.logger.debug("Meal scan AI decode branch=\(branchPrefix, privacy: .public)-text-analysis-response")
                 return response.result
+            }
+            if let direct = try? decoder.decode(MealScanResult.self, from: nestedData) {
+                Self.logger.debug("Meal scan AI decode branch=\(branchPrefix, privacy: .public)-text-direct")
+                return direct
             }
         }
 
-        throw MealNutritionAIServiceError.emptyResponse
+        return nil
+    }
+
+    private static func normalizedResult(_ result: MealScanResult, for payload: MealScanPayload) -> MealScanResult {
+        guard payload.volumeEstimate == nil,
+              result.quality.depthContributedToEstimate == true
+        else { return result }
+
+        var normalized = result
+        normalized.quality.depthContributedToEstimate = false
+        normalized.quality.confidenceBreakdown?.portionVolume = nil
+        normalized.quality.confidenceBreakdown?.density = nil
+        return normalized
     }
 
     private func errorMessage(from data: Data) -> String? {
@@ -322,6 +450,28 @@ final class MealNutritionAIService: MealNutritionAIServicing {
         )
     }
 
+    /// Local-development-only stand-in for the Phase 3 resolve endpoint. Clearly labeled
+    /// as a demo value (matching `mockResult`'s existing convention) so it is never
+    /// mistaken for a real recalculation; production builds never take this branch.
+    static func mockResolveResponse(for request: MealIngredientResolveRequest) -> MealIngredientResolveResponse {
+        let grams = max(0, request.grams)
+        let caloriesPerGram = 1.8
+        let updated = MealIngredient(
+            name: request.replacementName,
+            grams: grams,
+            nutrition: MealNutritionTotals(
+                calories: grams * caloriesPerGram,
+                proteinGrams: grams * 0.18,
+                carbohydrateGrams: grams * 0.05,
+                fatGrams: grams * 0.07,
+                sodiumMilligrams: grams * 0.6
+            ),
+            confidence: 0.6,
+            notes: "Demo-only recalculation; no backend visual analysis was performed."
+        )
+        return MealIngredientResolveResponse(updatedIngredient: updated, updatedMealTotals: updated.nutrition)
+    }
+
     static func unavailableFallbackResult(payload: MealScanPayload, fallbackReason: String) -> MealScanResult {
         MealScanResult(
             mode: payload.metadata.mode,
@@ -376,6 +526,7 @@ final class MealNutritionAIService: MealNutritionAIServicing {
     First identify visible regions, then estimate nutrition from those regions. Treat food identity as uncertain unless texture, shape, color, separation, label text, or another visible cue supports it.
     Never label a protein as chicken, beef, pork, fish, tofu, egg, cheese, etc. unless visual cues clearly support that exact protein. If meat identity is ambiguous, use "unknown protein" or "ground meat/protein, type uncertain" with low confidence.
     If a food looks like cooked ground meat but the exact animal is not visually provable, name it "ground meat/protein, type uncertain", not chicken or beef.
+    If the compact payload includes a volumeEstimate, use it only as portion-size evidence; choose density from the visible food form and include uncertainty instead of implying scale-level precision.
     For salad/vegetables, identify only visible groups such as leafy greens, tomato, cucumber, dressing, etc.; do not add unseen toppings.
     For each ingredient, include reasoning that cites visible evidence such as color, texture, shape, separation on the plate, garnish, packaging text, or image region.
     If evidence is weak, lower confidence, add notes, and set metadata.needsUserReview = true. Nutrition is an estimate and should mark needsUserReview true when uncertain.
@@ -399,8 +550,26 @@ final class MealNutritionAIService: MealNutritionAIServicing {
         statusCode == 404 || statusCode == 501 || statusCode == 503
     }
 
-    private static func backendFallbackWarning(statusCode: Int) -> String {
-        "Backend meal-scan endpoint unavailable (HTTP \(statusCode)); no local food estimate was produced."
+    private static func unavailableBackendMessage(statusCode: Int) -> String {
+        "Meal Scanner backend is unavailable (HTTP \(statusCode)). No foods were inferred locally. Check the backend deployment and try again."
+    }
+}
+
+private extension MealScanResult {
+    var isEmptyNutritionEstimate: Bool {
+        ingredients.isEmpty && totals.isZero
+    }
+}
+
+private extension MealNutritionTotals {
+    var isZero: Bool {
+        calories == 0
+            && proteinGrams == 0
+            && carbohydrateGrams == 0
+            && fatGrams == 0
+            && fiberGrams == 0
+            && sugarGrams == 0
+            && sodiumMilligrams == 0
     }
 }
 

@@ -23,24 +23,30 @@ struct NutritionPageTitleHeader: View {
     @State private var isGlowing = false
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 11) {
-            Image(systemName: "fork.knife.circle.fill")
-                .font(.system(size: 30, weight: .semibold))
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "fork.knife")
+                .font(.system(size: 24, weight: .semibold))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.green)
                 .scaleEffect(isGlowing && !reduceMotion ? 1.04 : 1)
-                .frame(width: 34, height: 30)
-                .alignmentGuide(.firstTextBaseline) { dimensions in
-                    dimensions[VerticalAlignment.center] + 7
-                }
+                .frame(width: 44, height: 44)
+                .background(.green.opacity(0.16), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                .pulsarLiquidGlass(cornerRadius: 13, tint: .green.opacity(0.10), isClear: true)
                 .accessibilityHidden(true)
 
-            Text("Nutrition")
-                .pulsarTextStyle(.screenTitle)
-                .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Nutrition")
+                    .pulsarTextStyle(.sectionTitle)
+                    .foregroundStyle(.white)
+                Text("Track meals. Fuel goals.")
+                    .pulsarTextStyle(.captionEmphasis)
+                    .foregroundStyle(.white.opacity(0.76))
+            }
+
+            Spacer(minLength: 0)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Nutrition")
+        .accessibilityLabel("Nutrition. Track meals. Fuel goals.")
         .accessibilityAddTraits(.isHeader)
         .onAppear {
             guard !reduceMotion else { return }
@@ -48,6 +54,376 @@ struct NutritionPageTitleHeader: View {
                 isGlowing = true
             }
         }
+    }
+}
+
+struct NutritionCalorieSummaryCard: View {
+    var dashboard: PulsarNutritionDashboard
+
+    private var remainingCaloriesProgress: Double {
+        guard dashboard.calorieGoal > 0 else { return 0 }
+        return min(max(dashboard.remainingCalories / dashboard.calorieGoal, 0), 1)
+    }
+
+    var body: some View {
+        PulsarNutritionGlassCard(cornerRadius: 28, padding: 16) {
+            HStack(alignment: .center, spacing: 18) {
+                ZStack {
+                    NutritionRing(progress: dashboard.caloriesProgress, tint: .orange, lineWidth: 7)
+                    VStack(spacing: 1) {
+                        Text("\(Int((min(max(dashboard.caloriesProgress, 0), 1) * 100).rounded()))%")
+                            .pulsarTextStyle(.label)
+                            .monospacedDigit()
+                        Text("of goal")
+                            .pulsarTextStyle(.overline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: 72, height: 72)
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Today's calories")
+                        .pulsarTextStyle(.captionEmphasis)
+                        .foregroundStyle(.secondary)
+
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(PulsarNutritionFormatters.calories(dashboard.totals.calories))
+                            .pulsarMonospacedMetric(.metricValue)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                        Text("cal")
+                            .pulsarTextStyle(.captionEmphasis)
+                            .foregroundStyle(.green)
+                    }
+
+                    Text("of \(PulsarNutritionFormatters.calories(dashboard.calorieGoal)) cal goal")
+                        .pulsarTextStyle(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+
+                    NutritionLinearProgressBar(progress: dashboard.caloriesProgress, tint: .orange, height: 5)
+                }
+
+                Divider()
+                    .frame(height: 70)
+                    .overlay(.white.opacity(0.18))
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(PulsarNutritionFormatters.calories(dashboard.remainingCalories))
+                        .pulsarMonospacedMetric(.metricValue)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                    Text("cal left")
+                        .pulsarTextStyle(.caption)
+                        .foregroundStyle(.secondary)
+                    NutritionLinearProgressBar(progress: remainingCaloriesProgress, tint: .green, height: 5)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+struct NutritionMacroTripletCard: View {
+    var dashboard: PulsarNutritionDashboard
+
+    var body: some View {
+        PulsarNutritionGlassCard(cornerRadius: 26, padding: 14) {
+            HStack(spacing: 0) {
+                NutritionMacroTripletColumn(
+                    title: "Protein",
+                    value: PulsarNutritionFormatters.grams(dashboard.totals.protein),
+                    percent: dashboard.proteinProgress,
+                    goal: PulsarNutritionFormatters.grams(dashboard.proteinGoal),
+                    symbolName: "leaf.fill",
+                    tint: .green
+                )
+                NutritionMacroDivider()
+                NutritionMacroTripletColumn(
+                    title: "Carbs",
+                    value: PulsarNutritionFormatters.grams(dashboard.totals.carbohydrates),
+                    percent: dashboard.carbohydratesProgress,
+                    goal: PulsarNutritionFormatters.grams(dashboard.carbohydratesGoal),
+                    symbolName: "bolt.fill",
+                    tint: .cyan
+                )
+                NutritionMacroDivider()
+                NutritionMacroTripletColumn(
+                    title: "Fats",
+                    value: PulsarNutritionFormatters.grams(dashboard.totals.fat),
+                    percent: dashboard.fatProgress,
+                    goal: PulsarNutritionFormatters.grams(dashboard.fatGoal),
+                    symbolName: "drop.fill",
+                    tint: .purple
+                )
+            }
+        }
+    }
+}
+
+private struct NutritionMacroTripletColumn: View {
+    var title: String
+    var value: String
+    var percent: Double
+    var goal: String
+    var symbolName: String
+    var tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: symbolName)
+                    .pulsarTextStyle(.captionEmphasis)
+                    .foregroundStyle(tint)
+                    .frame(width: 32, height: 32)
+                    .background(tint.opacity(0.12), in: Circle())
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .pulsarTextStyle(.captionEmphasis)
+                        .foregroundStyle(.secondary)
+                    Text(value)
+                        .pulsarTextStyle(.cardTitle)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                }
+            }
+
+            HStack(spacing: 5) {
+                Text("\(Int((min(max(percent, 0), 1) * 100).rounded()))%")
+                    .pulsarTextStyle(.captionEmphasis)
+                    .foregroundStyle(tint)
+                    .monospacedDigit()
+                Text("•")
+                    .pulsarTextStyle(.caption)
+                    .foregroundStyle(.tertiary)
+                Text("Goal \(goal)")
+                    .pulsarTextStyle(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+
+            NutritionLinearProgressBar(progress: percent, tint: tint, height: 4)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 6)
+    }
+}
+
+private struct NutritionMacroDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(.white.opacity(0.16))
+            .frame(width: 1, height: 84)
+            .padding(.horizontal, 8)
+    }
+}
+
+struct NutritionMealsSection: View {
+    var categories: [PulsarMealCategory]
+    var entriesForCategory: (PulsarMealCategory) -> [PulsarNutritionEntry]
+    var onAdd: (PulsarMealCategory) -> Void
+    var onEditEntry: (PulsarNutritionEntry) -> Void
+    var onDeleteEntry: (PulsarNutritionEntry) -> Void
+    var onEditMeals: () -> Void
+
+    @State private var expandedCategoryIDs: Set<UUID> = []
+
+    private var totalCalories: Double {
+        categories.reduce(0) { partial, category in
+            partial + entriesForCategory(category).reduce(0) { $0 + $1.nutrition.calories }
+        }
+    }
+
+    var body: some View {
+        PulsarNutritionGlassCard(cornerRadius: 28, padding: 16) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center) {
+                    Text("Meals")
+                        .pulsarTextStyle(.sectionHeader)
+                    Spacer()
+                    Button(action: onEditMeals) {
+                        Label("Edit", systemImage: "pencil")
+                            .pulsarTextStyle(.captionEmphasis)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                    }
+                    .buttonStyle(NutritionIconTextButtonStyle(tint: .green))
+                    .accessibilityLabel("Edit meal categories")
+                }
+
+                VStack(spacing: 10) {
+                    ForEach(categories) { category in
+                        NutritionMealRow(
+                            category: category,
+                            entries: entriesForCategory(category),
+                            isExpanded: expandedCategoryIDs.contains(category.id),
+                            onToggleExpanded: { toggle(category.id) },
+                            onAdd: { onAdd(category) },
+                            onEditEntry: onEditEntry,
+                            onDeleteEntry: onDeleteEntry
+                        )
+                    }
+                }
+
+                HStack {
+                    Text("Total logged")
+                        .pulsarTextStyle(.captionEmphasis)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(PulsarNutritionFormatters.calories(totalCalories)) cal")
+                        .pulsarMonospacedMetric(.label)
+                        .foregroundStyle(.primary)
+                }
+                .padding(.horizontal, 13)
+                .padding(.vertical, 11)
+                .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+            }
+        }
+    }
+
+    private func toggle(_ id: UUID) {
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+            if expandedCategoryIDs.contains(id) {
+                expandedCategoryIDs.remove(id)
+            } else {
+                expandedCategoryIDs.insert(id)
+            }
+        }
+    }
+}
+
+struct NutritionMealRow: View {
+    var category: PulsarMealCategory
+    var entries: [PulsarNutritionEntry]
+    var isExpanded: Bool
+    var onToggleExpanded: () -> Void
+    var onAdd: () -> Void
+    var onEditEntry: (PulsarNutritionEntry) -> Void
+    var onDeleteEntry: (PulsarNutritionEntry) -> Void
+
+    private var totals: PulsarNutritionFacts {
+        entries.reduce(.zero) { $0 + $1.nutrition }
+    }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 12) {
+                Button(action: onToggleExpanded) {
+                    HStack(spacing: 12) {
+                        Image(systemName: category.symbolName)
+                            .pulsarTextStyle(.label)
+                            .foregroundStyle(category.tint)
+                            .frame(width: 44, height: 44)
+                            .background(category.tint.opacity(0.12), in: Circle())
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(category.name)
+                                .pulsarTextStyle(.label)
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.78)
+                            Text("\(entries.count) \(entries.count == 1 ? "item" : "items")")
+                                .pulsarTextStyle(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Spacer(minLength: 8)
+
+                Text("\(PulsarNutritionFormatters.calories(totals.calories)) cal")
+                    .pulsarMonospacedMetric(.captionEmphasis)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                Button(action: onAdd) {
+                    Image(systemName: "plus")
+                        .pulsarTextStyle(.label)
+                        .frame(width: 34, height: 34)
+                }
+                .buttonStyle(NutritionIconButtonStyle(tint: category.tint, size: 34))
+                .accessibilityLabel("Add food to \(category.name)")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(.white.opacity(0.08), lineWidth: 1)
+            }
+
+            if isExpanded && !entries.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(entries) { entry in
+                        NutritionMealEntryRow(
+                            entry: entry,
+                            tint: category.tint,
+                            onEdit: { onEditEntry(entry) },
+                            onDelete: { onDeleteEntry(entry) }
+                        )
+                    }
+                }
+                .padding(.leading, 12)
+            }
+        }
+    }
+}
+
+private struct NutritionMealEntryRow: View {
+    var entry: PulsarNutritionEntry
+    var tint: Color
+    var onEdit: () -> Void
+    var onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button(action: onEdit) {
+                HStack(spacing: 10) {
+                    Image(systemName: "fork.knife")
+                        .pulsarTextStyle(.label)
+                        .foregroundStyle(tint)
+                        .frame(width: 28, height: 28)
+                        .background(tint.opacity(0.10), in: Circle())
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(entry.food.name)
+                            .pulsarTextStyle(.captionEmphasis)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(entry.servingText)
+                            .pulsarTextStyle(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Text("\(PulsarNutritionFormatters.calories(entry.nutrition.calories)) cal")
+                        .pulsarMonospacedMetric(.captionEmphasis)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button(role: .destructive, action: onDelete) {
+                Image(systemName: "trash")
+                    .pulsarTextStyle(.captionEmphasis)
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 9)
+        .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
     }
 }
 
@@ -983,6 +1359,22 @@ struct NutritionIconButtonStyle: ButtonStyle {
     }
 }
 
+struct NutritionIconTextButtonStyle: ButtonStyle {
+    var tint: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(tint)
+            .background(tint.opacity(configuration.isPressed ? 0.16 : 0.10), in: Capsule(style: .continuous))
+            .overlay {
+                Capsule(style: .continuous)
+                    .stroke(tint.opacity(0.20), lineWidth: 1)
+            }
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.spring(response: 0.24, dampingFraction: 0.82), value: configuration.isPressed)
+    }
+}
+
 extension PulsarNutritionMealMoment {
     var tint: Color {
         switch self {
@@ -992,6 +1384,10 @@ extension PulsarNutritionMealMoment {
         case .snacks: .mint
         }
     }
+}
+
+extension PulsarMealCategory {
+    var tint: Color { palette.color }
 }
 
 private extension PulsarNutritionInsight.Kind {

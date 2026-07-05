@@ -851,7 +851,14 @@ enum PulsarSyncPayloadCodec {
 enum PulsarSyncDebugLogger {
     nonisolated static func log(_ message: @autoclosure () -> String) {
         #if DEBUG
+        guard isEnabled else { return }
         print("[PulsarSync] \(message())")
         #endif
     }
+
+    #if DEBUG
+    private nonisolated static var isEnabled: Bool {
+        ProcessInfo.processInfo.environment["PULSAR_SYNC_DEBUG_LOGS"] == "1"
+    }
+    #endif
 }

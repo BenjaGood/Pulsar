@@ -480,6 +480,9 @@ struct PulsarRootView: View {
     }
 
     private var usesNativeOrionTabAccessory: Bool {
+        if #available(iOS 26.0, *) {
+            return true
+        }
         return false
     }
 
@@ -1819,7 +1822,9 @@ private struct PulsarRootTabBackground: View {
             StaticTimeBackgroundView(mode: homeBackgroundMode)
         case .fitness:
             FitnessWeeklyBackground()
-        case .food, .mindfulness:
+        case .food:
+            NutritionBackground()
+        case .mindfulness:
             PulsarSectionBackground()
         }
     }

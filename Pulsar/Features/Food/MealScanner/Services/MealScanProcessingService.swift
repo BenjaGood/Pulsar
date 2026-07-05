@@ -7,6 +7,7 @@ import ARKit
 import AVFoundation
 import CoreVideo
 import Foundation
+import OSLog
 import UIKit
 
 enum MealScanProcessingError: LocalizedError {
@@ -26,6 +27,7 @@ enum MealScanProcessingError: LocalizedError {
 struct MealScanProcessingService {
     private let jpegCompressionQuality: CGFloat
     private let maximumImageDimension: CGFloat
+    private static let logger = Logger(subsystem: "tech.aetherial.pulsar", category: "MealScanner")
 
     init(
         jpegCompressionQuality: CGFloat = 0.82,
@@ -60,7 +62,9 @@ struct MealScanProcessingService {
         frame: ARFrame?,
         scanMode: MealScanMode,
         scanDuration: TimeInterval,
-        scanSession: MealScanSessionSummary? = nil
+        scanSession: MealScanSessionSummary? = nil,
+        accumulator: MealScanFrameAccumulator? = nil,
+        calibrationStore: MealScanCalibrationStore? = nil
     ) throws -> MealScanPayload {
         guard image.size.width > 0, image.size.height > 0 else {
             throw MealScanProcessingError.invalidImage
@@ -68,11 +72,29 @@ struct MealScanProcessingService {
 
         let depthStats = Self.depthStats(from: frame)
         let hasDepth = depthStats != nil
-        let warnings = qualityWarnings(
+        let lightingEstimate = lightingEstimate(from: frame)
+
+        // Phase 4: prefer multi-frame fused estimate; fall back to single-frame.
+        let fusionResult = accumulator.map { $0.fuse(scanSession: scanSession, depthStats: depthStats) }
+        let volumeEstimate = fusionResult?.estimate
+            ?? MealVolumeEstimator.estimate(from: frame, scanSession: scanSession, depthStats: depthStats)
+        let volumeRelativeStdDev = fusionResult?.relativeStdDev ?? 0
+
+        var warnings = qualityWarnings(
             image: image,
             frame: frame,
             hasDepth: hasDepth,
             scanDuration: scanDuration,
+            scanSession: scanSession
+        )
+        Self.appendVolumeWarnings(
+            to: &warnings,
+            frame: frame,
+            scanMode: scanMode,
+            depthStats: depthStats,
+            volumeEstimate: volumeEstimate,
+            volumeRelativeStdDev: volumeRelativeStdDev,
+            lightingEstimate: lightingEstimate,
             scanSession: scanSession
         )
         var clientHints = [
@@ -85,6 +107,49 @@ struct MealScanProcessingService {
             clientHints.merge(scanSession.clientHints) { _, new in new }
         }
 
+        let quality = MealScanQuality(
+            level: qualityLevel(
+                image: image,
+                hasDepth: hasDepth,
+                scanDuration: scanDuration,
+                warningCount: warnings.count,
+                scanSession: scanSession
+            ),
+            confidence: qualityConfidence(
+                image: image,
+                hasDepth: hasDepth,
+                scanDuration: scanDuration,
+                warningCount: warnings.count,
+                scanSession: scanSession
+            ),
+            hasDepth: hasDepth,
+            hasLiDAR: Self.supportsLiDARDepth,
+            depthContributedToEstimate: volumeEstimate != nil ? true : nil,
+            depthSource: depthStats?.source ?? .none,
+            lightingEstimate: lightingEstimate,
+            occlusionRisk: occlusionRisk(hasDepth: hasDepth, scanSession: scanSession),
+            warnings: warnings
+        )
+        let plateEstimate = conservativePlateEstimate(hasDepth: hasDepth)
+
+        #if DEBUG
+        Self.logScanQualityDiagnostics(
+            depthStats: depthStats,
+            quality: quality,
+            volumeEstimate: volumeEstimate,
+            plateEstimate: plateEstimate,
+            scanSession: scanSession,
+            scanDuration: scanDuration,
+            accumulatorFrameCount: accumulator?.frameCount ?? 0,
+            volumeRelativeStdDev: volumeRelativeStdDev
+        )
+        #endif
+
+        let calibrationFactors = calibrationStore.flatMap { store in
+            let factors = store.nonNeutralFactors
+            return factors.isEmpty ? nil : factors
+        }
+
         return MealScanPayload(
             metadata: MealScanCaptureMetadata(
                 mode: scanMode,
@@ -93,31 +158,12 @@ struct MealScanProcessingService {
                 imageOrientation: image.imageOrientation.mealScanName,
                 jpegQuality: Double(jpegCompressionQuality)
             ),
-            quality: MealScanQuality(
-                level: qualityLevel(
-                    image: image,
-                    hasDepth: hasDepth,
-                    scanDuration: scanDuration,
-                    warningCount: warnings.count,
-                    scanSession: scanSession
-                ),
-                confidence: qualityConfidence(
-                    image: image,
-                    hasDepth: hasDepth,
-                    scanDuration: scanDuration,
-                    warningCount: warnings.count,
-                    scanSession: scanSession
-                ),
-                hasDepth: hasDepth,
-                hasLiDAR: Self.supportsLiDARDepth,
-                depthSource: depthStats?.source ?? .none,
-                lightingEstimate: lightingEstimate(from: frame),
-                occlusionRisk: occlusionRisk(hasDepth: hasDepth, scanSession: scanSession),
-                warnings: warnings
-            ),
+            quality: quality,
             depthStats: depthStats,
             camera: Self.cameraMetadata(from: frame),
-            plateEstimate: conservativePlateEstimate(hasDepth: hasDepth),
+            plateEstimate: plateEstimate,
+            volumeEstimate: volumeEstimate,
+            calibrationFactors: calibrationFactors,
             clientHints: clientHints
         )
     }
@@ -245,9 +291,19 @@ struct MealScanProcessingService {
                 intrinsics.columns.1.x, intrinsics.columns.1.y, intrinsics.columns.1.z,
                 intrinsics.columns.2.x, intrinsics.columns.2.y, intrinsics.columns.2.z
             ],
+            cameraTransform: Self.flattenedCameraTransform(from: frame.camera.transform),
             imageResolutionWidth: Int(resolution.width),
             imageResolutionHeight: Int(resolution.height)
         )
+    }
+
+    private static func flattenedCameraTransform(from transform: simd_float4x4) -> [Float] {
+        [
+            transform.columns.0.x, transform.columns.0.y, transform.columns.0.z, transform.columns.0.w,
+            transform.columns.1.x, transform.columns.1.y, transform.columns.1.z, transform.columns.1.w,
+            transform.columns.2.x, transform.columns.2.y, transform.columns.2.z, transform.columns.2.w,
+            transform.columns.3.x, transform.columns.3.y, transform.columns.3.z, transform.columns.3.w
+        ]
     }
 
     private static func depthStats(from frame: ARFrame?) -> MealScanDepthStats? {
@@ -371,6 +427,69 @@ struct MealScanProcessingService {
         let index = Int((Double(values.count - 1) * clamped).rounded())
         return values[index]
     }
+
+    static func appendVolumeWarnings(
+        to warnings: inout [String],
+        frame: ARFrame?,
+        scanMode: MealScanMode,
+        depthStats: MealScanDepthStats?,
+        volumeEstimate: MealVolumeEstimate?,
+        volumeRelativeStdDev: Double,
+        lightingEstimate: Double?,
+        scanSession: MealScanSessionSummary?
+    ) {
+        if volumeRelativeStdDev > 0.35 {
+            warnings.append("Volume estimates varied significantly across scan frames; depth precision may be limited.")
+        }
+        if let volumeEstimate, volumeEstimate.coverage < 0.45 {
+            warnings.append("Measured volume coverage was limited; portion estimates should be reviewed.")
+        }
+        if let lightingEstimate, lightingEstimate < 0.24 {
+            warnings.append("Lighting was low during the depth scan; move to brighter light for better portion accuracy.")
+        }
+        if let scanSession, scanMode == .depthAssisted, scanSession.depthFrameCount < 5 {
+            warnings.append("Too few LiDAR viewpoints were captured; scan around the meal for a more stable volume estimate.")
+        }
+        if let frame, scanMode == .depthAssisted {
+            // Camera's -Z column is the look direction in world space; negative Y component measures
+            // how much the camera points downward. Low values mean the phone was nearly horizontal.
+            let lookDownComponent = -frame.camera.transform.columns.2.y
+            if lookDownComponent < 0.34 {
+                warnings.append("Camera angle was steep during scan; hold the phone above and tilt toward the plate for better depth accuracy.")
+            }
+        }
+        if let depthStats, let highConfRatio = depthStats.highConfidenceRatio {
+            let coverage = Double(depthStats.validSampleCount) / Double(max(1, depthStats.sampledPixelCount))
+            if coverage > 0.22, highConfRatio < 0.25 {
+                warnings.append("Depth confidence was low despite valid coverage; the container may be transparent or reflective.")
+            }
+        }
+    }
+
+    #if DEBUG
+    private static func logScanQualityDiagnostics(
+        depthStats: MealScanDepthStats?,
+        quality: MealScanQuality,
+        volumeEstimate: MealVolumeEstimate?,
+        plateEstimate: MealPlateEstimate,
+        scanSession: MealScanSessionSummary?,
+        scanDuration: TimeInterval,
+        accumulatorFrameCount: Int,
+        volumeRelativeStdDev: Double
+    ) {
+        let depthCoverage = depthStats.map { stats in
+            Double(stats.validSampleCount) / Double(max(1, stats.sampledPixelCount))
+        } ?? 0
+        let depthSampleSummary = depthStats.map { stats in
+            "\(stats.validSampleCount)/\(stats.sampledPixelCount)"
+        } ?? "0/0"
+        let volumeML = volumeEstimate.map { String(format: "%.1f", $0.volumeMilliliters) } ?? "nil"
+        let volumeMethod = volumeEstimate?.method ?? "none"
+        let planeCoverage = volumeEstimate.map { String(format: "%.2f", $0.supportPlaneConfidence) } ?? "nil"
+        let frameCount = volumeEstimate?.frameCount.map { "\($0)" } ?? "nil"
+        Self.logger.debug("Meal scan quality diagnostics depthAvailable=\(depthStats != nil, privacy: .public) depthSource=\(depthStats?.source.rawValue ?? "none", privacy: .public) depthSamples=\(depthSampleSummary, privacy: .public) depthCoverage=\(depthCoverage, privacy: .public) highConfidenceRatio=\(depthStats?.highConfidenceRatio ?? -1, privacy: .public) scanCoverage=\(scanSession?.coverageRatio ?? 0, privacy: .public) coveredCells=\(scanSession?.coveredCellRatio ?? 0, privacy: .public) depthFrames=\(scanSession?.depthFrameCount ?? 0, privacy: .public) stableFrames=\(scanSession?.stableFrameCount ?? 0, privacy: .public) duration=\(scanDuration, privacy: .public) qualityLevel=\(quality.level.rawValue, privacy: .public) qualityConfidence=\(quality.confidence, privacy: .public) warningCount=\(quality.warnings.count, privacy: .public) volumeEstimatedML=\(volumeML, privacy: .public) volumeMethod=\(volumeMethod, privacy: .public) planeCoverage=\(planeCoverage, privacy: .public) volumeFrameCount=\(frameCount, privacy: .public) accumulatorKeyFrames=\(accumulatorFrameCount, privacy: .public) volumeRelativeStdDev=\(volumeRelativeStdDev, privacy: .public) depthContributedToEstimate=\(quality.depthContributedToEstimate == true, privacy: .public)")
+    }
+    #endif
 }
 
 private extension UIImage {

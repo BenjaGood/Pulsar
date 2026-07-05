@@ -515,7 +515,14 @@ final class PulsarActiveWorkoutManager: ObservableObject {
 enum PulsarStateDebugLogger {
     static func log(_ message: @autoclosure () -> String) {
         #if DEBUG
+        guard isEnabled else { return }
         print("[PulsarState] \(message())")
         #endif
     }
+
+    #if DEBUG
+    private static var isEnabled: Bool {
+        ProcessInfo.processInfo.environment["PULSAR_STATE_DEBUG_LOGS"] == "1"
+    }
+    #endif
 }

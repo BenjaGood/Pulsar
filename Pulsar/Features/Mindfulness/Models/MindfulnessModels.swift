@@ -343,6 +343,55 @@ struct PulsarMindfulnessWeekSnapshot: Equatable {
     }
 }
 
+struct PulsarMindfulnessMeditationWeekSnapshot: Equatable {
+    struct Day: Identifiable, Equatable {
+        var date: Date
+        var sessions: [PulsarMindfulnessSessionSummary]
+
+        var id: Date { date }
+        var hasSession: Bool { !sessions.isEmpty }
+        var mindfulMinutes: Double {
+            sessions.reduce(0) { $0 + ($1.duration / 60) }
+        }
+    }
+
+    var days: [Day]
+    var meditatedDayCount: Int
+    var totalMindfulMinutes: Double
+
+    init(
+        sessions: [PulsarMindfulnessSessionSummary],
+        referenceDate: Date = Date(),
+        calendar: Calendar = .current
+    ) {
+        let referenceDay = calendar.startOfDay(for: referenceDate)
+        let weekday = calendar.component(.weekday, from: referenceDay)
+        let daysSinceMonday = (weekday + 5) % 7
+        let monday = calendar.date(
+            byAdding: .day,
+            value: -daysSinceMonday,
+            to: referenceDay
+        ) ?? referenceDay
+
+        let sessionsByDay = sessions.reduce(into: [Date: [PulsarMindfulnessSessionSummary]]()) { result, session in
+            let day = calendar.startOfDay(for: session.startedAt)
+            result[day, default: []].append(session)
+        }
+
+        days = (0..<7).compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: monday) else {
+                return nil
+            }
+            let day = calendar.startOfDay(for: date)
+            let daySessions = (sessionsByDay[day] ?? []).sorted { $0.startedAt > $1.startedAt }
+            return Day(date: day, sessions: daySessions)
+        }
+
+        meditatedDayCount = days.filter(\.hasSession).count
+        totalMindfulMinutes = days.reduce(0) { $0 + $1.mindfulMinutes }
+    }
+}
+
 enum PulsarMeditationCategory: String, CaseIterable, Codable, Identifiable, Hashable {
     case breathing
     case sleep
@@ -541,6 +590,7 @@ struct PulsarMindfulnessSessionSummary: Identifiable, Codable, Equatable, Hashab
     var duration: TimeInterval
     var completedCycles: Int
     var reflection: String?
+    var soundscapeTitle: String?
     var source: PulsarMindfulnessSessionSource
     var healthKitSampleID: UUID?
 
@@ -554,6 +604,7 @@ struct PulsarMindfulnessSessionSummary: Identifiable, Codable, Equatable, Hashab
         duration: TimeInterval,
         completedCycles: Int,
         reflection: String? = nil,
+        soundscapeTitle: String? = nil,
         source: PulsarMindfulnessSessionSource = .iPhone,
         healthKitSampleID: UUID? = nil
     ) {
@@ -566,6 +617,7 @@ struct PulsarMindfulnessSessionSummary: Identifiable, Codable, Equatable, Hashab
         self.duration = max(0, duration)
         self.completedCycles = max(0, completedCycles)
         self.reflection = PulsarDailyJournalEntry.trimmedSummaryText(reflection)
+        self.soundscapeTitle = PulsarDailyJournalEntry.trimmedSummaryText(soundscapeTitle)
         self.source = source
         self.healthKitSampleID = healthKitSampleID
     }

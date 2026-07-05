@@ -83,32 +83,16 @@ struct MealScannerEntryCard: View {
 
     private var scannerGlyph: some View {
         ZStack {
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.cyan.opacity(colorScheme == .dark ? 0.28 : 0.18),
-                            Color.green.opacity(colorScheme == .dark ? 0.22 : 0.16),
-                            Color.white.opacity(colorScheme == .dark ? 0.06 : 0.70)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.green.opacity(colorScheme == .dark ? 0.10 : 0.08))
 
-            Circle()
-                .stroke(.white.opacity(colorScheme == .dark ? 0.18 : 0.70), lineWidth: 1)
-
-            Image(systemName: "viewfinder")
-                .font(.system(size: 25, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.white.opacity(0.94), .cyan.opacity(0.82))
-
-            Circle()
-                .stroke(.green.opacity(isBreathing ? 0.46 : 0.16), lineWidth: 2)
-                .scaleEffect(isBreathing && !reduceMotion ? 1.13 : 0.96)
+            IsometricCubeScannerGlyph(
+                progress: isBreathing && !reduceMotion ? 1 : 0,
+                tint: .green
+            )
+            .padding(7)
         }
-        .frame(width: 58, height: 58)
+        .frame(width: 72, height: 72)
         .accessibilityHidden(true)
     }
 
@@ -123,18 +107,105 @@ struct MealScannerEntryCard: View {
         LinearGradient(
             colors: colorScheme == .dark
                 ? [
-                    Color.cyan.opacity(0.075),
-                    Color.green.opacity(0.070),
+                    Color.cyan.opacity(0.035),
+                    Color.green.opacity(0.032),
                     Color.clear
                 ]
                 : [
-                    Color.white.opacity(0.32),
-                    Color.cyan.opacity(0.10),
-                    Color.green.opacity(0.09)
+                    Color.white.opacity(0.18),
+                    Color.cyan.opacity(0.045),
+                    Color.green.opacity(0.04)
                 ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
+    }
+}
+
+private struct IsometricCubeScannerGlyph: View {
+    var progress: Double
+    var tint: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let height = proxy.size.height
+            let center = CGPoint(x: width * 0.5, y: height * 0.52)
+            let top = CGPoint(x: center.x, y: height * 0.24)
+            let left = CGPoint(x: width * 0.24, y: height * 0.40)
+            let right = CGPoint(x: width * 0.76, y: height * 0.40)
+            let bottom = CGPoint(x: center.x, y: height * 0.72)
+            let pulseOpacity = 0.18 + progress * 0.24
+
+            ZStack {
+                scannerCorner(at: .topLeading, width: width, height: height)
+                scannerCorner(at: .topTrailing, width: width, height: height)
+                scannerCorner(at: .bottomLeading, width: width, height: height)
+                scannerCorner(at: .bottomTrailing, width: width, height: height)
+
+                Path { path in
+                    path.move(to: top)
+                    path.addLine(to: right)
+                    path.addLine(to: bottom)
+                    path.addLine(to: left)
+                    path.closeSubpath()
+                }
+                .stroke(
+                    LinearGradient(colors: [tint, .cyan.opacity(0.88)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    style: StrokeStyle(lineWidth: 3, lineJoin: .round)
+                )
+
+                Path { path in
+                    path.move(to: top)
+                    path.addLine(to: center)
+                    path.addLine(to: bottom)
+                    path.move(to: left)
+                    path.addLine(to: center)
+                    path.addLine(to: right)
+                }
+                .stroke(tint.opacity(0.78), style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+
+                Path { path in
+                    path.move(to: center)
+                    path.addLine(to: CGPoint(x: center.x, y: height * 0.90))
+                }
+                .stroke(tint.opacity(pulseOpacity), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .scaleEffect(x: 1, y: 1 + progress * 0.08, anchor: .top)
+            }
+        }
+    }
+
+    private enum Corner {
+        case topLeading
+        case topTrailing
+        case bottomLeading
+        case bottomTrailing
+    }
+
+    private func scannerCorner(at corner: Corner, width: CGFloat, height: CGFloat) -> some View {
+        Path { path in
+            let inset = min(width, height) * 0.08
+            let length = min(width, height) * 0.17
+            switch corner {
+            case .topLeading:
+                path.move(to: CGPoint(x: inset, y: inset + length))
+                path.addLine(to: CGPoint(x: inset, y: inset))
+                path.addLine(to: CGPoint(x: inset + length, y: inset))
+            case .topTrailing:
+                path.move(to: CGPoint(x: width - inset - length, y: inset))
+                path.addLine(to: CGPoint(x: width - inset, y: inset))
+                path.addLine(to: CGPoint(x: width - inset, y: inset + length))
+            case .bottomLeading:
+                path.move(to: CGPoint(x: inset, y: height - inset - length))
+                path.addLine(to: CGPoint(x: inset, y: height - inset))
+                path.addLine(to: CGPoint(x: inset + length, y: height - inset))
+            case .bottomTrailing:
+                path.move(to: CGPoint(x: width - inset - length, y: height - inset))
+                path.addLine(to: CGPoint(x: width - inset, y: height - inset))
+                path.addLine(to: CGPoint(x: width - inset, y: height - inset - length))
+            }
+        }
+        .stroke(.white.opacity(0.82), style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
     }
 }
 

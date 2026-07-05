@@ -5,6 +5,7 @@
 
 import Combine
 import Foundation
+import SwiftUI
 import UIKit
 
 protocol PulsarNutritionProviding {
@@ -18,7 +19,7 @@ struct PulsarNutritionPersistedState: Codable, Equatable {
     var version: Int
     var state: PulsarNutritionState
 
-    static let currentVersion = 2
+    static let currentVersion = 3
     static let empty = PulsarNutritionPersistedState(version: currentVersion, state: .empty)
 }
 
@@ -69,11 +70,16 @@ struct PulsarNutritionLocalProvider: PulsarNutritionProviding {
 
     func loadState() -> PulsarNutritionState {
         let persisted = fileStore.load()
-        return normalized(persisted.state)
+        return persisted.state.normalizedForNutritionPersistence()
     }
 
     func saveState(_ state: PulsarNutritionState) throws {
-        try fileStore.save(PulsarNutritionPersistedState(version: PulsarNutritionPersistedState.currentVersion, state: normalized(state)))
+        try fileStore.save(
+            PulsarNutritionPersistedState(
+                version: PulsarNutritionPersistedState.currentVersion,
+                state: state.normalizedForNutritionPersistence()
+            )
+        )
     }
 
     func recoveryContext(for date: Date) -> PulsarNutritionRecoveryContext {
@@ -85,51 +91,87 @@ struct PulsarNutritionLocalProvider: PulsarNutritionProviding {
         PulsarNutritionFixtures.searchFoods
     }
 
-    private func normalized(_ state: PulsarNutritionState) -> PulsarNutritionState {
+}
+
+extension PulsarNutritionState {
+    func normalizedForNutritionPersistence() -> PulsarNutritionState {
+        let seededCategories = mealCategories.isEmpty ? PulsarMealCategory.defaultCategories : mealCategories
+
+        var categoriesByID: [UUID: PulsarMealCategory] = [:]
+        for category in seededCategories {
+            let trimmedName = category.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            var normalizedCategory = category
+            normalizedCategory.name = trimmedName.isEmpty ? category.baseMoment.title : trimmedName
+            normalizedCategory.symbolName = normalizedCategory.symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if normalizedCategory.symbolName.isEmpty {
+                normalizedCategory.symbolName = category.baseMoment.symbolName
+            }
+            categoriesByID[normalizedCategory.id] = normalizedCategory
+        }
+        let sortedCategories = categoriesByID.values.sorted {
+            if $0.sortOrder == $1.sortOrder {
+                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+            return $0.sortOrder < $1.sortOrder
+        }
+        let categoriesByMoment = Dictionary(grouping: sortedCategories, by: \.baseMoment)
+
         var entriesByID: [UUID: PulsarNutritionEntry] = [:]
-        for entry in state.entries {
-            entriesByID[entry.id] = entry
+        for entry in entries {
+            var normalizedEntry = entry
+            if let categoryID = normalizedEntry.categoryID,
+               let category = categoriesByID[categoryID] {
+                normalizedEntry.mealMoment = category.baseMoment
+            } else {
+                let category = categoriesByMoment[normalizedEntry.mealMoment]?.first
+                    ?? sortedCategories.first
+                    ?? PulsarMealCategory.defaultCategory(for: normalizedEntry.mealMoment)
+                normalizedEntry.categoryID = category.id
+                normalizedEntry.mealMoment = category.baseMoment
+            }
+            entriesByID[normalizedEntry.id] = normalizedEntry
         }
 
         var hydrationByID: [UUID: PulsarHydrationEntry] = [:]
-        for entry in state.hydrationEntries {
+        for entry in hydrationEntries {
             hydrationByID[entry.id] = entry
         }
 
         var foodsByID: [UUID: PulsarFoodItem] = [:]
-        for food in state.privateFoods {
+        for food in privateFoods {
             foodsByID[food.id] = food
         }
 
         var templatesByID: [UUID: PulsarMealTemplate] = [:]
-        for template in state.mealTemplates {
+        for template in mealTemplates {
             templatesByID[template.id] = template
         }
 
         var recipesByID: [UUID: PulsarRecipe] = [:]
-        for recipe in state.recipes {
+        for recipe in recipes {
             recipesByID[recipe.id] = recipe
         }
 
         var bodyByID: [UUID: PulsarBodyCheckIn] = [:]
-        for checkIn in state.bodyCheckIns {
+        for checkIn in bodyCheckIns {
             bodyByID[checkIn.id] = checkIn
         }
 
         var targetsByID: [UUID: PulsarNutritionTargetSnapshot] = [:]
-        for target in state.targetSnapshots {
+        for target in targetSnapshots {
             targetsByID[target.id] = target
         }
 
         return PulsarNutritionState(
             entries: entriesByID.values.sorted { $0.loggedAt > $1.loggedAt },
+            mealCategories: sortedCategories,
             hydrationEntries: hydrationByID.values.sorted { $0.loggedAt > $1.loggedAt },
             privateFoods: foodsByID.values.sorted { $0.updatedAt > $1.updatedAt },
             mealTemplates: templatesByID.values.sorted { $0.updatedAt > $1.updatedAt },
             recipes: recipesByID.values.sorted { $0.updatedAt > $1.updatedAt },
             bodyCheckIns: bodyByID.values.sorted { $0.date > $1.date },
             targetSnapshots: targetsByID.values.sorted { $0.date > $1.date },
-            eatingWindow: state.eatingWindow
+            eatingWindow: eatingWindow
         )
     }
 }
@@ -153,7 +195,7 @@ final class PulsarNutritionStore: ObservableObject {
         self.provider = provider
         self.calendar = calendar
         self.nowProvider = nowProvider
-        let loaded = provider.loadState()
+        let loaded = provider.loadState().normalizedForNutritionPersistence()
         let target = Self.targetSnapshot(
             for: nowProvider(),
             context: provider.recoveryContext(for: nowProvider()),
@@ -163,7 +205,7 @@ final class PulsarNutritionStore: ObservableObject {
             target,
             in: loaded,
             calendar: calendar
-        )
+        ).normalizedForNutritionPersistence()
         self.state = stateWithTarget
         self.dashboard = Self.dashboard(
             from: stateWithTarget,
@@ -194,6 +236,20 @@ final class PulsarNutritionStore: ObservableObject {
         Array(provider.searchableFoods().prefix(limit))
     }
 
+    func mealCategory(id: UUID?) -> PulsarMealCategory? {
+        guard let id else { return nil }
+        return state.mealCategories.first { $0.id == id }
+    }
+
+    func defaultMealCategory(for moment: PulsarNutritionMealMoment) -> PulsarMealCategory {
+        state.mealCategories.first { $0.baseMoment == moment }
+            ?? PulsarMealCategory.defaultCategory(for: moment)
+    }
+
+    func resolvedMealCategory(id: UUID?, fallback moment: PulsarNutritionMealMoment) -> PulsarMealCategory {
+        mealCategory(id: id) ?? defaultMealCategory(for: moment)
+    }
+
     func recentFoods(limit: Int = 8) -> [PulsarFoodItem] {
         Array(
             state.entries
@@ -209,15 +265,18 @@ final class PulsarNutritionStore: ObservableObject {
         _ food: PulsarFoodItem,
         servingMultiplier: Double,
         mealMoment: PulsarNutritionMealMoment,
+        categoryID: UUID? = nil,
         note: String? = nil,
         confidence: Double = 1,
         source: PulsarNutritionSource? = nil,
         loggedAt: Date = Date()
     ) -> PulsarNutritionEntry {
+        let category = resolvedMealCategory(id: categoryID, fallback: mealMoment)
         let entry = PulsarNutritionEntry(
             food: food,
             servingMultiplier: servingMultiplier,
-            mealMoment: mealMoment,
+            mealMoment: category.baseMoment,
+            categoryID: category.id,
             loggedAt: loggedAt,
             note: note,
             confidence: confidence,
@@ -240,6 +299,7 @@ final class PulsarNutritionStore: ObservableObject {
         servingAmount: Double,
         servingUnit: String = "serving",
         mealCategory: PulsarNutritionMealCategory,
+        categoryID: UUID? = nil,
         timeLogged: Date? = nil,
         note: String? = nil,
         source: PulsarNutritionSource = .userEntered,
@@ -248,6 +308,7 @@ final class PulsarNutritionStore: ObservableObject {
     ) -> PulsarNutritionEntry? {
         let trimmedName = foodName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return nil }
+        let category = resolvedMealCategory(id: categoryID, fallback: mealCategory)
         let entry = PulsarNutritionEntry(
             foodName: trimmedName,
             calories: calories,
@@ -256,7 +317,8 @@ final class PulsarNutritionStore: ObservableObject {
             fats: fats,
             servingAmount: servingAmount,
             servingUnit: servingUnit,
-            mealCategory: mealCategory,
+            mealCategory: category.baseMoment,
+            categoryID: category.id,
             timeLogged: timeLogged ?? nowProvider(),
             note: note,
             source: source,
@@ -271,9 +333,17 @@ final class PulsarNutritionStore: ObservableObject {
     }
 
     func updateEntry(_ entry: PulsarNutritionEntry) {
+        var syncedEntry = entry
+        if let category = mealCategory(id: syncedEntry.categoryID) {
+            syncedEntry.mealMoment = category.baseMoment
+        } else {
+            let category = defaultMealCategory(for: syncedEntry.mealMoment)
+            syncedEntry.categoryID = category.id
+            syncedEntry.mealMoment = category.baseMoment
+        }
         var next = state
-        next.entries.removeAll { $0.id == entry.id }
-        next.entries.insert(entry, at: 0)
+        next.entries.removeAll { $0.id == syncedEntry.id }
+        next.entries.insert(syncedEntry, at: 0)
         updateState(next)
         haptic(.light)
     }
@@ -289,6 +359,7 @@ final class PulsarNutritionStore: ObservableObject {
         servingAmount: Double? = nil,
         servingUnit: String? = nil,
         mealCategory: PulsarNutritionMealCategory? = nil,
+        categoryID: UUID? = nil,
         timeLogged: Date? = nil,
         note: String? = nil,
         source: PulsarNutritionSource? = nil,
@@ -327,7 +398,13 @@ final class PulsarNutritionStore: ObservableObject {
             entry.food.nutritionPerServing.fats = max(0, fats) / divisor
         }
         if let mealCategory {
-            entry.mealCategory = mealCategory
+            let category = resolvedMealCategory(id: categoryID, fallback: mealCategory)
+            entry.mealCategory = category.baseMoment
+            entry.categoryID = category.id
+        } else if let categoryID {
+            let category = resolvedMealCategory(id: categoryID, fallback: entry.mealMoment)
+            entry.mealCategory = category.baseMoment
+            entry.categoryID = category.id
         }
         if let timeLogged {
             entry.timeLogged = timeLogged
@@ -364,10 +441,15 @@ final class PulsarNutritionStore: ObservableObject {
 
     @discardableResult
     func duplicateEntry(_ entry: PulsarNutritionEntry, mealMoment: PulsarNutritionMealMoment? = nil) -> PulsarNutritionEntry {
+        let resolvedMoment = mealMoment ?? entry.mealMoment
+        let category = mealMoment == nil
+            ? resolvedMealCategory(id: entry.categoryID, fallback: resolvedMoment)
+            : defaultMealCategory(for: resolvedMoment)
         let duplicate = PulsarNutritionEntry(
             food: entry.food,
             servingMultiplier: entry.servingMultiplier,
-            mealMoment: mealMoment ?? entry.mealMoment,
+            mealMoment: category.baseMoment,
+            categoryID: category.id,
             loggedAt: nowProvider(),
             note: entry.note,
             confidence: entry.confidence,
@@ -382,7 +464,17 @@ final class PulsarNutritionStore: ObservableObject {
 
     func moveEntry(_ entry: PulsarNutritionEntry, to mealMoment: PulsarNutritionMealMoment) {
         var moved = entry
-        moved.mealMoment = mealMoment
+        let category = defaultMealCategory(for: mealMoment)
+        moved.mealMoment = category.baseMoment
+        moved.categoryID = category.id
+        moved.loggedAt = nowProvider()
+        updateEntry(moved)
+    }
+
+    func moveEntry(_ entry: PulsarNutritionEntry, to category: PulsarMealCategory) {
+        var moved = entry
+        moved.mealMoment = category.baseMoment
+        moved.categoryID = category.id
         moved.loggedAt = nowProvider()
         updateEntry(moved)
     }
@@ -395,12 +487,14 @@ final class PulsarNutritionStore: ObservableObject {
     func quickAddFood(
         _ food: PulsarFoodItem,
         mealMoment: PulsarNutritionMealMoment,
+        categoryID: UUID? = nil,
         loggedAt: Date? = nil
     ) -> PulsarNutritionEntry {
         logFood(
             food,
             servingMultiplier: 1,
             mealMoment: mealMoment,
+            categoryID: categoryID,
             confidence: food.source == .quickEstimate ? 0.72 : 1,
             source: food.source,
             loggedAt: loggedAt ?? nowProvider()
@@ -478,10 +572,12 @@ final class PulsarNutritionStore: ObservableObject {
         let resolvedMoment = moment ?? template.defaultMoment
         var next = state
         let entries = template.items.map {
-            PulsarNutritionEntry(
+            let category = defaultMealCategory(for: resolvedMoment)
+            return PulsarNutritionEntry(
                 food: $0.food,
                 servingMultiplier: $0.servingMultiplier,
-                mealMoment: resolvedMoment,
+                mealMoment: category.baseMoment,
+                categoryID: category.id,
                 loggedAt: nowProvider(),
                 confidence: 1,
                 source: .mealTemplate
@@ -552,18 +648,116 @@ final class PulsarNutritionStore: ObservableObject {
             .sorted { $0.loggedAt < $1.loggedAt }
     }
 
+    func entries(on date: Date = Date(), inCategory categoryID: UUID?) -> [PulsarNutritionEntry] {
+        guard let categoryID, let category = mealCategory(id: categoryID) else {
+            return entries(on: date)
+        }
+        return state.entries
+            .filter { calendar.isDate($0.loggedAt, inSameDayAs: date) }
+            .filter { entry in
+                entry.categoryID == categoryID || (entry.categoryID == nil && entry.mealMoment == category.baseMoment)
+            }
+            .sorted { $0.loggedAt < $1.loggedAt }
+    }
+
     func entriesForToday(in moment: PulsarNutritionMealMoment? = nil) -> [PulsarNutritionEntry] {
         entries(on: nowProvider(), in: moment)
+    }
+
+    func entriesForToday(inCategory categoryID: UUID?) -> [PulsarNutritionEntry] {
+        entries(on: nowProvider(), inCategory: categoryID)
     }
 
     func macroTotals(on date: Date = Date(), in mealCategory: PulsarNutritionMealCategory? = nil) -> PulsarNutritionFacts {
         entries(on: date, in: mealCategory).reduce(.zero) { $0 + $1.nutrition }
     }
 
+    func categoryTotals(_ category: PulsarMealCategory, on date: Date = Date()) -> PulsarNutritionFacts {
+        entries(on: date, inCategory: category.id).reduce(.zero) { $0 + $1.nutrition }
+    }
+
+    @discardableResult
+    func addMealCategory(
+        name: String,
+        symbolName: String,
+        palette: PulsarMealCategoryPalette,
+        baseMoment: PulsarNutritionMealMoment
+    ) -> PulsarMealCategory? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let nextOrder = (state.mealCategories.map(\.sortOrder).max() ?? -1) + 1
+        let category = PulsarMealCategory(
+            name: trimmed,
+            symbolName: symbolName,
+            palette: palette,
+            baseMoment: baseMoment,
+            sortOrder: nextOrder
+        )
+        var next = state
+        next.mealCategories.append(category)
+        updateState(next)
+        haptic(.soft)
+        return category
+    }
+
+    func updateMealCategory(_ category: PulsarMealCategory) {
+        var next = state
+        guard let index = next.mealCategories.firstIndex(where: { $0.id == category.id }) else { return }
+        let trimmedName = category.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+        var updated = category
+        updated.name = trimmedName
+        next.mealCategories[index] = updated
+        next.entries = next.entries.map { entry in
+            guard entry.categoryID == updated.id else { return entry }
+            var synced = entry
+            synced.mealMoment = updated.baseMoment
+            return synced
+        }
+        updateState(next)
+        haptic(.light)
+    }
+
+    func moveMealCategory(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        var categories = state.mealCategories.sorted {
+            if $0.sortOrder == $1.sortOrder {
+                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+            return $0.sortOrder < $1.sortOrder
+        }
+        categories.move(fromOffsets: offsets, toOffset: destination)
+        for index in categories.indices {
+            categories[index].sortOrder = index
+        }
+        var next = state
+        next.mealCategories = categories
+        updateState(next)
+        haptic(.light)
+    }
+
+    @discardableResult
+    func deleteMealCategory(_ category: PulsarMealCategory, reassignTo targetCategoryID: UUID?) -> Bool {
+        guard state.mealCategories.count > 1 else { return false }
+        let entriesInCategory = state.entries.filter { $0.categoryID == category.id }
+        guard let targetCategoryID else {
+            guard entriesInCategory.isEmpty else { return false }
+            return removeMealCategory(category, deletingEntries: false, reassignmentCategory: nil)
+        }
+        guard let targetCategory = mealCategory(id: targetCategoryID), targetCategory.id != category.id else { return false }
+        return removeMealCategory(category, deletingEntries: false, reassignmentCategory: targetCategory)
+    }
+
+    @discardableResult
+    func deleteMealCategoryAndEntries(_ category: PulsarMealCategory) -> Bool {
+        guard state.mealCategories.count > 1 else { return false }
+        return removeMealCategory(category, deletingEntries: true, reassignmentCategory: nil)
+    }
+
     private func updateState(_ candidate: PulsarNutritionState, persist: Bool = true) {
         let context = provider.recoveryContext(for: nowProvider())
         let target = Self.targetSnapshot(for: nowProvider(), context: context, calendar: calendar)
         let next = Self.stateByEnsuringTarget(target, in: candidate, calendar: calendar)
+            .normalizedForNutritionPersistence()
         state = sorted(next)
         dashboard = Self.dashboard(from: state, date: nowProvider(), context: context, calendar: calendar)
         guard persist else { return }
@@ -578,6 +772,12 @@ final class PulsarNutritionStore: ObservableObject {
     private func sorted(_ state: PulsarNutritionState) -> PulsarNutritionState {
         PulsarNutritionState(
             entries: state.entries.sorted { $0.loggedAt > $1.loggedAt },
+            mealCategories: state.mealCategories.sorted {
+                if $0.sortOrder == $1.sortOrder {
+                    return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                }
+                return $0.sortOrder < $1.sortOrder
+            },
             hydrationEntries: state.hydrationEntries.sorted { $0.loggedAt > $1.loggedAt },
             privateFoods: state.privateFoods.sorted { $0.updatedAt > $1.updatedAt },
             mealTemplates: state.mealTemplates.sorted { $0.updatedAt > $1.updatedAt },
@@ -586,6 +786,33 @@ final class PulsarNutritionStore: ObservableObject {
             targetSnapshots: state.targetSnapshots.sorted { $0.date > $1.date },
             eatingWindow: state.eatingWindow
         )
+    }
+
+    private func removeMealCategory(
+        _ category: PulsarMealCategory,
+        deletingEntries: Bool,
+        reassignmentCategory: PulsarMealCategory?
+    ) -> Bool {
+        var next = state
+        next.mealCategories.removeAll { $0.id == category.id }
+        guard !next.mealCategories.isEmpty else { return false }
+        if deletingEntries {
+            next.entries.removeAll { $0.categoryID == category.id }
+        } else if let reassignmentCategory {
+            next.entries = next.entries.map { entry in
+                guard entry.categoryID == category.id else { return entry }
+                var moved = entry
+                moved.categoryID = reassignmentCategory.id
+                moved.mealMoment = reassignmentCategory.baseMoment
+                return moved
+            }
+        }
+        for index in next.mealCategories.indices {
+            next.mealCategories[index].sortOrder = index
+        }
+        updateState(next)
+        haptic(.light)
+        return true
     }
 
     private static func dashboard(

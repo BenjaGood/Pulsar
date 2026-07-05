@@ -15,7 +15,7 @@ struct MindfulnessStreakCelebration: Identifiable, Equatable {
     }
 
     var title: String {
-        "\(dayCount) day streak"
+        dayCount == 1 ? "1 day streak" : "\(dayCount)-day streak"
     }
 
     var message: String {
@@ -23,53 +23,45 @@ struct MindfulnessStreakCelebration: Identifiable, Equatable {
     }
 }
 
-struct MindfulnessStreakToast: View {
-    var celebration: MindfulnessStreakCelebration
+struct MindfulnessStreakStatusCapsule: View {
+    var dayCount: Int
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isAnimating = false
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
-        HStack(spacing: 12) {
-            flame
+        HStack(spacing: 6) {
+            MindfulnessFlameMark(size: 24, isActive: false)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(celebration.title)
-                    .font(.headline)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Logged")
+                    .pulsarTextStyle(.captionEmphasis)
                     .foregroundStyle(.white)
 
-                Text(celebration.message)
-                    .pulsarTextStyle(.caption)
-                    .foregroundStyle(MindfulnessVisualStyle.secondaryText)
+                Text(dayText)
+                    .pulsarTextStyle(.overline)
+                    .monospacedDigit()
+                    .foregroundStyle(MindfulnessVisualStyle.neonFlame)
             }
-
-            Spacer(minLength: 8)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(maxWidth: 360)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .frame(minHeight: 36)
+        .fixedSize(horizontal: true, vertical: false)
         .background {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            Capsule()
                 .fill(
-                    LinearGradient(
-                        colors: [
-                            MindfulnessVisualStyle.softGold.opacity(0.14),
-                            MindfulnessVisualStyle.calmBlue.opacity(0.09),
-                            Color(red: 0.03, green: 0.08, blue: 0.14).opacity(0.40)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+                    Color(red: 0.03, green: 0.08, blue: 0.14)
+                        .opacity(reduceTransparency ? 0.82 : 0.025)
                 )
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            Capsule()
                 .strokeBorder(
                     LinearGradient(
                         colors: [
-                            .white.opacity(0.34),
-                            MindfulnessVisualStyle.softGold.opacity(0.30),
-                            MindfulnessVisualStyle.calmBlue.opacity(0.14)
+                            .white.opacity(0.32),
+                            MindfulnessVisualStyle.neonFlame.opacity(0.72),
+                            .white.opacity(0.08)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -77,68 +69,191 @@ struct MindfulnessStreakToast: View {
                     lineWidth: 0.9
                 )
         }
-        .shadow(color: .black.opacity(0.28), radius: 16, y: 9)
-        .shadow(color: MindfulnessVisualStyle.softGold.opacity(0.18), radius: 12)
+        .shadow(color: MindfulnessVisualStyle.neonFlame.opacity(0.18), radius: 10)
         .pulsarLiquidGlass(
-            cornerRadius: 22,
-            tint: MindfulnessVisualStyle.softGold.opacity(0.14),
-            isClear: false
+            cornerRadius: 20,
+            tint: MindfulnessVisualStyle.neonFlame.opacity(0.10),
+            isClear: true
         )
-        .onAppear(perform: startAnimation)
+        .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(celebration.title). \(celebration.message)")
-        .accessibilityIdentifier("mindfulness.streakCelebration")
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityIdentifier("mindfulness.pendingStreak")
     }
 
-    private var flame: some View {
-        ZStack {
-            ForEach(0..<3, id: \.self) { index in
-                Circle()
-                    .fill(MindfulnessVisualStyle.softGold.opacity(0.82))
-                    .frame(width: 3, height: 3)
-                    .offset(
-                        x: CGFloat(index - 1) * 8 + (isAnimating ? CGFloat(index - 1) * 2 : 0),
-                        y: isAnimating ? -24 - CGFloat(index * 3) : -10
-                    )
-                    .opacity(reduceMotion ? 0 : (isAnimating ? 0.05 : 0.72))
-            }
+    private var dayText: String {
+        let clampedDayCount = max(0, dayCount)
+        return clampedDayCount == 1 ? "1 day" : "\(clampedDayCount) days"
+    }
 
-            Circle()
-                .fill(MindfulnessVisualStyle.softGold.opacity(0.13))
-                .frame(width: 44, height: 44)
+    private var accessibilityLabel: String {
+        if dayCount <= 0 {
+            return "No active streak. Today is not logged yet."
+        }
+        return "Current streak: \(dayText). Today is not logged yet."
+    }
+}
 
-            Image(systemName: "flame.fill")
-                .font(.title2.weight(.semibold))
+struct MindfulnessLoggedStreakSummary: View {
+    var dayCount: Int
+    var isCelebrating: Bool
+
+    var body: some View {
+        VStack(spacing: 7) {
+            MindfulnessFlameMark(
+                size: 84,
+                isActive: true,
+                isCelebrating: isCelebrating
+            )
+
+            Text(dayText)
+                .font(.title2.weight(.bold))
+                .monospacedDigit()
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [Color.yellow, MindfulnessVisualStyle.softGold, Color.orange],
+                        colors: [Color.yellow, MindfulnessVisualStyle.neonFlame],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            Text("Mood logged today")
+                .pulsarTextStyle(.captionEmphasis)
+                .foregroundStyle(MindfulnessVisualStyle.secondaryText)
+        }
+        .frame(maxWidth: .infinity, minHeight: 178)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Mood logged today. Current streak: \(dayText).")
+        .accessibilityIdentifier("mindfulness.loggedStreak")
+    }
+
+    private var dayText: String {
+        let clampedDayCount = max(1, dayCount)
+        return clampedDayCount == 1 ? "1 day" : "\(clampedDayCount) days"
+    }
+}
+
+private struct MindfulnessFlameMark: View {
+    var size: CGFloat
+    var isActive: Bool
+    var isCelebrating = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isAnimating = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            MindfulnessVisualStyle.neonFlame.opacity(0.24),
+                            MindfulnessVisualStyle.neonFlame.opacity(0.08),
+                            .clear
+                        ],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: size * 0.54
+                    )
+                )
+                .scaleEffect(reduceMotion ? 1 : (isAnimating ? 1.10 : 0.92))
+                .opacity(reduceMotion ? 0.95 : (isAnimating ? 1 : 0.70))
+
+            Circle()
+                .fill(MindfulnessVisualStyle.neonFlame.opacity(isCelebrating ? 0.18 : 0.12))
+                .blur(radius: size * 0.11)
+                .scaleEffect(reduceMotion ? 1 : (isAnimating ? 0.72 : 0.96))
+                .offset(y: size * 0.18)
+
+            Image(systemName: "flame.fill")
+                .font(.system(size: size * 0.48, weight: .bold))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color.yellow, MindfulnessVisualStyle.neonFlame, Color.orange],
                         startPoint: .top,
                         endPoint: .bottom
                     )
                 )
-                .scaleEffect(reduceMotion ? 1 : (isAnimating ? 1.08 : 0.94))
-                .rotationEffect(.degrees(reduceMotion ? 0 : (isAnimating ? 2 : -2)))
-                .shadow(color: Color.orange.opacity(0.62), radius: 8)
+                .rotationEffect(.degrees(reduceMotion ? 0 : (isAnimating ? rotationAmount : -rotationAmount)))
+                .scaleEffect(x: reduceMotion ? 1 : (isAnimating ? 0.92 : 1.04), y: reduceMotion ? 1 : (isAnimating ? 1.08 : 0.96))
+                .offset(y: reduceMotion ? 0 : (isAnimating ? -size * 0.015 : size * 0.012))
+                .shadow(
+                    color: MindfulnessVisualStyle.neonFlame.opacity(0.90),
+                    radius: size * (isCelebrating ? 0.16 : 0.12)
+                )
+
+            Image(systemName: "flame.fill")
+                .font(.system(size: size * 0.25, weight: .heavy))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.92), Color.yellow.opacity(0.88), MindfulnessVisualStyle.neonFlame.opacity(0.40)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .scaleEffect(reduceMotion ? 1 : (isAnimating ? 1.10 : 0.78))
+                .rotationEffect(.degrees(reduceMotion ? 0 : (isAnimating ? -4 : 5)))
+                .offset(x: reduceMotion ? 0 : (isAnimating ? -size * 0.015 : size * 0.018), y: reduceMotion ? size * 0.055 : (isAnimating ? size * 0.02 : size * 0.075))
+                .opacity(isActive ? (reduceMotion ? 0.82 : (isAnimating ? 0.92 : 0.62)) : 0.58)
+
+            if isActive {
+                Circle()
+                    .fill(Color.yellow.opacity(reduceMotion ? 0.68 : (isAnimating ? 0.75 : 0.22)))
+                    .frame(width: size * 0.055, height: size * 0.055)
+                    .blur(radius: size * 0.01)
+                    .offset(x: size * 0.22, y: reduceMotion ? -size * 0.15 : (isAnimating ? -size * 0.29 : -size * 0.08))
+                    .scaleEffect(reduceMotion ? 1 : (isAnimating ? 0.62 : 1.18))
+            }
         }
-        .frame(width: 48, height: 48)
+        .frame(width: size, height: size)
+        .scaleEffect(reduceMotion ? 1 : (isAnimating ? expandedScale : contractedScale))
         .accessibilityHidden(true)
+        .onAppear {
+            updateAnimation(isActive: isActive)
+        }
+        .onChange(of: isActive) { _, newValue in
+            updateAnimation(isActive: newValue)
+        }
+        .onChange(of: reduceMotion) { _, _ in
+            updateAnimation(isActive: isActive)
+        }
     }
 
-    private func startAnimation() {
-        guard !reduceMotion else { return }
-        withAnimation(.easeInOut(duration: 0.72).repeatForever(autoreverses: true)) {
+    private var rotationAmount: Double {
+        isCelebrating ? 3.2 : 2
+    }
+
+    private var expandedScale: CGFloat {
+        isCelebrating ? 1.10 : 1.06
+    }
+
+    private var contractedScale: CGFloat {
+        isCelebrating ? 0.93 : 0.96
+    }
+
+    private func updateAnimation(isActive: Bool) {
+        guard !reduceMotion, isActive else {
+            withAnimation(.easeOut(duration: 0.16)) {
+                isAnimating = false
+            }
+            return
+        }
+
+        isAnimating = false
+        withAnimation(.easeInOut(duration: 0.66).repeatForever(autoreverses: true)) {
             isAnimating = true
         }
     }
 }
 
-#Preview("Mindfulness Streak") {
+#Preview("Mindfulness Streak States") {
     ZStack {
         MindfulnessScenicBackground()
 
-        MindfulnessStreakToast(
-            celebration: MindfulnessStreakCelebration(dayCount: 3)
-        )
+        VStack(spacing: 30) {
+            MindfulnessStreakStatusCapsule(dayCount: 3)
+            MindfulnessLoggedStreakSummary(dayCount: 4, isCelebrating: true)
+        }
         .padding(22)
     }
     .preferredColorScheme(.dark)

@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 enum PulsarNutritionMealMoment: String, CaseIterable, Codable, Identifiable, Hashable {
     case breakfast
@@ -67,6 +68,127 @@ enum PulsarNutritionMealMoment: String, CaseIterable, Codable, Identifiable, Has
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(rawValue)
+    }
+}
+
+enum PulsarMealCategoryPalette: String, Codable, CaseIterable, Identifiable, Hashable {
+    case orange
+    case yellow
+    case indigo
+    case mint
+    case blue
+    case teal
+    case purple
+    case pink
+    case green
+    case gray
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .orange: "Orange"
+        case .yellow: "Yellow"
+        case .indigo: "Indigo"
+        case .mint: "Mint"
+        case .blue: "Blue"
+        case .teal: "Teal"
+        case .purple: "Purple"
+        case .pink: "Pink"
+        case .green: "Green"
+        case .gray: "Gray"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .orange: .orange
+        case .yellow: .yellow
+        case .indigo: .indigo
+        case .mint: .mint
+        case .blue: .blue
+        case .teal: .teal
+        case .purple: .purple
+        case .pink: .pink
+        case .green: .green
+        case .gray: .gray
+        }
+    }
+}
+
+struct PulsarMealCategory: Identifiable, Codable, Equatable, Hashable {
+    var id: UUID
+    var name: String
+    var symbolName: String
+    var palette: PulsarMealCategoryPalette
+    var baseMoment: PulsarNutritionMealMoment
+    var sortOrder: Int
+    var isDefault: Bool
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        symbolName: String,
+        palette: PulsarMealCategoryPalette,
+        baseMoment: PulsarNutritionMealMoment,
+        sortOrder: Int,
+        isDefault: Bool = false
+    ) {
+        self.id = id
+        self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.symbolName = symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.palette = palette
+        self.baseMoment = baseMoment
+        self.sortOrder = sortOrder
+        self.isDefault = isDefault
+    }
+
+    static let breakfastID = UUID(uuidString: "0D8A43D3-56D0-4B1E-9F8D-1AF0189C6F01")!
+    static let lunchID = UUID(uuidString: "7A455523-886B-4FE7-9767-AD785D897072")!
+    static let dinnerID = UUID(uuidString: "9EA47D2E-F12C-48CB-B722-970093D0578B")!
+    static let snacksID = UUID(uuidString: "6EF4F338-5BB8-47E5-972C-7777F83DAD91")!
+
+    static let defaultCategories: [PulsarMealCategory] = [
+        PulsarMealCategory(
+            id: breakfastID,
+            name: "Breakfast",
+            symbolName: "sunrise.fill",
+            palette: .orange,
+            baseMoment: .breakfast,
+            sortOrder: 0,
+            isDefault: true
+        ),
+        PulsarMealCategory(
+            id: lunchID,
+            name: "Lunch",
+            symbolName: "sun.max.fill",
+            palette: .yellow,
+            baseMoment: .lunch,
+            sortOrder: 1,
+            isDefault: true
+        ),
+        PulsarMealCategory(
+            id: dinnerID,
+            name: "Dinner",
+            symbolName: "moon.stars.fill",
+            palette: .indigo,
+            baseMoment: .dinner,
+            sortOrder: 2,
+            isDefault: true
+        ),
+        PulsarMealCategory(
+            id: snacksID,
+            name: "Snacks / Colaciones",
+            symbolName: "leaf.fill",
+            palette: .mint,
+            baseMoment: .snacks,
+            sortOrder: 3,
+            isDefault: true
+        )
+    ]
+
+    static func defaultCategory(for moment: PulsarNutritionMealMoment) -> PulsarMealCategory {
+        defaultCategories.first { $0.baseMoment == moment } ?? defaultCategories[0]
     }
 }
 
@@ -323,6 +445,7 @@ struct PulsarNutritionEntry: Identifiable, Codable, Equatable, Hashable {
     var food: PulsarFoodItem
     var servingMultiplier: Double
     var mealMoment: PulsarNutritionMealMoment
+    var categoryID: UUID?
     var loggedAt: Date
     var note: String?
     var confidence: Double
@@ -334,6 +457,7 @@ struct PulsarNutritionEntry: Identifiable, Codable, Equatable, Hashable {
         food: PulsarFoodItem,
         servingMultiplier: Double,
         mealMoment: PulsarNutritionMealMoment,
+        categoryID: UUID? = nil,
         loggedAt: Date = Date(),
         note: String? = nil,
         confidence: Double = 1,
@@ -344,6 +468,7 @@ struct PulsarNutritionEntry: Identifiable, Codable, Equatable, Hashable {
         self.food = food
         self.servingMultiplier = max(0.05, servingMultiplier)
         self.mealMoment = mealMoment
+        self.categoryID = categoryID
         self.loggedAt = loggedAt
         self.note = note?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.confidence = min(max(confidence, 0), 1)
@@ -361,6 +486,7 @@ struct PulsarNutritionEntry: Identifiable, Codable, Equatable, Hashable {
         servingAmount: Double,
         servingUnit: String = "serving",
         mealCategory: PulsarNutritionMealCategory,
+        categoryID: UUID? = nil,
         timeLogged: Date = Date(),
         note: String? = nil,
         confidence: Double = 1,
@@ -386,6 +512,7 @@ struct PulsarNutritionEntry: Identifiable, Codable, Equatable, Hashable {
             food: food,
             servingMultiplier: 1,
             mealMoment: mealCategory,
+            categoryID: categoryID,
             loggedAt: timeLogged,
             note: note,
             confidence: confidence,
@@ -706,6 +833,7 @@ struct PulsarEatingWindow: Codable, Equatable, Hashable {
 
 struct PulsarNutritionState: Codable, Equatable {
     var entries: [PulsarNutritionEntry]
+    var mealCategories: [PulsarMealCategory]
     var hydrationEntries: [PulsarHydrationEntry]
     var privateFoods: [PulsarFoodItem]
     var mealTemplates: [PulsarMealTemplate]
@@ -716,6 +844,7 @@ struct PulsarNutritionState: Codable, Equatable {
 
     static let empty = PulsarNutritionState(
         entries: [],
+        mealCategories: [],
         hydrationEntries: [],
         privateFoods: [],
         mealTemplates: [],
@@ -724,6 +853,53 @@ struct PulsarNutritionState: Codable, Equatable {
         targetSnapshots: [],
         eatingWindow: .default
     )
+
+    init(
+        entries: [PulsarNutritionEntry],
+        mealCategories: [PulsarMealCategory] = [],
+        hydrationEntries: [PulsarHydrationEntry],
+        privateFoods: [PulsarFoodItem],
+        mealTemplates: [PulsarMealTemplate],
+        recipes: [PulsarRecipe],
+        bodyCheckIns: [PulsarBodyCheckIn],
+        targetSnapshots: [PulsarNutritionTargetSnapshot],
+        eatingWindow: PulsarEatingWindow
+    ) {
+        self.entries = entries
+        self.mealCategories = mealCategories
+        self.hydrationEntries = hydrationEntries
+        self.privateFoods = privateFoods
+        self.mealTemplates = mealTemplates
+        self.recipes = recipes
+        self.bodyCheckIns = bodyCheckIns
+        self.targetSnapshots = targetSnapshots
+        self.eatingWindow = eatingWindow
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case entries
+        case mealCategories
+        case hydrationEntries
+        case privateFoods
+        case mealTemplates
+        case recipes
+        case bodyCheckIns
+        case targetSnapshots
+        case eatingWindow
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        entries = try container.decodeIfPresent([PulsarNutritionEntry].self, forKey: .entries) ?? []
+        mealCategories = try container.decodeIfPresent([PulsarMealCategory].self, forKey: .mealCategories) ?? []
+        hydrationEntries = try container.decodeIfPresent([PulsarHydrationEntry].self, forKey: .hydrationEntries) ?? []
+        privateFoods = try container.decodeIfPresent([PulsarFoodItem].self, forKey: .privateFoods) ?? []
+        mealTemplates = try container.decodeIfPresent([PulsarMealTemplate].self, forKey: .mealTemplates) ?? []
+        recipes = try container.decodeIfPresent([PulsarRecipe].self, forKey: .recipes) ?? []
+        bodyCheckIns = try container.decodeIfPresent([PulsarBodyCheckIn].self, forKey: .bodyCheckIns) ?? []
+        targetSnapshots = try container.decodeIfPresent([PulsarNutritionTargetSnapshot].self, forKey: .targetSnapshots) ?? []
+        eatingWindow = try container.decodeIfPresent(PulsarEatingWindow.self, forKey: .eatingWindow) ?? .default
+    }
 }
 
 struct PulsarNutritionDashboard: Equatable {

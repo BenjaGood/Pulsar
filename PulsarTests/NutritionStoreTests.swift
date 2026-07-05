@@ -32,7 +32,116 @@ final class NutritionStoreTests: XCTestCase {
         XCTAssertEqual(store.dashboard.totals, .zero)
         XCTAssertTrue(store.recentFoods().isEmpty)
         XCTAssertEqual(PulsarNutritionMealMoment.allCases, [.breakfast, .lunch, .dinner, .snacks])
+        XCTAssertEqual(store.state.mealCategories.map(\.id), PulsarMealCategory.defaultCategories.map(\.id))
         XCTAssertNil(provider.savedState)
+    }
+
+    func testDefaultMealCategoriesAreSeededWithStableIDs() {
+        let now = date(year: 2026, month: 5, day: 23, hour: 9)
+        let provider = NutritionTestProvider(state: .empty)
+        let store = PulsarNutritionStore(provider: provider, calendar: calendar, nowProvider: { now })
+
+        XCTAssertEqual(store.state.mealCategories.count, 4)
+        XCTAssertEqual(store.state.mealCategories.map(\.id), PulsarMealCategory.defaultCategories.map(\.id))
+        XCTAssertEqual(store.state.mealCategories.map(\.baseMoment), [.breakfast, .lunch, .dinner, .snacks])
+        XCTAssertTrue(store.state.mealCategories.allSatisfy { $0.isDefault })
+    }
+
+    func testLegacyEntryWithNilCategoryIDMigratesToDefaultCategory() throws {
+        let now = date(year: 2026, month: 5, day: 23, hour: 12)
+        let legacyEntry = PulsarNutritionEntry(
+            foodName: "Legacy Soup",
+            calories: 320,
+            protein: 18,
+            carbs: 42,
+            fats: 8,
+            servingAmount: 1,
+            mealCategory: .lunch,
+            timeLogged: now
+        )
+        XCTAssertNil(legacyEntry.categoryID)
+
+        let state = PulsarNutritionState(
+            entries: [legacyEntry],
+            hydrationEntries: [],
+            privateFoods: [],
+            mealTemplates: [],
+            recipes: [],
+            bodyCheckIns: [],
+            targetSnapshots: [],
+            eatingWindow: .default
+        )
+        let store = PulsarNutritionStore(provider: NutritionTestProvider(state: state), calendar: calendar, nowProvider: { now })
+        let migrated = try XCTUnwrap(store.entriesForToday(in: .lunch).first)
+
+        XCTAssertEqual(migrated.categoryID, PulsarMealCategory.lunchID)
+        XCTAssertEqual(store.entriesForToday(inCategory: PulsarMealCategory.lunchID).map(\.foodName), ["Legacy Soup"])
+    }
+
+    func testMealCategoryAddUpdateAndReorderPersistSortOrder() throws {
+        let now = date(year: 2026, month: 5, day: 23, hour: 10)
+        let provider = NutritionTestProvider(state: .empty)
+        let store = PulsarNutritionStore(provider: provider, calendar: calendar, nowProvider: { now })
+
+        let category = try XCTUnwrap(store.addMealCategory(
+            name: "Post-workout",
+            symbolName: "figure.strengthtraining.traditional",
+            palette: .purple,
+            baseMoment: .snacks
+        ))
+        XCTAssertEqual(store.state.mealCategories.last?.id, category.id)
+
+        var updated = category
+        updated.name = "Recovery Shake"
+        updated.palette = .blue
+        store.updateMealCategory(updated)
+
+        let savedCategory = try XCTUnwrap(store.mealCategory(id: category.id))
+        XCTAssertEqual(savedCategory.name, "Recovery Shake")
+        XCTAssertEqual(savedCategory.palette, .blue)
+
+        let sourceIndex = try XCTUnwrap(store.state.mealCategories.firstIndex { $0.id == category.id })
+        store.moveMealCategory(fromOffsets: IndexSet(integer: sourceIndex), toOffset: 0)
+
+        XCTAssertEqual(store.state.mealCategories.first?.id, category.id)
+        XCTAssertEqual(store.state.mealCategories.map(\.sortOrder), Array(0..<store.state.mealCategories.count))
+        XCTAssertEqual(provider.savedState?.mealCategories.first?.id, category.id)
+    }
+
+    func testDeleteMealCategoryReassignsEntriesWithoutDeletingFood() throws {
+        let now = date(year: 2026, month: 5, day: 23, hour: 16)
+        let provider = NutritionTestProvider(state: .empty)
+        let store = PulsarNutritionStore(provider: provider, calendar: calendar, nowProvider: { now })
+        let source = try XCTUnwrap(store.addMealCategory(
+            name: "Colación",
+            symbolName: "leaf.fill",
+            palette: .teal,
+            baseMoment: .snacks
+        ))
+        let target = store.defaultMealCategory(for: .lunch)
+
+        let entry = try XCTUnwrap(store.logFoodEntry(
+            foodName: "Protein Bite",
+            calories: 180,
+            protein: 16,
+            carbs: 12,
+            fats: 7,
+            servingAmount: 1,
+            mealCategory: source.baseMoment,
+            categoryID: source.id,
+            timeLogged: now
+        ))
+        XCTAssertEqual(entry.categoryID, source.id)
+
+        XCTAssertFalse(store.deleteMealCategory(source, reassignTo: nil))
+        XCTAssertTrue(store.deleteMealCategory(source, reassignTo: target.id))
+
+        XCTAssertNil(store.mealCategory(id: source.id))
+        XCTAssertEqual(store.state.entries.count, 1)
+        let moved = try XCTUnwrap(store.state.entries.first)
+        XCTAssertEqual(moved.categoryID, target.id)
+        XCTAssertEqual(moved.mealMoment, target.baseMoment)
+        XCTAssertEqual(store.entriesForToday(inCategory: target.id).map(\.foodName), ["Protein Bite"])
     }
 
     func testLogsBreakfastLunchDinnerAndSnacks() throws {

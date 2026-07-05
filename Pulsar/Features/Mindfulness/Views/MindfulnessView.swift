@@ -18,6 +18,7 @@ struct MindfulnessView: View {
     @ObservedObject private var bottomChromeLayoutStore: PulsarBottomChromeLayoutStore
     @State private var activeSheet: MindfulnessSheet?
     @State private var activeRewind: PulsarDailyRewind?
+    @State private var selectedMeditationTemplate: PulsarMeditationTemplate?
     @State private var dailyDraft = PulsarDailyJournalDraft()
     @State private var displayedMonth = Date()
     @State private var selectedHistoryDate = Date()
@@ -48,6 +49,11 @@ struct MindfulnessView: View {
                     referenceDate: Date(),
                     calendar: calendar
                 )
+                let meditationSnapshot = PulsarMindfulnessMeditationWeekSnapshot(
+                    sessions: store.state.sessions,
+                    referenceDate: Date(),
+                    calendar: calendar
+                )
 
                 ZStack {
                     MindfulnessScenicBackground()
@@ -58,6 +64,9 @@ struct MindfulnessView: View {
 
                             MindfulnessMoodLoggingCard(
                                 draft: $dailyDraft,
+                                loggedEntry: store.dashboard.todayEntry,
+                                loggedStreakDays: store.dashboard.streak.currentStreak,
+                                isCelebratingStreak: streakCelebration != nil,
                                 onLog: saveDailyMood
                             )
 
@@ -70,6 +79,12 @@ struct MindfulnessView: View {
                                 average: weekSnapshot.wellnessAverage
                             )
 
+                            MindfulnessGuidedMeditationSection(
+                                snapshot: meditationSnapshot,
+                                templates: PulsarMindfulnessContentLibrary.meditationTemplates,
+                                onStart: startMeditation
+                            )
+
                             PulsarBottomChromeSpacer(layoutStore: bottomChromeLayoutStore)
                         }
                         .padding(.horizontal, 22)
@@ -80,25 +95,6 @@ struct MindfulnessView: View {
                     .scrollContentBackground(.hidden)
                     .ignoresSafeArea(edges: .bottom)
                     .premiumScrollHeaderBlur(height: 48, fadeStart: 12, fadeEnd: 48)
-
-                    if let streakCelebration {
-                        MindfulnessStreakToast(celebration: streakCelebration)
-                            .padding(.horizontal, 22)
-                            .padding(
-                                .bottom,
-                                max(bottomChromeLayoutStore.layout.scrollContentBottomMargin, 142) + 10
-                            )
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                            .transition(
-                                reduceMotion
-                                    ? .opacity
-                                    : .move(edge: .bottom)
-                                        .combined(with: .scale(scale: 0.96))
-                                        .combined(with: .opacity)
-                            )
-                            .allowsHitTesting(false)
-                            .zIndex(10)
-                    }
                 }
             }
             .navigationTitle("")
@@ -131,6 +127,13 @@ struct MindfulnessView: View {
                         syncDailyRewindReminder()
                     }
                 )
+            }
+            .fullScreenCover(item: $selectedMeditationTemplate, onDismiss: {
+                selectedMeditationTemplate = nil
+            }) { template in
+                MindfulnessSessionView(template: template) { summary in
+                    saveMeditationSession(summary)
+                }
             }
             .task {
                 refreshDailyDraft()
@@ -166,7 +169,23 @@ struct MindfulnessView: View {
         activeSheet = .moodHistory
     }
 
-    private func saveDailyMood() {
+    private func startMeditation(_ template: PulsarMeditationTemplate) {
+        guard activeRewind == nil else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        selectedMeditationTemplate = template
+    }
+
+    private func saveMeditationSession(_ summary: PulsarMindfulnessSessionSummary) {
+        store.saveSession(summary)
+        if voiceOverEnabled {
+            AccessibilityNotification.Announcement(
+                "\(summary.title) saved. \(summary.durationText) of meditation logged."
+            )
+            .post()
+        }
+    }
+
+    private func saveDailyMood() -> Bool {
         let now = Date()
         dailyDraft.date = now
         dailyDraft.kind = .dailyMood
@@ -176,9 +195,9 @@ struct MindfulnessView: View {
             playsHaptic: false
         )
         dailyDraft = PulsarDailyJournalDraft(entry: savedEntry)
-        syncDailyRewindReminder()
 
-        guard store.lastPersistenceError == nil else { return }
+        guard store.lastPersistenceError == nil else { return false }
+        syncDailyRewindReminder()
         let celebration = MindfulnessStreakCelebration(
             dayCount: max(1, store.dashboard.streak.currentStreak)
         )
@@ -191,6 +210,7 @@ struct MindfulnessView: View {
             )
             .post()
         }
+        return true
     }
 
     private func refreshDailyDraft() {

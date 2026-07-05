@@ -15,6 +15,26 @@ final class MealScannerARCaptureController {
     fileprivate var currentFrame: ARFrame?
     private let imageContext = CIContext()
 
+    // MARK: Multi-frame accumulator
+
+    var frameAccumulator = MealScanFrameAccumulator()
+    var isAccumulating = false
+
+    func startAccumulating() {
+        isAccumulating = true
+    }
+
+    func stopAccumulating() {
+        isAccumulating = false
+    }
+
+    func resetAccumulator() {
+        frameAccumulator.reset()
+        isAccumulating = false
+    }
+
+    // MARK: Capture
+
     func captureImage() -> (image: UIImage, frame: ARFrame)? {
         guard let currentFrame else { return nil }
         let pixelBuffer = currentFrame.capturedImage
@@ -385,6 +405,9 @@ struct MealScannerARView: UIViewRepresentable {
             let feedback = MealScannerLiveFrameFeedback(frame: frame)
             Task { @MainActor [weak self] in
                 self?.captureController?.currentFrame = frame
+                if self?.captureController?.isAccumulating == true {
+                    self?.captureController?.frameAccumulator.record(frame)
+                }
                 self?.onFrameUpdate(feedback)
             }
         }
