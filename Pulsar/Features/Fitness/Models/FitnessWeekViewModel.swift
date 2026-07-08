@@ -365,7 +365,7 @@ final class FitnessWeekViewModel: ObservableObject {
     private func localRunActivity(_ run: PulsarRunSummary) -> WeeklyActivity {
         let category: WeeklyActivityCategory
         switch run.workoutKind {
-        case .running: category = .running
+        case .running, .indoorRunning: category = .running
         case .walking: category = .walking
         case .hiking: category = .hiking
         case .cycling: category = .cycling

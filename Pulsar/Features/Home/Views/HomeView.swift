@@ -45,82 +45,77 @@ struct HomeView: View {
 
     private func homeContent(backgroundStyle: HomeBackgroundStyle) -> some View {
         NavigationStack {
-            GeometryReader { _ in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        HomeHeaderView(
-                            profile: viewModel.dashboard.profile,
-                            activeDevice: measurementSourceManager.activeDevice,
-                            date: viewModel.selectedDate,
-                            onTodayTapped: { isShowingCalendar = true },
-                            onProfileTapped: { isShowingProfile = true },
-                            onDeviceTapped: { isShowingMeasurementSource = true }
-                        )
+            PulsarScreenScaffold(
+                layoutStore: bottomChromeLayoutStore,
+                horizontalPadding: 16,
+                topPadding: 4,
+                spacing: 16,
+                onRefresh: {
+                    await viewModel.load()
+                },
+                onScrollOffsetChange: reportHomeScrollOffset,
+                background: {
+                    StaticTimeBackgroundView(style: backgroundStyle)
+                },
+                content: {
+                    HomeHeaderView(
+                        profile: viewModel.dashboard.profile,
+                        activeDevice: measurementSourceManager.activeDevice,
+                        date: viewModel.selectedDate,
+                        onTodayTapped: { isShowingCalendar = true },
+                        onProfileTapped: { isShowingProfile = true },
+                        onDeviceTapped: { isShowingMeasurementSource = true }
+                    )
 
-                        if !viewModel.healthKitStatus.hasPrefix("HealthKit connected") {
-                            HealthKitStatusBanner(message: viewModel.healthKitStatus)
-                        }
+                    if !viewModel.healthKitStatus.hasPrefix("HealthKit connected") {
+                        HealthKitStatusBanner(message: viewModel.healthKitStatus)
+                    }
 
-                        metricGlassCardStack
-                        stressSection
-                        sourceSummaryCards
-                        healthMonitorSection
-                        PulsarBottomChromeSpacer(layoutStore: bottomChromeLayoutStore)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 4)
-                    .padding(.bottom, 8)
+                    metricGlassCardStack
+                    stressSection
+                    sourceSummaryCards
+                    healthMonitorSection
                 }
-                .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                    max(0, geometry.contentOffset.y + geometry.contentInsets.top)
-                } action: { _, offset in
-                    reportHomeScrollOffset(offset)
+            )
+            .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $isShowingProfile) {
+                PulsarSettingsView(store: viewModel.profileStore, backgroundSettingsStore: backgroundSettings) {
+                    viewModel.refreshProfileFromStore()
+                } onHealthAuthorizationUpdated: {
+                    Task { await viewModel.load() }
                 }
-                .pulsarBottomChromeScrollContainer(layoutStore: bottomChromeLayoutStore)
-                .background(StaticTimeBackgroundView(style: backgroundStyle))
-                .scrollContentBackground(.hidden)
-                .ignoresSafeArea(edges: .bottom)
-                .toolbar(.hidden, for: .navigationBar)
-                .sheet(isPresented: $isShowingProfile) {
-                    PulsarSettingsView(store: viewModel.profileStore, backgroundSettingsStore: backgroundSettings) {
-                        viewModel.refreshProfileFromStore()
-                    } onHealthAuthorizationUpdated: {
-                        Task { await viewModel.load() }
-                    }
-                }
-                .sheet(isPresented: $isShowingCalendar) {
-                    StrainCalendarView(selectedDate: viewModel.selectedDate, records: viewModel.strainRecords) { date in
-                        Task { await viewModel.selectDate(date) }
-                    }
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-                }
-                .sheet(isPresented: $isShowingMeasurementSource) {
-                    MeasurementSourceSheet(manager: measurementSourceManager) {
-                        await viewModel.load()
-                    } onDismiss: {
-                        isShowingMeasurementSource = false
-                    }
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-                }
-                .ouraDebugReportSheet(viewModel: viewModel)
-                .refreshable { await viewModel.load() }
-                .onAppear {
-                    logHomeRenderedStateIfNeeded()
-                }
-                .onDisappear {
-                    reportHomeScrollOffset(0)
-                }
-                .onChange(of: viewModel.selectedDate) { _, _ in
-                    logHomeRenderedStateIfNeeded()
-                }
-                .onChange(of: viewModel.dashboard) { _, _ in
-                    logHomeRenderedStateIfNeeded()
-                }
-                .background(Color.clear)
-                .toolbarBackground(.hidden, for: .navigationBar)
             }
+            .sheet(isPresented: $isShowingCalendar) {
+                StrainCalendarView(selectedDate: viewModel.selectedDate, records: viewModel.strainRecords) { date in
+                    Task { await viewModel.selectDate(date) }
+                }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $isShowingMeasurementSource) {
+                MeasurementSourceSheet(manager: measurementSourceManager) {
+                    await viewModel.load()
+                } onDismiss: {
+                    isShowingMeasurementSource = false
+                }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
+            .ouraDebugReportSheet(viewModel: viewModel)
+            .onAppear {
+                logHomeRenderedStateIfNeeded()
+            }
+            .onDisappear {
+                reportHomeScrollOffset(0)
+            }
+            .onChange(of: viewModel.selectedDate) { _, _ in
+                logHomeRenderedStateIfNeeded()
+            }
+            .onChange(of: viewModel.dashboard) { _, _ in
+                logHomeRenderedStateIfNeeded()
+            }
+            .background(Color.clear)
+            .toolbarBackground(.hidden, for: .navigationBar)
         }
     }
 
@@ -502,23 +497,7 @@ private struct HomeSourceGlassCard: View {
     var body: some View {
         PremiumGlassContainer(cornerRadius: 26, tint: item.tint.opacity(0.72), isInteractive: true) {
             HStack(spacing: 8) {
-                ZStack {
-                    Circle()
-                        .fill(item.tint.opacity(0.08))
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [item.tint.opacity(0.18), .clear],
-                                center: .center,
-                                startRadius: 2,
-                                endRadius: 30
-                            )
-                        )
-                    Image(systemName: item.symbol)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(item.tint)
-                }
-                .frame(width: 40, height: 40)
+                PulsarGlassIconCircle(size: 40, tint: item.tint, systemImage: item.symbol, symbolScale: 0.42)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(item.title)

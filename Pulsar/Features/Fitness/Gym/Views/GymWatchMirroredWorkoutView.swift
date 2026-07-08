@@ -7,6 +7,7 @@ import SwiftUI
 import UIKit
 
 struct GymWatchMirroredWorkoutView: View {
+    @EnvironmentObject private var completionPresentationStore: WorkoutCompletionPresentationStore
     @ObservedObject var syncStore: PulsarWatchConnectivitySyncStore
     var onMinimize: () -> Void
     var onSummaryDone: () -> Void
@@ -363,6 +364,11 @@ struct GymWatchMirroredWorkoutView: View {
     }
 
     private func presentFinishedSummary(from state: ActiveGymWorkoutState) {
+        guard completionPresentationStore.shouldAutoPresent(sessionID: state.sessionId) else {
+            finishedSummary = nil
+            isRequestingFinish = false
+            return
+        }
         var finishedState = state
         let endedAt = state.isFinished ? state.updatedAt : Date()
         finishedState.isFinished = true

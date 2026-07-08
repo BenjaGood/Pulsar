@@ -13,6 +13,7 @@ struct PersonalizedLiveWorkoutExperienceView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: PersonalizedWorkoutSessionViewModel
     @State private var isShowingLiveWorkout = false
+    @State private var completionSummary: PulsarRunSummary?
 
     init(workout: PersonalizedWorkoutKind, profile: UserProfile) {
         self.workout = workout
@@ -27,9 +28,16 @@ struct PersonalizedLiveWorkoutExperienceView: View {
 
     var body: some View {
         ZStack {
-            if isShowingLiveWorkout {
+            if let completionSummary {
+                WorkoutCompleteView(runSummary: completionSummary) {
+                    dismiss()
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else if isShowingLiveWorkout {
                 PersonalizedLiveWorkoutScreen(viewModel: viewModel) {
                     dismiss()
+                } onCompletion: { summary in
+                    self.completionSummary = summary
                 }
                 .transition(.opacity.combined(with: .scale(scale: 1.012)))
             } else {
@@ -47,6 +55,7 @@ struct PersonalizedLiveWorkoutExperienceView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .animation(.smooth(duration: 0.36), value: isShowingLiveWorkout)
+        .animation(.smooth(duration: 0.28), value: completionSummary?.id)
         .onDisappear {
             viewModel.cancel()
         }
@@ -65,6 +74,7 @@ struct PersonalizedLiveWorkoutExperienceView: View {
 private struct PersonalizedLiveWorkoutScreen: View {
     @ObservedObject var viewModel: PersonalizedWorkoutSessionViewModel
     var onDismiss: () -> Void
+    var onCompletion: (PulsarRunSummary) -> Void
 
     @StateObject private var musicManager = PulsarNowPlayingMusicManager()
 
@@ -117,7 +127,7 @@ private struct PersonalizedLiveWorkoutScreen: View {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         Task {
             await viewModel.end()
-            onDismiss()
+            onCompletion(viewModel.completionSummary())
         }
     }
 

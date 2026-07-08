@@ -61,27 +61,7 @@ struct HealthMonitorGlassSection: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(Color.green.opacity(0.12))
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [Color.green.opacity(0.30), .clear],
-                            center: .center,
-                            startRadius: 2,
-                            endRadius: 34
-                        )
-                    )
-                Image(systemName: "heart.text.square.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.green.opacity(0.96))
-            }
-            .frame(width: 44, height: 44)
-            .overlay {
-                Circle()
-                    .stroke(appearance.headerBorderColor.opacity(0.42), lineWidth: 0.65)
-            }
+            PulsarGlassIconCircle(size: 44, tint: .green, systemImage: "heart.text.square.fill", symbolScale: 0.36)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("Health Monitor")

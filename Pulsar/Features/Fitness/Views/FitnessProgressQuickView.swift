@@ -15,56 +15,44 @@ struct DailyExerciseProgressSection: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var selectedMetric: DailyExerciseChartMetric = .weight
     @State private var selectedHistoryTarget: ExerciseProgressLookup?
+    @State private var railWidth: CGFloat = 0
 
     var body: some View {
-        FitnessGlassCard {
-            VStack(alignment: .leading, spacing: 16) {
-                transitionRule
-                header
-                dateStrip
+        VStack(alignment: .leading, spacing: 18) {
+            header
+            dateStrip
 
-                if !viewModel.dailySummaries.isEmpty {
-                    metricPicker
-                }
+            if !viewModel.dailySummaries.isEmpty {
+                metricPicker
+            }
 
-                if viewModel.isLoading && viewModel.dailySummaries.isEmpty {
-                    DailyProgressLoadingCard()
-                        .transition(.opacity)
-                } else if viewModel.dailySummaries.isEmpty {
-                    DailyProgressEmptyState(date: viewModel.selectedDate, isToday: isSelectedDateToday) {
-                        onStartWorkout()
-                    }
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                } else {
-                    dailyExerciseRail
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+            if viewModel.isLoading && viewModel.dailySummaries.isEmpty {
+                DailyProgressLoadingCard()
+                    .transition(.opacity)
+            } else if viewModel.dailySummaries.isEmpty {
+                DailyProgressEmptyState(date: viewModel.selectedDate, isToday: isSelectedDateToday) {
+                    onStartWorkout()
                 }
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else {
+                dailyExerciseRail
+                    .transition(.opacity)
             }
         }
+        .padding(16)
+        .padding(.bottom, 14)
+        .modifier(
+            FitnessGlassSurfaceModifier(
+                cornerRadius: 32,
+                tint: Color(red: 0.72, green: 0.82, blue: 0.92),
+                borderOpacity: 0.94
+            )
+        )
         .animation(.spring(response: 0.42, dampingFraction: 0.86), value: viewModel.selectedDate)
         .animation(.spring(response: 0.42, dampingFraction: 0.86), value: viewModel.dailySummaries.count)
         .sheet(item: $selectedHistoryTarget) { target in
             ExerciseProgressHistorySheet(target: target, displayUnit: displayUnit)
         }
-    }
-
-    private var transitionRule: some View {
-        Capsule(style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color.green.opacity(colorScheme == .dark ? 0.45 : 0.32),
-                        Color(red: 0.46, green: 0.76, blue: 1.0).opacity(colorScheme == .dark ? 0.30 : 0.24),
-                        .clear
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            )
-            .frame(height: 3)
-            .padding(.horizontal, 2)
-            .padding(.bottom, 1)
-            .accessibilityHidden(true)
     }
 
     private var header: some View {
@@ -136,7 +124,7 @@ struct DailyExerciseProgressSection: View {
             }
         }
         .padding(4)
-        .background(PulsarTheme.matrixPanelBackground(for: colorScheme), in: Capsule(style: .continuous))
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 22, tint: .green))
         .overlay {
             Capsule(style: .continuous)
                 .stroke(.white.opacity(colorScheme == .dark ? 0.10 : 0.72), lineWidth: 1)
@@ -144,14 +132,20 @@ struct DailyExerciseProgressSection: View {
     }
 
     private var dailyExerciseRail: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        let cardWidth = max(240, railWidth - 28)
+
+        return ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(alignment: .top, spacing: 12) {
                 ForEach(viewModel.dailySummaries) { summary in
                     Button {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         selectedHistoryTarget = ExerciseProgressLookup(summary: summary)
                     } label: {
-                        DailyExerciseProgressCard(summary: summary, selectedMetric: selectedMetric)
+                        DailyExerciseProgressCard(
+                            summary: summary,
+                            selectedMetric: selectedMetric,
+                            cardWidth: cardWidth
+                        )
                     }
                     .buttonStyle(FitnessWeekPressStyle())
                     .accessibilityLabel("\(summary.exerciseName) progress details")
@@ -160,7 +154,18 @@ struct DailyExerciseProgressSection: View {
             .padding(.horizontal, 1)
             .padding(.vertical, 2)
         }
-        .scrollClipDisabled()
+        .frame(minHeight: 330)
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear {
+                        railWidth = proxy.size.width
+                    }
+                    .onChange(of: proxy.size.width) { _, width in
+                        railWidth = width
+                    }
+            }
+        }
     }
 
     private var isSelectedDateToday: Bool {
@@ -365,74 +370,72 @@ private struct DailyProgressDateStrip: View {
 private struct DailyExerciseProgressCard: View {
     var summary: DailyExerciseSummary
     var selectedMetric: DailyExerciseChartMetric
+    var cardWidth: CGFloat
 
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(summary.exerciseName)
-                        .pulsarTextStyle(.cardTitle)
-                        .foregroundStyle(primaryText)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
+        FitnessPanel(cornerRadius: 26, padding: 15, tint: accent) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(summary.exerciseName)
+                            .pulsarTextStyle(.cardTitle)
+                            .foregroundStyle(primaryText)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
 
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(accent)
-                            .frame(width: 6, height: 6)
-                        Text(summary.muscleGroupName)
-                            .pulsarTextStyle(.metricLabel)
-                            .foregroundStyle(accent)
-                            .lineLimit(1)
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(accent)
+                                .frame(width: 6, height: 6)
+                            Text(summary.muscleGroupName)
+                                .pulsarTextStyle(.metricLabel)
+                                .foregroundStyle(accent)
+                                .lineLimit(1)
+                        }
                     }
+
+                    Spacer(minLength: 6)
+
+                    Image(systemName: "chart.line.uptrend.xyaxis.circle.fill")
+                        .pulsarTextStyle(.sectionHeader)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(accent)
+                        .accessibilityHidden(true)
                 }
 
-                Spacer(minLength: 6)
+                DailyExerciseMetricGrid(summary: summary, accent: accent)
 
-                Image(systemName: "chart.line.uptrend.xyaxis.circle.fill")
-                    .pulsarTextStyle(.sectionHeader)
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(accent)
-                    .accessibilityHidden(true)
-            }
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack {
+                        Text(chartTitle)
+                            .pulsarTextStyle(.overline)
+                            .foregroundStyle(PulsarTheme.fitnessTertiaryText(for: colorScheme))
+                            .textCase(.uppercase)
 
-            DailyExerciseMetricGrid(summary: summary)
+                        Spacer()
 
-            VStack(alignment: .leading, spacing: 9) {
-                HStack {
-                    Text(chartTitle)
-                        .pulsarTextStyle(.overline)
-                        .foregroundStyle(PulsarTheme.fitnessTertiaryText(for: colorScheme))
-                        .textCase(.uppercase)
+                        Text(bestSetText)
+                            .pulsarMonospacedMetric(.metricLabel)
+                            .foregroundStyle(primaryText)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                    }
 
-                    Spacer()
-
-                    Text(bestSetText)
-                        .pulsarMonospacedMetric(.metricLabel)
-                        .foregroundStyle(primaryText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
+                    DailyExerciseMiniChart(values: chartValues, accent: selectedMetric.accent)
+                        .frame(height: 54)
                 }
-
-                DailyExerciseMiniChart(values: chartValues, accent: selectedMetric.accent)
-                    .frame(height: 54)
-            }
-            .padding(12)
-            .background(PulsarTheme.matrixPillBackground(for: colorScheme), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(.white.opacity(colorScheme == .dark ? 0.08 : 0.56), lineWidth: 1)
+                .padding(12)
+                .modifier(FitnessGlassSurfaceModifier(cornerRadius: 18, tint: selectedMetric.accent, borderOpacity: 0.54))
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(.white.opacity(colorScheme == .dark ? 0.08 : 0.56), lineWidth: 1)
+                }
             }
         }
-        .frame(width: 278, alignment: .leading)
-        .padding(15)
-        .background(cardBackground, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(.white.opacity(colorScheme == .dark ? 0.12 : 0.74), lineWidth: 1)
-        }
+        .frame(width: cardWidth, alignment: .leading)
     }
 
     private var chartTitle: String {
@@ -469,35 +472,18 @@ private struct DailyExerciseProgressCard: View {
     private var primaryText: Color {
         PulsarTheme.fitnessPrimaryText(for: colorScheme)
     }
-
-    private var cardBackground: LinearGradient {
-        LinearGradient(
-            colors: colorScheme == .dark
-                ? [
-                    Color.white.opacity(0.10),
-                    Color.white.opacity(0.040),
-                    accent.opacity(0.070)
-                ]
-                : [
-                    Color.white.opacity(0.94),
-                    Color(red: 0.94, green: 0.98, blue: 1.00).opacity(0.76),
-                    accent.opacity(0.055)
-                ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
 }
 
 private struct DailyExerciseMetricGrid: View {
     var summary: DailyExerciseSummary
+    var accent: Color
 
     var body: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-            DailyExerciseMetricTile(title: "Sets", value: "\(summary.completedSets)")
-            DailyExerciseMetricTile(title: "Reps", value: "\(summary.totalReps)")
-            DailyExerciseMetricTile(title: "Best", value: maxWeightText)
-            DailyExerciseMetricTile(title: "Volume", value: volumeText)
+            DailyExerciseMetricTile(title: "Sets", value: "\(summary.completedSets)", accent: accent)
+            DailyExerciseMetricTile(title: "Reps", value: "\(summary.totalReps)", accent: accent)
+            DailyExerciseMetricTile(title: "Best", value: maxWeightText, accent: accent)
+            DailyExerciseMetricTile(title: "Volume", value: volumeText, accent: accent)
         }
     }
 
@@ -517,6 +503,7 @@ private struct DailyExerciseMetricGrid: View {
 private struct DailyExerciseMetricTile: View {
     var title: String
     var value: String
+    var accent: Color
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -534,7 +521,7 @@ private struct DailyExerciseMetricTile: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(PulsarTheme.matrixPillBackground(for: colorScheme), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 15, tint: accent, borderOpacity: 0.50))
     }
 }
 
@@ -556,7 +543,7 @@ private struct DailyExerciseMiniChart: View {
 
                     DailyProgressSparkline(values: cleaned)
                         .stroke(accent, style: StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round))
-                        .shadow(color: accent.opacity(0.22), radius: 10, y: 5)
+                        .shadow(color: accent.opacity(0.20), radius: 4, y: 2)
 
                     if cleaned.count == 1 {
                         Circle()
@@ -689,7 +676,7 @@ private struct DailyProgressEmptyState: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 30)
         .padding(.horizontal, 18)
-        .background(PulsarTheme.matrixPanelBackground(for: colorScheme), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 26, tint: .green))
         .overlay {
             RoundedRectangle(cornerRadius: 26, style: .continuous)
                 .stroke(.white.opacity(colorScheme == .dark ? 0.12 : 0.72), lineWidth: 1)
@@ -709,7 +696,7 @@ private struct DailyProgressLoadingCard: View {
                 .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
         }
         .frame(maxWidth: .infinity, minHeight: 176)
-        .background(PulsarTheme.matrixPanelBackground(for: colorScheme), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 26, tint: .green))
     }
 }
 
@@ -1113,7 +1100,7 @@ private struct ExerciseHistoryEmptyState: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 32)
         .padding(.horizontal, 20)
-        .background(PulsarTheme.matrixPanelBackground(for: colorScheme), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 26, tint: .green))
         .overlay {
             RoundedRectangle(cornerRadius: 26, style: .continuous)
                 .stroke(.white.opacity(colorScheme == .dark ? 0.12 : 0.72), lineWidth: 1)

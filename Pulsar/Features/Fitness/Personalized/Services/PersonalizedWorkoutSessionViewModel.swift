@@ -345,22 +345,14 @@ final class PersonalizedWorkoutHealthKitManager: NSObject, ObservableObject {
     }
 
     private static func workoutConfiguration(for workout: PersonalizedWorkoutKind) -> HKWorkoutConfiguration {
-        let configuration = HKWorkoutConfiguration()
-        switch workout {
-        case .walking:
-            configuration.activityType = .walking
-            configuration.locationType = .indoor
-        case .indoorRunning, .running:
-            configuration.activityType = .running
-            configuration.locationType = workout == .indoorRunning ? .indoor : .outdoor
-        case .hiking:
-            configuration.activityType = .hiking
-            configuration.locationType = .outdoor
-        case .gym:
-            configuration.activityType = .traditionalStrengthTraining
-            configuration.locationType = .indoor
+        if workout == .gym {
+            return PulsarWorkoutCatalog.gymWorkoutConfiguration
         }
-        return configuration
+        if let workoutKind = workout.outdoorWorkoutKind,
+           let entry = PulsarWorkoutCatalog.entry(for: workoutKind) {
+            return entry.workoutConfiguration
+        }
+        return PulsarOutdoorWorkoutKind.other.workoutConfiguration
     }
 
     private static func metadata(for workout: PersonalizedWorkoutKind, sessionId: UUID) -> [String: Any] {
@@ -503,6 +495,30 @@ final class PersonalizedWorkoutSessionViewModel: ObservableObject {
     func end() async {
         await workoutManager.finish()
         updateDashboard()
+    }
+
+    func completionSummary(endedAt: Date = Date()) -> PulsarRunSummary {
+        let metrics = workoutManager.metrics
+        let workoutKind = workout.outdoorWorkoutKind ?? .indoorRunning
+        return PulsarRunSummary(
+            id: UUID(),
+            workoutUUID: metrics.savedWorkoutUUID,
+            workoutKind: workoutKind,
+            startedAt: endedAt.addingTimeInterval(-metrics.elapsedTime),
+            endedAt: endedAt,
+            source: .iPhone,
+            distanceMeters: metrics.distanceMeters ?? 0,
+            elapsedTime: metrics.elapsedTime,
+            movingTime: metrics.elapsedTime,
+            activeEnergyKilocalories: metrics.activeEnergyKilocalories,
+            elevationGainMeters: 0,
+            averageHeartRate: metrics.averageHeartRate,
+            maxHeartRate: metrics.maxHeartRate,
+            steps: metrics.stepCount.map { Int($0.rounded()) },
+            averageCadenceStepsPerMinute: nil,
+            route: [],
+            splits: []
+        )
     }
 
     func cancel() {

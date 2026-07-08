@@ -303,7 +303,7 @@ struct PersonalizedWorkoutStartView: View {
 private extension PulsarOutdoorWorkoutKind {
     var startAnimationTint: Color {
         switch self {
-        case .running:
+        case .running, .indoorRunning:
             WorkoutAccent.velocity.color
         case .walking:
             WorkoutAccent.balance.color

@@ -276,8 +276,55 @@ struct PulsarRunDerivedMetricsTests {
         #expect(PulsarOutdoorWorkoutKind(activityType: .barre) != .running)
     }
 
+    @Test func workoutCatalogDefinesCuratedPickerParity() {
+        let personalizedIDs = PulsarWorkoutCatalog.personalizedEntries.map(\.id)
+        let moreWorkoutIDs = PulsarWorkoutCatalog.moreWorkoutEntries.map(\.id)
+
+        #expect(personalizedIDs == WorkoutOption.personalized.map(\.id))
+        #expect(moreWorkoutIDs == WorkoutOption.general.map(\.id))
+        #expect(personalizedIDs == ["hiking", "running", "indoorRunning", "walking", "gym"])
+        #expect(moreWorkoutIDs == [
+            "cycling",
+            "hiit",
+            "strength",
+            "yoga",
+            "pilates",
+            "swimming",
+            "rowing",
+            "dance",
+            "boxing",
+            "stretching",
+            "core",
+            "mobility",
+            "elliptical",
+            "stairClimber",
+            "cooldown"
+        ])
+        #expect(WorkoutOption.personalized.first { $0.id == "indoorRunning" }?.outdoorWorkoutKind == .indoorRunning)
+        #expect(WorkoutOption.personalized.first { $0.id == "gym" }?.outdoorWorkoutKind == nil)
+    }
+
+    @Test func indoorRunningUsesRunningHealthKitTypeWithIndoorLocation() {
+        let entry = PulsarWorkoutCatalog.entry(for: .indoorRunning)
+        let configuration = entry?.workoutConfiguration
+
+        #expect(entry?.displayName == "Indoor Running")
+        #expect(configuration?.activityType == .running)
+        #expect(configuration?.locationType == .indoor)
+        #expect(PulsarOutdoorWorkoutKind(activityType: .running, locationType: .indoor) == .indoorRunning)
+        #expect(PulsarOutdoorWorkoutKind(activityType: .running, locationType: .outdoor) == .running)
+        #expect(PulsarOutdoorWorkoutKind(activityType: .running) == .running)
+    }
+
+    @Test func healthKitCategoryMappingMatchesCatalogKindMapping() {
+        #expect(PulsarOutdoorWorkoutKind(activityType: .crossTraining) == .strength)
+        #expect(PulsarOutdoorWorkoutKind(activityType: .mindAndBody) == .yoga)
+    }
+
     @Test func outdoorRunWalkAndHikeUseExactHealthKitTypes() {
         #expect(PulsarOutdoorWorkoutKind.running.healthKitActivityType == .running)
+        #expect(PulsarOutdoorWorkoutKind.indoorRunning.healthKitActivityType == .running)
+        #expect(PulsarOutdoorWorkoutKind.indoorRunning.defaultLocationType == .indoor)
         #expect(PulsarOutdoorWorkoutKind.walking.healthKitActivityType == .walking)
         #expect(PulsarOutdoorWorkoutKind.hiking.healthKitActivityType == .hiking)
         #expect(PulsarOutdoorWorkoutKind(activityType: .running) == .running)

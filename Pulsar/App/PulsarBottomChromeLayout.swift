@@ -10,7 +10,7 @@ import UIKit
 struct PulsarBottomChromeLayout: Equatable {
     static let floatingNavigationHeight: CGFloat = 76
     static let floatingNavigationExtraScrollSpacing: CGFloat = 28
-    static let floatingNavigationEndOfContentBuffer: CGFloat = 168
+    static let floatingNavigationEndOfContentBuffer: CGFloat = 0
     static let maximumSystemBottomInset: CGFloat = 44
 
     var safeAreaBottom: CGFloat = 0
@@ -20,7 +20,7 @@ struct PulsarBottomChromeLayout: Equatable {
     }
 
     var endOfContentSpacerHeight: CGFloat {
-        scrollContentBottomMargin + Self.floatingNavigationEndOfContentBuffer
+        Self.floatingNavigationEndOfContentBuffer
     }
 
     static func scrollContentBottomMargin(for safeAreaBottom: CGFloat) -> CGFloat {
@@ -58,6 +58,7 @@ extension View {
     func pulsarBottomChromeScrollContainer(layoutStore: PulsarBottomChromeLayoutStore) -> some View {
         self
             .contentMargins(.bottom, layoutStore.layout.scrollContentBottomMargin, for: .scrollContent)
+            .scrollBounceBehavior(.basedOnSize)
             .background(PulsarPrimaryScrollViewMarker())
     }
 }

@@ -31,6 +31,7 @@ struct PulsarRootView: View {
     @StateObject private var runCoordinator = PulsarRunCoordinator()
     @StateObject private var watchSyncStore = PulsarWatchConnectivitySyncStore.shared
     @StateObject private var activeWorkoutManager = PulsarActiveWorkoutManager()
+    @StateObject private var completionPresentationStore = WorkoutCompletionPresentationStore()
     @StateObject private var orionChatViewModel = OrionChatViewModel()
     @StateObject private var orionAudioManager = OrionAudioManager()
     @StateObject private var bottomChromeLayoutStore = PulsarBottomChromeLayoutStore()
@@ -70,6 +71,7 @@ struct PulsarRootView: View {
             .font(PulsarTypography.Role.appBody.font)
             .environmentObject(activeWorkoutManager)
             .environmentObject(runCoordinator)
+            .environmentObject(completionPresentationStore)
             .alert(item: workoutFailureNoticeBinding) { notice in
                 Alert(
                     title: Text("Workout connection lost"),
@@ -109,6 +111,7 @@ struct PulsarRootView: View {
                 await homeViewModel.requestInitialAppEntrySync()
                 syncAdaptiveStrainGuardPlan(reason: "rootTask")
                 await syncDailyRewindReminder()
+                syncSavedGymRoutinesToWatch(reason: "rootTask")
                 watchSyncStore.pruneStaleActiveWorkoutState(reason: "rootTask")
                 await GymLiveActivityManager.endStaleActivitiesIfNeeded(activeState: watchSyncStore.activeGymState)
                 await reconcileRestoredActiveWorkoutOnAppEntry(source: "rootTask")
@@ -124,6 +127,7 @@ struct PulsarRootView: View {
                     syncAdaptiveStrainGuardPlan(reason: "sceneBecameActive")
                     mindfulnessStore.reload()
                     await syncDailyRewindReminder()
+                    syncSavedGymRoutinesToWatch(reason: "sceneBecameActive")
                     watchSyncStore.pruneStaleActiveWorkoutState(reason: "sceneBecameActive")
                     await GymLiveActivityManager.endStaleActivitiesIfNeeded(activeState: watchSyncStore.activeGymState)
                     await reconcileRestoredActiveWorkoutOnAppEntry(source: "sceneBecameActive")
@@ -240,6 +244,10 @@ struct PulsarRootView: View {
         )
     }
 
+    private func syncSavedGymRoutinesToWatch(reason: String) {
+        PulsarRoutineStore().syncRoutinesToWatch(reason: reason, broadcast: true)
+    }
+
     private func handlePendingDeepLinkRouteIfNeeded() {
         guard let route = deepLinkRouter.pendingRoute else { return }
         handleDeepLinkRoute(route)
@@ -315,6 +323,7 @@ struct PulsarRootView: View {
             nutritionStore: nutritionStore,
             activeWorkoutManager: activeWorkoutManager,
             runCoordinator: runCoordinator,
+            completionPresentationStore: completionPresentationStore,
             mindfulnessStore: mindfulnessStore,
             mindfulnessRouter: mindfulnessRouter,
             isPlusActionHidden: isPlusMenuMounted,
@@ -971,6 +980,18 @@ struct PulsarRootView: View {
         let sessionID = runCoordinator.snapshot.pulsarWorkoutSessionId ?? activeWorkout.sessionID
         if newPhase == .finished, let summary = runCoordinator.summary {
             let summarySessionID = summary.pulsarWorkoutSessionId ?? sessionID
+            guard completionPresentationStore.shouldAutoPresent(sessionID: summarySessionID) else {
+                PulsarStateDebugLogger.log("[PulsarSummary] Skipped consumed run summary phase change source=runCoordinatorPhaseChanged session=\(summarySessionID.uuidString)")
+                return
+            }
+            completionPresentationStore.markPending(
+                WorkoutCompletionPresentation(
+                    sessionID: summarySessionID,
+                    kind: .run(summary),
+                    presentedAt: Date(),
+                    source: .localFinish
+                )
+            )
             activeWorkoutManager.presentRunSummary(summary.workoutKind, sessionID: summarySessionID)
             PulsarStateDebugLogger.log("[PulsarSummary] Deferred active run clear until summary dismissal session=\(summarySessionID.uuidString)")
             return
@@ -998,14 +1019,99 @@ struct PulsarRootView: View {
             ?? runCoordinator.snapshot.pulsarWorkoutSessionId
             ?? activeWorkoutManager.activeWorkout?.sessionID
             ?? summary.id
+        guard completionPresentationStore.shouldAutoPresent(sessionID: summarySessionID) else {
+            PulsarStateDebugLogger.log("[PulsarSummary] Skipped consumed run summary source=\(source) session=\(summarySessionID.uuidString)")
+            return
+        }
+        completionPresentationStore.markPending(
+            WorkoutCompletionPresentation(
+                sessionID: summarySessionID,
+                kind: .run(summary),
+                presentedAt: Date(),
+                source: source.hasPrefix("root") ? .rootSync : .localFinish
+            )
+        )
         activeWorkoutManager.presentRunSummary(summary.workoutKind, sessionID: summarySessionID)
         PulsarStateDebugLogger.log("[PulsarSummary] Presented run summary source=\(source) session=\(summarySessionID.uuidString)")
     }
 
     private func presentFinishedWatchGymSummaryIfNeeded(_ state: ActiveGymWorkoutState?, source: String) {
         guard let state, state.isFinished else { return }
+        if activeWorkoutManager.gymSessionViewModel?.session.id == state.sessionId {
+            PulsarStateDebugLogger.log("[PulsarSummary] Skipped watch gym summary because local gym summary owns session source=\(source) session=\(state.sessionId.uuidString)")
+            return
+        }
+        guard completionPresentationStore.shouldAutoPresent(sessionID: state.sessionId) else {
+            PulsarStateDebugLogger.log("[PulsarSummary] Skipped consumed watch gym summary source=\(source) session=\(state.sessionId.uuidString)")
+            return
+        }
+        completionPresentationStore.markPending(
+            WorkoutCompletionPresentation(
+                sessionID: state.sessionId,
+                kind: .gym(PulsarGymWorkoutSummary(activeGymState: state)),
+                presentedAt: Date(),
+                source: source.contains("restore") ? .restored : .watchSync
+            )
+        )
         activeWorkoutManager.presentWatchGymSummary(sessionID: state.sessionId)
         PulsarStateDebugLogger.log("[PulsarSummary] Watch gym summary presentation requested source=\(source) session=\(state.sessionId.uuidString)")
+    }
+
+    private func dismissWorkoutCompletion(
+        sessionID: UUID?,
+        kind: WorkoutCompletionDismissalKind,
+        source: String
+    ) {
+        guard let sessionID else {
+            switch kind {
+            case .gym:
+                activeWorkoutManager.completeGymWorkout()
+            case .watchGym:
+                activeWorkoutManager.clearWatchGymWorkout(
+                    phase: "finished",
+                    source: source,
+                    reason: "summaryDismissedMissingSession"
+                )
+            case .run:
+                runCoordinator.resetAfterSummary()
+                activeWorkoutManager.clearRunWorkout(
+                    phase: "finished",
+                    source: source,
+                    reason: "summaryDismissedMissingSession"
+                )
+            }
+            activeWorkoutManager.presentedWorkout = nil
+            return
+        }
+
+        completionPresentationStore.consume(sessionID: sessionID, reason: source)
+        watchSyncStore.tombstoneActiveWorkoutSession(sessionID, reason: "completionConsumed.\(source)")
+        watchSyncStore.clearFinishedGymPresentationState(sessionID: sessionID, reason: "completionConsumed.\(source)")
+
+        switch kind {
+        case .gym:
+            activeWorkoutManager.completeGymWorkout()
+        case .watchGym:
+            activeWorkoutManager.clearWatchGymWorkout(
+                sessionID: sessionID,
+                phase: "finished",
+                source: source,
+                reason: "summaryDismissed"
+            )
+        case .run:
+            runCoordinator.resetAfterSummary()
+            activeWorkoutManager.clearRunWorkout(
+                sessionID: sessionID,
+                phase: "finished",
+                source: source,
+                reason: "summaryDismissed"
+            )
+        }
+
+        if activeWorkoutManager.presentedWorkout != nil {
+            activeWorkoutManager.presentedWorkout = nil
+        }
+        syncCurrentActiveWorkoutSessionContext(reason: "completionDismissed.\(source)")
     }
 
     private func cacheActiveWorkoutDisplayStateIfAvailable(reason: String) {
@@ -1358,6 +1464,18 @@ struct PulsarRootView: View {
             runCoordinator.reconcileActiveWorkoutSyncState(state)
             if let summary = runCoordinator.summary {
                 let summarySessionID = summary.pulsarWorkoutSessionId ?? state.sessionId
+                guard completionPresentationStore.shouldAutoPresent(sessionID: summarySessionID) else {
+                    PulsarSyncDebugLogger.log("[PulsarSummary] Skipped consumed ended run sync summary source=\(source) session=\(summarySessionID.uuidString)")
+                    return
+                }
+                completionPresentationStore.markPending(
+                    WorkoutCompletionPresentation(
+                        sessionID: summarySessionID,
+                        kind: .run(summary),
+                        presentedAt: Date(),
+                        source: .rootSync
+                    )
+                )
                 activeWorkoutManager.presentRunSummary(summary.workoutKind, sessionID: summarySessionID)
                 PulsarSyncDebugLogger.log("[PulsarSummary] Presented ended run sync summary source=\(source) session=\(summarySessionID.uuidString)")
             } else {
@@ -1588,11 +1706,10 @@ struct PulsarRootView: View {
                     )
                 },
                 onSummaryDone: { summary in
-                    activeWorkoutManager.clearRunWorkout(
+                    dismissWorkoutCompletion(
                         sessionID: summary.pulsarWorkoutSessionId ?? activeWorkoutManager.activeWorkout?.sessionID,
-                        phase: "finished",
-                        source: "runSummaryDone",
-                        reason: "summaryDismissed"
+                        kind: .run,
+                        source: "runSummaryDone"
                     )
                 }
             )
@@ -1604,7 +1721,11 @@ struct PulsarRootView: View {
                         activeWorkoutManager.minimizeGymWorkout(sessionID: viewModel.session.id)
                     },
                     onFinish: {
-                        activeWorkoutManager.completeGymWorkout()
+                        dismissWorkoutCompletion(
+                            sessionID: viewModel.session.id,
+                            kind: .gym,
+                            source: "gymSummaryDone"
+                        )
                     }
                 )
             } else {
@@ -1620,11 +1741,10 @@ struct PulsarRootView: View {
                     activeWorkoutManager.minimizeWatchGymWorkout(sessionID: watchSyncStore.activeGymState?.sessionId ?? watchSyncStore.lastFinishedGymState?.sessionId)
                 },
                 onSummaryDone: {
-                    activeWorkoutManager.clearWatchGymWorkout(
+                    dismissWorkoutCompletion(
                         sessionID: watchSyncStore.lastFinishedGymState?.sessionId ?? watchSyncStore.activeGymState?.sessionId ?? activeWorkoutManager.activeWorkout?.sessionID,
-                        phase: "finished",
-                        source: "watchGymSummaryDone",
-                        reason: "summaryDismissed"
+                        kind: .watchGym,
+                        source: "watchGymSummaryDone"
                     )
                 }
             )
@@ -2403,6 +2523,7 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
     let nutritionStore: PulsarNutritionStore
     let activeWorkoutManager: PulsarActiveWorkoutManager
     let runCoordinator: PulsarRunCoordinator
+    let completionPresentationStore: WorkoutCompletionPresentationStore
     let mindfulnessStore: PulsarMindfulnessStore
     let mindfulnessRouter: PulsarMindfulnessRouter
     let isPlusActionHidden: Bool
@@ -2515,6 +2636,7 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
             )
                 .environmentObject(activeWorkoutManager)
                 .environmentObject(runCoordinator)
+                .environmentObject(completionPresentationStore)
         case .fitness:
             FitnessView(
                 profileStore: homeViewModel.profileStore,
@@ -2522,6 +2644,7 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
             )
                 .environmentObject(activeWorkoutManager)
                 .environmentObject(runCoordinator)
+                .environmentObject(completionPresentationStore)
         case .food:
             FoodView(
                 store: nutritionStore,
@@ -2529,6 +2652,7 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
             )
                 .environmentObject(activeWorkoutManager)
                 .environmentObject(runCoordinator)
+                .environmentObject(completionPresentationStore)
         case .mindfulness:
             InsightsView(
                 homeViewModel: homeViewModel,
@@ -2538,6 +2662,7 @@ private struct PulsarNativeTabController: UIViewControllerRepresentable {
             )
                 .environmentObject(activeWorkoutManager)
                 .environmentObject(runCoordinator)
+                .environmentObject(completionPresentationStore)
         }
     }
 

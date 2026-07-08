@@ -14,6 +14,7 @@ struct CycleView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let onClose: (() -> Void)?
     @StateObject private var trackingStore: CycleTrackingStore
+    @StateObject private var bottomChromeLayoutStore = PulsarBottomChromeLayoutStore()
     @State private var selectedDate: Date
     @State private var showsModelDetails = true
     @State private var activeSheet: CycleActiveSheet?
@@ -45,8 +46,16 @@ struct CycleView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
+            PulsarScreenScaffold(
+                layoutStore: bottomChromeLayoutStore,
+                horizontalPadding: 22,
+                topPadding: 18,
+                spacing: 18,
+                reservesBottomChrome: false,
+                background: {
+                    CycleModuleBackground()
+                },
+                content: {
                     CycleHeader()
 
                     if trackingStore.hasCycleData {
@@ -116,11 +125,7 @@ struct CycleView: View {
 
                     CyclePrivacyNote()
                 }
-                .padding(.horizontal, 22)
-                .padding(.top, 18)
-                .padding(.bottom, 42)
-            }
-            .safeAreaPadding(.bottom, 16)
+            )
             .safeAreaInset(edge: .top, spacing: 0) {
                 CycleTopBar(
                     onClose: onClose,
@@ -131,7 +136,6 @@ struct CycleView: View {
                     }
                 )
             }
-            .background(CycleModuleBackground())
             .toolbar(.hidden, for: .navigationBar)
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
@@ -317,44 +321,13 @@ private struct CycleToolbarGlassIcon: View {
 
 private struct CycleHeader: View {
     var body: some View {
-        HStack(alignment: .center, spacing: 18) {
-            Image(systemName: "moonphase.waxing.crescent")
-                .font(.system(size: 28, weight: .semibold))
-                .foregroundStyle(CyclePalette.phase(.luteal).accent)
-                .frame(width: 64, height: 64)
-                .background(.ultraThinMaterial, in: Circle())
-                .background(CyclePalette.logoGlassFill, in: Circle())
-                .overlay {
-                    Circle()
-                        .stroke(CyclePalette.toolbarGlassBorder(for: .dark), lineWidth: 0.9)
-                }
-                .overlay(alignment: .topLeading) {
-                    Circle()
-                        .stroke(.white.opacity(0.26), lineWidth: 0.7)
-                        .blur(radius: 0.5)
-                        .mask(
-                            LinearGradient(
-                                colors: [.white, .clear],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                }
-                .shadow(color: .black.opacity(0.18), radius: 18, y: 10)
-                .cycleNativeGlass(shape: Circle(), tintOpacity: 0.060)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Cycle")
-                    .pulsarTextStyle(.displayLarge)
-                    .foregroundStyle(.white.opacity(0.97))
-                Text("Track your cycle, symptoms, phases, and wellness trends.")
-                    .pulsarTextStyle(.label)
-                    .foregroundStyle(CyclePalette.softText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
+        PulsarTabHeader(
+            systemImage: "moonphase.waxing.crescent",
+            title: "Cycle",
+            subtitle: "Track your cycle, symptoms, phases, and wellness trends.",
+            primaryText: .white.opacity(0.97),
+            secondaryText: CyclePalette.softText
+        )
     }
 }
 
@@ -774,19 +747,8 @@ private struct CycleOnboardingCard: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
-                    .background(
-                        LinearGradient(
-                            colors: [
-                                CyclePalette.phase(.menstrual).accent,
-                                CyclePalette.phase(.luteal).accent
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ),
-                        in: Capsule(style: .continuous)
-                    )
             }
-            .buttonStyle(CyclePressButtonStyle())
+            .pulsarGlassProminent(tint: CyclePalette.phase(.luteal).accent.opacity(0.48))
 
             Text("Predictions improve as you log more cycles.")
                 .pulsarTextStyle(.metadata)
@@ -2235,7 +2197,7 @@ private struct CycleDailyLogSaveBar: View {
                 }
                 .shadow(color: CyclePalette.phase(.luteal).accent.opacity(0.18), radius: 18, y: 8)
         }
-        .buttonStyle(CyclePressButtonStyle())
+        .pulsarGlassProminent(tint: CyclePalette.phase(.luteal).accent.opacity(0.48))
         .padding(.horizontal, 30)
         .padding(.top, 18)
         .padding(.bottom, 14)
@@ -2757,73 +2719,14 @@ private struct CycleGlassSurfaceModifier: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-
-        if #available(iOS 26.0, *) {
-            let glass = Glass.regular
-                .tint(CyclePalette.glassEffectTint(for: colorScheme, opacity: tintOpacity))
-            glassBase(content, shape: shape, includesMaterial: false)
-                .glassEffect(isInteractive ? glass.interactive() : glass, in: shape)
-        } else {
-            glassBase(content, shape: shape, includesMaterial: true)
+        PulsarGlassCard(
+            cornerRadius: cornerRadius,
+            contentPadding: 0,
+            tint: CyclePalette.glassEffectTint(for: colorScheme, opacity: min(tintOpacity, 0.14)),
+            isInteractive: isInteractive
+        ) {
+            content
         }
-    }
-
-    @ViewBuilder
-    private func glassBase(_ content: Content, shape: RoundedRectangle, includesMaterial: Bool) -> some View {
-        if includesMaterial {
-            glassDecoration(
-                content.background(.ultraThinMaterial, in: shape),
-                shape: shape
-            )
-        } else {
-            glassDecoration(content, shape: shape)
-        }
-    }
-
-    private func glassDecoration<DecoratedContent: View>(_ content: DecoratedContent, shape: RoundedRectangle) -> some View {
-        content
-            .background(CyclePalette.glassTint(for: colorScheme, opacity: tintOpacity), in: shape)
-            .background {
-                shape
-                    .fill(CyclePalette.glassSpecularHighlight(for: colorScheme))
-                    .blendMode(.screen)
-                    .opacity(colorScheme == .dark ? 0.64 : 0.54)
-            }
-            .background {
-                shape
-                    .fill(CyclePalette.glassReadabilityWash(for: colorScheme))
-            }
-            .overlay {
-                shape
-                    .stroke(CyclePalette.glassBorder(for: colorScheme), lineWidth: 1)
-            }
-            .overlay {
-                shape
-                    .strokeBorder(.white.opacity(colorScheme == .dark ? 0.18 : 0.52), lineWidth: 0.65)
-                    .blur(radius: 0.7)
-                    .mask(
-                        LinearGradient(
-                            colors: [.white, .clear, .clear],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            }
-            .overlay(alignment: .topLeading) {
-                shape
-                    .stroke(.white.opacity(colorScheme == .dark ? 0.20 : 0.56), lineWidth: 0.65)
-                    .blur(radius: 0.6)
-                    .opacity(0.72)
-                    .mask(
-                        LinearGradient(
-                            colors: [.white, .clear],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            }
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.22 : 0.12), radius: 22, y: 12)
     }
 }
 
@@ -2851,27 +2754,13 @@ private struct CycleReadablePanelModifier: ViewModifier {
     let cornerRadius: CGFloat
 
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-
-        content
-            .background(.ultraThinMaterial, in: shape)
-            .background(CyclePalette.readablePanelFill(for: colorScheme), in: shape)
-            .overlay {
-                shape
-                    .stroke(CyclePalette.readablePanelBorder(for: colorScheme), lineWidth: 1)
-            }
-            .overlay(alignment: .topLeading) {
-                shape
-                    .stroke(.white.opacity(colorScheme == .dark ? 0.24 : 0.56), lineWidth: 0.6)
-                    .blur(radius: 0.5)
-                    .mask(
-                        LinearGradient(
-                            colors: [.white, .clear],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            }
+        PulsarGlassCard(
+            cornerRadius: cornerRadius,
+            contentPadding: 0,
+            tint: CyclePalette.glassEffectTint(for: colorScheme, opacity: 0.08)
+        ) {
+            content
+        }
     }
 }
 

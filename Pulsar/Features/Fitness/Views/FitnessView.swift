@@ -15,6 +15,7 @@ struct FitnessView: View {
     @StateObject private var gymSettingsStore = GymSettingsStore()
     private let watchSyncStore = PulsarWatchConnectivitySyncStore.shared
     @State private var isShowingWorkoutPicker = false
+    @State private var pendingWorkoutSelection: WorkoutOption?
     @State private var isActivityLogExpanded = false
     @State private var selectedPersonalizedWorkout: PersonalizedWorkoutKind?
     @State private var selectedOutdoorWorkoutKind: PulsarOutdoorWorkoutKind?
@@ -32,81 +33,77 @@ struct FitnessView: View {
 
     var body: some View {
         NavigationStack {
-            GeometryReader { proxy in
-                let topChromeClearance = Self.topChromeClearance(for: proxy.safeAreaInsets.top)
-
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        FitnessPageTitleHeader {
-                            presentWorkoutPicker()
-                        }
-
-                        FitnessWeekHeaderView(
-                            week: weekViewModel.selectedWeek,
-                            canMoveToNextWeek: weekViewModel.canMoveToNextWeek,
-                            isRefreshing: weekViewModel.isRefreshingWeeks,
-                            onPrevious: {
-                                Task { await weekViewModel.selectPreviousWeek() }
-                            },
-                            onNext: {
-                                Task { await weekViewModel.selectNextWeek() }
-                            },
-                            onCurrent: {
-                                Task { await weekViewModel.selectCurrentWeek() }
-                            }
-                        )
-
-                        WeeklyMuscleMatrixCard(viewModel: weekViewModel.muscleMatrixViewModel)
-
-                        DailyExerciseProgressSection(
-                            viewModel: progressViewModel,
-                            selectedWeek: weekViewModel.selectedWeek,
-                            displayUnit: resolvedGymWeightUnit
-                        ) {
-                            withAnimation(.spring(response: 0.44, dampingFraction: 0.82)) {
-                                isShowingWorkoutPicker = true
-                            }
-                        }
-                        .padding(.top, 2)
-
-                        FitnessActivityLogSection(
-                            week: weekViewModel.selectedWeek,
-                            activities: weekViewModel.activities,
-                            isLoading: weekViewModel.isLoadingActivities,
-                            isExpanded: isActivityLogExpanded,
-                            onToggleExpanded: {
-                                withAnimation(.spring(response: 0.38, dampingFraction: 0.84)) {
-                                    isActivityLogExpanded.toggle()
-                                }
-                            },
-                            onSelectActivity: { activity in
-                                selectedHistoricalActivity = activity
-                            }
-                        )
-
-                        PulsarBottomChromeSpacer(layoutStore: bottomChromeLayoutStore)
-                    }
-                    .padding(.horizontal, 22)
-                    .padding(.top, topChromeClearance)
-                    .padding(.bottom, 8)
-                }
-                .pulsarBottomChromeScrollContainer(layoutStore: bottomChromeLayoutStore)
-                .background(FitnessWeeklyBackground())
-                .scrollContentBackground(.hidden)
-                .ignoresSafeArea(edges: .bottom)
-                .refreshable {
+            PulsarScreenScaffold(
+                layoutStore: bottomChromeLayoutStore,
+                horizontalPadding: 22,
+                spacing: 14,
+                onRefresh: {
                     await weekViewModel.refresh()
                     await progressViewModel.refresh(
                         displayUnit: resolvedGymWeightUnit,
                         selectedWeek: weekViewModel.selectedWeek,
                         force: true
                     )
+                },
+                background: {
+                    FitnessWeeklyBackground()
+                },
+                content: {
+                    FitnessPageTitleHeader {
+                        presentWorkoutPicker()
+                    }
+
+                    FitnessWeekHeaderView(
+                        week: weekViewModel.selectedWeek,
+                        canMoveToNextWeek: weekViewModel.canMoveToNextWeek,
+                        isRefreshing: weekViewModel.isRefreshingWeeks,
+                        onPrevious: {
+                            Task { await weekViewModel.selectPreviousWeek() }
+                        },
+                        onNext: {
+                            Task { await weekViewModel.selectNextWeek() }
+                        },
+                        onCurrent: {
+                            Task { await weekViewModel.selectCurrentWeek() }
+                        }
+                    )
+
+                    WeeklyMuscleMatrixCard(viewModel: weekViewModel.muscleMatrixViewModel)
+
+                    DailyExerciseProgressSection(
+                        viewModel: progressViewModel,
+                        selectedWeek: weekViewModel.selectedWeek,
+                        displayUnit: resolvedGymWeightUnit
+                    ) {
+                        withAnimation(.spring(response: 0.44, dampingFraction: 0.82)) {
+                            isShowingWorkoutPicker = true
+                        }
+                    }
+                    .padding(.top, 2)
+
+                    FitnessActivityLogSection(
+                        week: weekViewModel.selectedWeek,
+                        activities: weekViewModel.activities,
+                        isLoading: weekViewModel.isLoadingActivities,
+                        isExpanded: isActivityLogExpanded,
+                        onToggleExpanded: {
+                            withAnimation(.spring(response: 0.38, dampingFraction: 0.84)) {
+                                isActivityLogExpanded.toggle()
+                            }
+                        },
+                        onSelectActivity: { activity in
+                            selectedHistoricalActivity = activity
+                        }
+                    )
                 }
-            }
+            )
             .navigationTitle("")
             .toolbarTitleDisplayMode(.inline)
             .navigationDestination(item: $selectedHistoricalActivity) { activity in
-                FitnessWorkoutDetailView(activity: activity)
+                FitnessWorkoutDetailView(
+                    activity: activity,
+                    bottomChromeLayoutStore: bottomChromeLayoutStore
+                )
             }
             .task {
                 weekViewModel.startWeekRolloverMonitoring()
@@ -150,17 +147,15 @@ struct FitnessView: View {
                     await progressViewModel.selectWeek(weekViewModel.selectedWeek, displayUnit: resolvedGymWeightUnit)
                 }
             }
-            .overlay {
-                if isShowingWorkoutPicker {
-                    WorkoutPickerSheet(isPresented: $isShowingWorkoutPicker) { workout in
-                        if let outdoorWorkoutKind = workout.outdoorWorkoutKind {
-                            selectedOutdoorWorkoutKind = outdoorWorkoutKind
-                        } else {
-                            selectedPersonalizedWorkout = workout.personalizedKind
-                        }
-                    }
-                    .transition(.opacity)
+            .sheet(isPresented: $isShowingWorkoutPicker, onDismiss: completePendingWorkoutSelection) {
+                WorkoutPickerSheet { workout in
+                    pendingWorkoutSelection = workout
                 }
+                .presentationDetents([.fraction(0.82)])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.clear)
+                .presentationCornerRadius(36)
+                .presentationContentInteraction(.scrolls)
             }
             .fullScreenCover(item: $selectedPersonalizedWorkout, onDismiss: {
                 Task {
@@ -213,13 +208,18 @@ struct FitnessView: View {
 
     private func presentWorkoutPicker() {
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        withAnimation(.spring(response: 0.44, dampingFraction: 0.82)) {
-            isShowingWorkoutPicker = true
-        }
+        isShowingWorkoutPicker = true
     }
 
-    private static func topChromeClearance(for safeAreaTop: CGFloat) -> CGFloat {
-        safeAreaTop > 0 ? 16 : 64
+    private func completePendingWorkoutSelection() {
+        guard let workout = pendingWorkoutSelection else { return }
+        pendingWorkoutSelection = nil
+
+        if let outdoorWorkoutKind = workout.outdoorWorkoutKind {
+            selectedOutdoorWorkoutKind = outdoorWorkoutKind
+        } else {
+            selectedPersonalizedWorkout = workout.personalizedKind
+        }
     }
 
 }
@@ -227,60 +227,14 @@ struct FitnessView: View {
 private struct FitnessPageTitleHeader: View {
     var onAddWorkout: () -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            RunningGlyphView(tint: primaryText)
-                .frame(width: 52, height: 52)
-                .background(FitnessCircularGlassSurface(cornerRadius: 26))
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Fitness")
-                    .pulsarTextStyle(.displayLarge)
-                    .foregroundStyle(primaryText)
-
-                Text("Train smarter. Every day.")
-                    .pulsarTextStyle(.label)
-                    .foregroundStyle(secondaryText)
-            }
-
-            Spacer(minLength: 12)
-
-            Button(action: onAddWorkout) {
-                Image(systemName: "plus")
-                    .font(.system(size: 24, weight: .medium))
-                    .foregroundStyle(primaryText)
-                    .frame(width: 52, height: 52)
-                    .background(FitnessCircularGlassSurface(cornerRadius: 26))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Add workout")
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Fitness")
-        .accessibilityAddTraits(.isHeader)
-    }
-
-    private var primaryText: Color {
-        colorScheme == .dark ? .white.opacity(0.96) : Color(red: 0.07, green: 0.10, blue: 0.14)
-    }
-
-    private var secondaryText: Color {
-        colorScheme == .dark ? .white.opacity(0.62) : Color(red: 0.36, green: 0.40, blue: 0.48)
-    }
-}
-
-struct RunningGlyphView: View {
-    var tint: Color = .primary
-
-    var body: some View {
-        Image(systemName: "figure.run")
-            .font(.system(size: 28, weight: .semibold))
-            .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(tint)
-            .frame(width: 32, height: 32)
+        PulsarTabHeader(
+            systemImage: "figure.run",
+            title: "Fitness",
+            subtitle: "Train smarter. Every day.",
+            onAdd: onAddWorkout,
+            addAccessibilityLabel: "Add workout"
+        )
     }
 }
 
@@ -291,4 +245,5 @@ struct RunningGlyphView: View {
     )
         .environmentObject(PulsarRunCoordinator())
         .environmentObject(PulsarActiveWorkoutManager())
+        .environmentObject(WorkoutCompletionPresentationStore())
 }

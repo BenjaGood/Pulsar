@@ -160,6 +160,25 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         return previousPerformanceByExerciseKey[key]
     }
 
+    func progressHistory(for exercise: PulsarGymWorkoutExerciseSession) -> ExerciseProgressHistory {
+        let target = ExerciseProgressLookup(exercise: exercise)
+        return ExerciseProgressService.getExerciseHistory(
+            target: target,
+            sessions: historyStore.sessions,
+            displayUnit: exercise.weightUnit
+        )
+    }
+
+    func recentHistorySessions(for exercise: PulsarGymWorkoutExerciseSession, limit: Int = 5) -> [ExerciseRecentSessionSummary] {
+        let target = ExerciseProgressLookup(exercise: exercise)
+        return ExerciseProgressService.recentSessions(
+            target: target,
+            sessions: historyStore.sessions,
+            displayUnit: exercise.weightUnit,
+            limit: limit
+        )
+    }
+
     func startWorkoutIfNeeded() async {
         guard !didStartWorkoutSystems else { return }
         didStartWorkoutSystems = true
@@ -168,7 +187,7 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         let initialState = activeState(isFinished: false)
         watchSyncStore.storeActiveGymState(initialState, broadcast: true, reason: "gymWorkoutStarted")
         liveActivityManager.startIfPossible(state: initialState)
-        PulsarSyncDebugLogger.log("Gym workout start selectedType=\(session.workoutKind.rawValue) hkType=\(HKWorkoutActivityType.traditionalStrengthTraining.rawValue) session=\(session.id.uuidString) startedFrom=iPhone")
+        PulsarSyncDebugLogger.log("Gym workout start selectedType=\(session.workoutKind.rawValue) hkType=\(PulsarWorkoutCatalog.gymWorkoutConfiguration.activityType.rawValue) session=\(session.id.uuidString) startedFrom=iPhone")
 
         let didStartHealthKit = await healthKitManager.startWorkout(
             routineName: session.routineName,
@@ -809,6 +828,9 @@ final class GymWorkoutSessionViewModel: ObservableObject {
             supersetType: group?.type.rawValue,
             supersetRestSeconds: group?.restTimeSeconds,
             supersetSharedSetCount: group?.sharedSetCount,
+            seriesMemberCount: group?.exerciseIds.count,
+            thumbnailURL: exercise.thumbnailURL,
+            instructionsPreview: exercise.instructionsPreview,
             sets: exercise.sets.map { set in
                 ActiveGymWorkoutSetState(
                     id: set.id,
@@ -854,7 +876,7 @@ final class GymWorkoutSessionViewModel: ObservableObject {
                 }
 
                 for setNumber in 1...max(1, group.sharedSetCount) {
-                    for memberIndex in members.prefix(2) {
+                    for memberIndex in members {
                         guard let setIndex = sortedExercises[memberIndex].sets.firstIndex(where: { $0.setNumber == setNumber }) else { continue }
                         if !sortedExercises[memberIndex].sets[setIndex].isCompleted {
                             return (memberIndex, setIndex)

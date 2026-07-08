@@ -350,7 +350,7 @@ private struct FitnessWeekCard: View {
             .padding(14)
             .frame(maxWidth: .infinity, minHeight: 96, maxHeight: 96, alignment: .leading)
             .background(cardGradient, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .modifier(FitnessGlassSurfaceModifier(cornerRadius: 24, tint: isSelected ? .green : Color(red: 0.68, green: 0.80, blue: 0.92), isInteractive: true))
             .overlay {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(isSelected ? Color.green.opacity(0.70) : .white.opacity(colorScheme == .dark ? 0.14 : 0.72), lineWidth: isSelected ? 1.4 : 1)
@@ -579,7 +579,7 @@ private struct FitnessActivityRow: View {
         .padding(15)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(rowGradient, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 28, tint: activity.category.accent, isInteractive: true))
         .overlay(alignment: .leading) {
             Capsule(style: .continuous)
                 .fill(activity.category.accent)
@@ -638,14 +638,28 @@ struct FitnessWorkoutDetailView: View {
     var activity: WeeklyActivity
 
     @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var bottomChromeLayoutStore: PulsarBottomChromeLayoutStore
+    @StateObject private var detailViewModel: CompletedWorkoutDetailViewModel
     @State private var renderedShareImage: FitnessWorkoutRenderedImage?
+    @State private var selectedExerciseProgressTarget: ExerciseProgressLookup?
+    @State private var selectedSetEditor: CompletedWorkoutSetEditContext?
+    @State private var selectedInstructionsExercise: CompletedWorkoutExercisePresentation?
+
+    @MainActor
+    init(
+        activity: WeeklyActivity,
+        bottomChromeLayoutStore: PulsarBottomChromeLayoutStore? = nil
+    ) {
+        self.activity = activity
+        self._bottomChromeLayoutStore = ObservedObject(wrappedValue: bottomChromeLayoutStore ?? PulsarBottomChromeLayoutStore())
+        self._detailViewModel = StateObject(wrappedValue: CompletedWorkoutDetailViewModel(activity: activity))
+    }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 12) {
                 header
                 routeSection
-                metricGrid
                 gymSetsSection
                 splitsSection
                 trainingSection
@@ -656,6 +670,7 @@ struct FitnessWorkoutDetailView: View {
             .padding(.top, 18)
             .padding(.bottom, 34)
         }
+        .pulsarBottomChromeScrollContainer(layoutStore: bottomChromeLayoutStore)
         .background(FitnessWeeklyBackground())
         .navigationTitle(activity.displayName)
         .navigationBarTitleDisplayMode(.inline)
@@ -672,43 +687,60 @@ struct FitnessWorkoutDetailView: View {
         .sheet(item: $renderedShareImage) { renderedImage in
             FitnessWorkoutActivityView(activityItems: [renderedImage.image])
         }
+        .sheet(item: $selectedExerciseProgressTarget) { target in
+            ExerciseProgressHistorySheet(target: target, displayUnit: target.displayUnit)
+        }
+        .sheet(item: $selectedInstructionsExercise) { exercise in
+            CompletedWorkoutExerciseInstructionsSheet(exercise: exercise)
+        }
+        .sheet(item: $selectedSetEditor) { context in
+            GymSetEditorSheet(
+                setNumber: context.setNumber,
+                reps: context.reps,
+                weight: context.weight,
+                weightUnit: context.weightUnit
+            ) { reps, weight in
+                let didSave = detailViewModel.updateSet(
+                    exerciseId: context.exerciseId,
+                    setId: context.setId,
+                    reps: reps,
+                    weight: weight
+                )
+                UINotificationFeedbackGenerator().notificationOccurred(didSave ? .success : .error)
+            }
+            .presentationDetents([.height(340)])
+            .presentationDragIndicator(.visible)
+        }
+        .alert(
+            "Unable to Save Set",
+            isPresented: Binding(
+                get: { detailViewModel.editErrorMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        detailViewModel.clearEditError()
+                    }
+                }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                detailViewModel.clearEditError()
+            }
+        } message: {
+            Text(detailViewModel.editErrorMessage ?? "Try again.")
+        }
+        .task {
+            await detailViewModel.loadCatalogIfNeeded()
+        }
     }
 
     private var header: some View {
-        FitnessGlassCard(cornerRadius: 32) {
-            HStack(alignment: .top, spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(activity.category.accent.opacity(colorScheme == .dark ? 0.22 : 0.15))
-                        .frame(width: 58, height: 58)
-
-                    Image(systemName: activity.category.symbolName)
-                        .font(.system(size: 25, weight: .bold))
-                        .foregroundStyle(activity.category.accent)
-                }
-
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(activity.displayName)
-                        .font(.system(size: 30, weight: .semibold, design: .rounded))
-                        .foregroundStyle(primaryText)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.72)
-
-                    Text(activity.startDate.formatted(.dateTime.weekday(.wide).month(.abbreviated).day().hour().minute()))
-                        .pulsarTextStyle(.label)
-                        .foregroundStyle(secondaryText)
-
-                    Label(activity.effectiveSourceDeviceName, systemImage: sourceSymbolName)
-                        .pulsarTextStyle(.captionEmphasis)
-                        .foregroundStyle(primaryText)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(.white.opacity(colorScheme == .dark ? 0.08 : 0.62), in: Capsule(style: .continuous))
-                }
-
-                Spacer(minLength: 0)
-            }
-        }
+        CompletedWorkoutSummaryHeaderCard(
+            activity: activity,
+            metrics: compactHeaderMetrics,
+            routineEmoji: detailViewModel.routineEmoji,
+            sourceSymbolName: sourceSymbolName,
+            exerciseCount: detailViewModel.presentations.count
+        )
     }
 
     @ViewBuilder
@@ -755,54 +787,28 @@ struct FitnessWorkoutDetailView: View {
         }
     }
 
-    private var metricGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            ForEach(detailMetrics) { metric in
-                FitnessWorkoutDetailMetricTile(metric: metric)
-            }
-        }
-    }
-
     @ViewBuilder
     private var gymSetsSection: some View {
-        if !activity.gymSetSummaries.isEmpty {
-            FitnessGlassCard(cornerRadius: 30) {
-                VStack(alignment: .leading, spacing: 14) {
-                    Label("Completed Sets", systemImage: "list.bullet.rectangle.fill")
-                        .pulsarTextStyle(.cardTitle)
-                        .foregroundStyle(primaryText)
-
-                    VStack(spacing: 12) {
-                        ForEach(activity.gymSetSummaries) { exercise in
-                            VStack(alignment: .leading, spacing: 9) {
-                                Text(exercise.exerciseName)
-                                    .pulsarTextStyle(.label)
-                                    .foregroundStyle(primaryText)
-                                    .lineLimit(2)
-
-                                FlowLayout(spacing: 8, rowSpacing: 8) {
-                                    ForEach(exercise.sets) { set in
-                                        HStack(spacing: 6) {
-                                            Text("Set \(set.setNumber)")
-                                                .foregroundStyle(secondaryText)
-                                            Text("\(set.reps)x")
-                                                .foregroundStyle(primaryText)
-                                            Text("\(set.weight.formattedGymDecimal) \(exercise.weightUnit.displayName)")
-                                                .foregroundStyle(primaryText)
-                                        }
-                                        .pulsarTextStyle(.captionEmphasis)
-                                .monospacedDigit()
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 8)
-                                        .background(activity.category.accent.opacity(colorScheme == .dark ? 0.16 : 0.10), in: Capsule(style: .continuous))
-                                    }
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                }
-            }
+        if !detailViewModel.presentations.isEmpty {
+            CompletedWorkoutExercisesSection(
+                exercises: detailViewModel.presentations,
+                expandedExerciseIds: detailViewModel.expandedExerciseIds,
+                isEditable: detailViewModel.isEditable,
+                onToggleExercise: { detailViewModel.toggleExpanded($0) },
+                onExpandAll: { detailViewModel.expandAll() },
+                onCollapseAll: { detailViewModel.collapseAll() },
+                onShowHistory: { presentation in
+                    selectedExerciseProgressTarget = ExerciseProgressLookup(
+                        exerciseId: presentation.exerciseId,
+                        exerciseName: presentation.exerciseName,
+                        primaryMuscleGroup: presentation.primaryMuscleGroup,
+                        equipment: presentation.equipment,
+                        displayUnit: presentation.weightUnit
+                    )
+                },
+                onShowInstructions: { selectedInstructionsExercise = $0 },
+                onEditSet: { selectedSetEditor = $0 }
+            )
         }
     }
 
@@ -918,7 +924,11 @@ struct FitnessWorkoutDetailView: View {
         .buttonStyle(FitnessWeekPressStyle())
     }
 
-    private var detailMetrics: [FitnessWorkoutDetailMetric] {
+    private var compactHeaderMetrics: [FitnessWorkoutDetailMetric] {
+        activity.category == .gym ? compactGymMetrics : compactTrainingMetrics
+    }
+
+    private var compactGymMetrics: [FitnessWorkoutDetailMetric] {
         var metrics = [
             FitnessWorkoutDetailMetric(title: "Duration", value: FitnessWeekFormatters.duration(activity.duration), symbolName: "timer", tint: .green)
         ]
@@ -927,32 +937,66 @@ struct FitnessWorkoutDetailView: View {
             metrics.append(FitnessWorkoutDetailMetric(title: "Calories", value: FitnessWeekFormatters.calories(calories), symbolName: "flame.fill", tint: .orange))
         }
 
+        if let averageHeartRate = activity.averageHeartRate, averageHeartRate > 0 {
+            metrics.append(FitnessWorkoutDetailMetric(title: "Avg HR", value: "\(Int(averageHeartRate.rounded())) bpm", symbolName: "heart.fill", tint: .red))
+        }
+
+        if let setMetric {
+            metrics.append(setMetric)
+        }
+
+        if metrics.count < 4,
+           let maxHeartRateMetric {
+            metrics.append(maxHeartRateMetric)
+        }
+
+        return Array(metrics.prefix(4))
+    }
+
+    private var compactTrainingMetrics: [FitnessWorkoutDetailMetric] {
+        var metrics = [
+            FitnessWorkoutDetailMetric(title: "Duration", value: FitnessWeekFormatters.duration(activity.duration), symbolName: "timer", tint: .green)
+        ]
+
         if let distance = activity.distanceMeters, distance > 0 {
             metrics.append(FitnessWorkoutDetailMetric(title: "Distance", value: FitnessWeekFormatters.distance(distance), symbolName: "point.topleft.down.curvedto.point.bottomright.up", tint: activity.category.accent))
-            if let paceMetric {
-                metrics.append(paceMetric)
-            }
+        }
+
+        if let calories = activity.calories, calories > 0 {
+            metrics.append(FitnessWorkoutDetailMetric(title: "Calories", value: FitnessWeekFormatters.calories(calories), symbolName: "flame.fill", tint: .orange))
         }
 
         if let averageHeartRate = activity.averageHeartRate, averageHeartRate > 0 {
             metrics.append(FitnessWorkoutDetailMetric(title: "Avg HR", value: "\(Int(averageHeartRate.rounded())) bpm", symbolName: "heart.fill", tint: .red))
         }
 
-        if let maxHeartRate = activity.maxHeartRate, maxHeartRate > 0 {
-            metrics.append(FitnessWorkoutDetailMetric(title: "Max HR", value: "\(Int(maxHeartRate.rounded())) bpm", symbolName: "bolt.heart.fill", tint: .red))
+        if let paceMetric {
+            metrics.append(paceMetric)
         }
 
-        if let completedSets = activity.completedSets, completedSets > 0 {
-            let setValue = activity.totalSets.map { "\(completedSets)/\($0)" } ?? "\(completedSets)"
-            metrics.append(FitnessWorkoutDetailMetric(title: "Sets", value: setValue, symbolName: "checkmark.circle.fill", tint: activity.category.accent))
+        if let maxHeartRateMetric {
+            metrics.append(maxHeartRateMetric)
         }
 
-        if let trainingType = activity.trainingType, !trainingType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            metrics.append(FitnessWorkoutDetailMetric(title: "Type", value: trainingType, symbolName: activity.category.symbolName, tint: activity.category.accent))
+        if let setMetric,
+           metrics.count < 6 {
+            metrics.append(setMetric)
         }
 
-        metrics.append(FitnessWorkoutDetailMetric(title: "Source", value: activity.effectiveSourceDeviceName, symbolName: sourceSymbolName, tint: activity.category.accent))
-        return metrics
+        return Array(metrics.prefix(6))
+    }
+
+    private var setMetric: FitnessWorkoutDetailMetric? {
+        guard let completedSets = activity.completedSets,
+              completedSets > 0 || (activity.totalSets ?? 0) > 0 else { return nil }
+        let value = activity.totalSets.map { "\(completedSets)/\($0)" } ?? "\(completedSets)"
+        return FitnessWorkoutDetailMetric(title: "Sets", value: value, symbolName: "checkmark.circle.fill", tint: activity.category.accent)
+    }
+
+    private var maxHeartRateMetric: FitnessWorkoutDetailMetric? {
+        guard let maxHeartRate = activity.maxHeartRate,
+              maxHeartRate > 0 else { return nil }
+        return FitnessWorkoutDetailMetric(title: "Max HR", value: "\(Int(maxHeartRate.rounded())) bpm", symbolName: "bolt.heart.fill", tint: .red)
     }
 
     private var paceMetric: FitnessWorkoutDetailMetric? {
@@ -1043,35 +1087,202 @@ private struct FitnessWorkoutDetailMetric: Identifiable {
     var tint: Color
 }
 
-private struct FitnessWorkoutDetailMetricTile: View {
+private struct CompletedWorkoutSummaryHeaderCard: View {
+    var activity: WeeklyActivity
+    var metrics: [FitnessWorkoutDetailMetric]
+    var routineEmoji: String?
+    var sourceSymbolName: String
+    var exerciseCount: Int
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack(alignment: .top, spacing: 14) {
+                CompletedWorkoutSummaryIcon(
+                    category: activity.category,
+                    routineEmoji: routineEmoji
+                )
+
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(activity.displayName)
+                        .font(.system(size: 30, weight: .semibold, design: .rounded))
+                        .foregroundStyle(primaryText)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.72)
+
+                    Text(activity.startDate.formatted(.dateTime.weekday(.wide).month(.abbreviated).day().hour().minute()))
+                        .pulsarTextStyle(.label)
+                        .foregroundStyle(secondaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
+
+                VStack(alignment: .trailing, spacing: 8) {
+                    sourcePill
+                    if exerciseCount > 0 {
+                        exerciseCountChip
+                    }
+                }
+                .frame(minWidth: 94, alignment: .trailing)
+            }
+
+            if !metrics.isEmpty {
+                separator
+
+                VStack(spacing: 12) {
+                    ForEach(Array(metricRows.enumerated()), id: \.offset) { _, row in
+                        CompletedWorkoutSummaryMetricRow(metrics: row)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .modifier(
+            FitnessGlassSurfaceModifier(
+                cornerRadius: 32,
+                tint: Color(red: 0.72, green: 0.82, blue: 0.92),
+                borderOpacity: 0.94
+            )
+        )
+    }
+
+    private var metricRows: [[FitnessWorkoutDetailMetric]] {
+        let firstRow = Array(metrics.prefix(4))
+        let secondRow = Array(metrics.dropFirst(4).prefix(2))
+        return [firstRow, secondRow].filter { !$0.isEmpty }
+    }
+
+    private var sourcePill: some View {
+        Label(activity.effectiveSourceDeviceName, systemImage: sourceSymbolName)
+            .pulsarTextStyle(.captionEmphasis)
+            .foregroundStyle(primaryText)
+            .lineLimit(1)
+            .minimumScaleFactor(0.74)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .modifier(FitnessGlassSurfaceModifier(cornerRadius: 17, tint: activity.category.accent, borderOpacity: 0.74))
+    }
+
+    private var exerciseCountChip: some View {
+        Label("\(exerciseCount) \(exerciseCount == 1 ? "exercise" : "exercises")", systemImage: "list.bullet")
+            .pulsarTextStyle(.captionEmphasis)
+            .foregroundStyle(secondaryText)
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .modifier(FitnessGlassSurfaceModifier(cornerRadius: 17, tint: Color(red: 0.72, green: 0.82, blue: 0.92), borderOpacity: 0.58))
+    }
+
+    private var separator: some View {
+        Rectangle()
+            .fill(
+                LinearGradient(
+                    colors: [
+                        .white.opacity(colorScheme == .dark ? 0.14 : 0.44),
+                        .white.opacity(colorScheme == .dark ? 0.06 : 0.22),
+                        .white.opacity(colorScheme == .dark ? 0.04 : 0.14)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .frame(height: 0.7)
+    }
+
+    private var primaryText: Color {
+        colorScheme == .dark ? .white.opacity(0.97) : Color(red: 0.07, green: 0.10, blue: 0.14)
+    }
+
+    private var secondaryText: Color {
+        colorScheme == .dark ? .white.opacity(0.60) : Color(red: 0.36, green: 0.40, blue: 0.48)
+    }
+}
+
+private struct CompletedWorkoutSummaryMetricRow: View {
+    var metrics: [FitnessWorkoutDetailMetric]
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            metricHStack(metrics)
+
+            VStack(spacing: 12) {
+                metricHStack(Array(metrics.prefix(2)))
+                metricHStack(Array(metrics.dropFirst(2)))
+            }
+        }
+    }
+
+    private func metricHStack(_ metrics: [FitnessWorkoutDetailMetric]) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            ForEach(metrics) { metric in
+                CompletedWorkoutSummaryStatItem(metric: metric)
+            }
+        }
+    }
+}
+
+private struct CompletedWorkoutSummaryIcon: View {
+    var category: WeeklyActivityCategory
+    var routineEmoji: String?
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ZStack {
+            if let routineEmoji {
+                Text(routineEmoji)
+                    .font(.system(size: 32))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            } else {
+                Image(systemName: category.symbolName)
+                    .font(.system(size: 26, weight: .bold))
+                    .foregroundStyle(category.accent)
+            }
+        }
+        .frame(width: 64, height: 64)
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 22, tint: category.accent, borderOpacity: 0.86))
+        .accessibilityHidden(true)
+    }
+}
+
+private struct CompletedWorkoutSummaryStatItem: View {
     var metric: FitnessWorkoutDetailMetric
 
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Image(systemName: metric.symbolName)
-                .pulsarTextStyle(.cardTitle)
-                .foregroundStyle(metric.tint)
+        VStack(spacing: 5) {
+            HStack(spacing: 6) {
+                Image(systemName: metric.symbolName)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(metric.tint)
+                    .frame(width: 18, height: 18)
 
-            Text(metric.value)
-                .pulsarTextStyle(.cardTitle)
-                .foregroundStyle(primaryText)
-                .lineLimit(2)
-                .minimumScaleFactor(0.72)
+                Text(metric.value)
+                    .font(.system(size: 18, weight: .semibold, design: .default))
+                    .monospacedDigit()
+                    .foregroundStyle(primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.70)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
 
             Text(metric.title)
-                .pulsarTextStyle(.captionEmphasis)
+                .pulsarTextStyle(.caption)
+                .fontWeight(.semibold)
                 .foregroundStyle(secondaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .frame(maxWidth: .infinity, alignment: .center)
         }
-        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
-        .padding(15)
-        .background(.white.opacity(colorScheme == .dark ? 0.08 : 0.74), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(.white.opacity(colorScheme == .dark ? 0.13 : 0.72), lineWidth: 1)
-        }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .top)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(metric.title), \(metric.value)")
     }
 
     private var primaryText: Color {
@@ -1163,7 +1374,7 @@ private struct FitnessWorkoutHistoryShareCard: View {
                         .minimumScaleFactor(0.72)
                 }
                 .padding(26)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+                .modifier(FitnessGlassSurfaceModifier(cornerRadius: 30, tint: activity.category.accent))
                 .overlay {
                     RoundedRectangle(cornerRadius: 30, style: .continuous)
                         .stroke(.white.opacity(0.22), lineWidth: 1)
@@ -1376,7 +1587,7 @@ private struct FitnessWeeklyEmptyState: View {
         .padding(24)
         .frame(maxWidth: .infinity, minHeight: 190)
         .background(emptyGradient, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 30, tint: .green))
         .overlay {
             RoundedRectangle(cornerRadius: 30, style: .continuous)
                 .stroke(.white.opacity(colorScheme == .dark ? 0.14 : 0.78), lineWidth: 1)
@@ -1502,7 +1713,7 @@ struct FitnessWeekHistorySheet: View {
         }
         .padding(18)
         .background(headerBackground, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 30, tint: .green))
         .overlay {
             RoundedRectangle(cornerRadius: 30, style: .continuous)
                 .stroke(.white.opacity(colorScheme == .dark ? 0.15 : 0.78), lineWidth: 1)
@@ -1593,7 +1804,7 @@ private struct FitnessWeekHistoryRow: View {
             }
             .padding(14)
             .background(rowBackground, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .modifier(FitnessGlassSurfaceModifier(cornerRadius: 24, tint: isSelected ? .green : Color(red: 0.68, green: 0.80, blue: 0.92), isInteractive: true))
             .overlay {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(isSelected ? Color.green.opacity(0.58) : .white.opacity(colorScheme == .dark ? 0.13 : 0.70), lineWidth: isSelected ? 1.3 : 1)
@@ -1723,9 +1934,9 @@ struct FitnessGlassCard<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        content()
-            .padding(padding)
-            .modifier(FitnessGlassSurfaceModifier(cornerRadius: cornerRadius))
+        PulsarGlassCard(cornerRadius: cornerRadius, contentPadding: padding) {
+            content()
+        }
     }
 }
 
@@ -1735,142 +1946,31 @@ struct FitnessGlassSurfaceModifier: ViewModifier {
     var isInteractive = false
     var borderOpacity: Double = 1
 
-    @Environment(\.colorScheme) private var colorScheme
-
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-
-        if #available(iOS 26.0, *) {
-            if isInteractive {
-                content
-                    .background(darkSurface, in: shape)
-                    .glassEffect(
-                        .regular.tint(tint.opacity(0.060)).interactive(),
-                        in: .rect(cornerRadius: cornerRadius, style: .continuous)
-                    )
-                    .clipShape(shape)
-                    .overlay {
-                        border(shape: shape)
-                    }
-                    .shadow(color: shadowColor, radius: 20, x: 0, y: 10)
-            } else {
-                content
-                    .background(darkSurface, in: shape)
-                    .glassEffect(
-                        .regular.tint(tint.opacity(0.045)),
-                        in: .rect(cornerRadius: cornerRadius, style: .continuous)
-                    )
-                    .clipShape(shape)
-                    .overlay {
-                        border(shape: shape)
-                    }
-                    .shadow(color: shadowColor, radius: 20, x: 0, y: 10)
-            }
-        } else {
+        PulsarGlassCard(
+            cornerRadius: cornerRadius,
+            contentPadding: 0,
+            tint: tint.opacity(borderOpacity > 0 ? 0.08 : 0),
+            isInteractive: isInteractive
+        ) {
             content
-                .background(.ultraThinMaterial, in: shape)
-                .background(darkSurface, in: shape)
-                .clipShape(shape)
-                .overlay {
-                    border(shape: shape)
-                }
-                .shadow(color: shadowColor, radius: 18, x: 0, y: 10)
         }
-    }
-
-    private var darkSurface: LinearGradient {
-        LinearGradient(
-            colors: colorScheme == .dark
-                ? [
-                    Color.white.opacity(0.095),
-                    Color(red: 0.055, green: 0.075, blue: 0.095).opacity(0.38),
-                    Color.black.opacity(0.14)
-                ]
-                : [
-                    Color.white.opacity(0.78),
-                    Color(red: 0.90, green: 0.95, blue: 0.98).opacity(0.48),
-                    Color.white.opacity(0.20)
-                ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    private var shadowColor: Color {
-        .black.opacity(colorScheme == .dark ? 0.20 : 0.08)
-    }
-
-    private func border(shape: RoundedRectangle) -> some View {
-        shape
-            .stroke(
-                LinearGradient(
-                    colors: [
-                        .white.opacity((colorScheme == .dark ? 0.22 : 0.82) * borderOpacity),
-                        tint.opacity((colorScheme == .dark ? 0.08 : 0.16) * borderOpacity),
-                        .white.opacity((colorScheme == .dark ? 0.045 : 0.38) * borderOpacity)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: 0.65
-            )
     }
 }
 
-struct FitnessCircularGlassSurface: View {
-    var cornerRadius: CGFloat
-    var tint: Color = Color(red: 0.68, green: 0.80, blue: 0.92)
-    var opacity: Double = 1
-
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-
-        if #available(iOS 26.0, *) {
-            Color.clear
-                .background(.white.opacity((colorScheme == .dark ? 0.050 : 0.42) * opacity), in: shape)
-                .glassEffect(
-                    .regular.tint(tint.opacity(0.055 * opacity)).interactive(),
-                    in: .rect(cornerRadius: cornerRadius, style: .continuous)
-                )
-                .overlay {
-                    border(shape: shape)
-                }
-                .shadow(color: .black.opacity((colorScheme == .dark ? 0.20 : 0.08) * opacity), radius: 18, x: 0, y: 10)
-        } else {
-            Color.clear
-                .background(.ultraThinMaterial, in: shape)
-                .background(.white.opacity((colorScheme == .dark ? 0.055 : 0.45) * opacity), in: shape)
-                .overlay {
-                    border(shape: shape)
-                }
-                .shadow(color: .black.opacity((colorScheme == .dark ? 0.18 : 0.08) * opacity), radius: 16, x: 0, y: 9)
-        }
-    }
-
-    private func border(shape: RoundedRectangle) -> some View {
-        shape
-            .stroke(.white.opacity((colorScheme == .dark ? 0.20 : 0.70) * opacity), lineWidth: 0.65)
-    }
-}
+typealias FitnessCircularGlassSurface = PulsarCircularGlassSurface
 
 struct FitnessPanel<Content: View>: View {
     var cornerRadius: CGFloat = 24
     var padding: CGFloat = 14
     var borderOpacity: Double = 1
+    var tint: Color = .green
     @ViewBuilder var content: () -> Content
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        content()
-            .padding(padding)
-            .background(PulsarTheme.matrixPanelBackground(for: colorScheme), in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(.white.opacity((colorScheme == .dark ? 0.12 : 0.72) * borderOpacity), lineWidth: 1)
-            }
+        PulsarGlassCard(cornerRadius: cornerRadius, contentPadding: padding, tint: tint.opacity(0.08 * borderOpacity)) {
+            content()
+        }
     }
 }
 

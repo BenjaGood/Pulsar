@@ -11,49 +11,25 @@ struct PulsarNutritionGlassCard<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        content
-            .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .pulsarLiquidGlass(cornerRadius: cornerRadius)
+        PulsarGlassCard(cornerRadius: cornerRadius, contentPadding: padding) {
+            content
+        }
     }
 }
 
 struct NutritionPageTitleHeader: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isGlowing = false
+    var onAdd: () -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "fork.knife")
-                .font(.system(size: 24, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.green)
-                .scaleEffect(isGlowing && !reduceMotion ? 1.04 : 1)
-                .frame(width: 44, height: 44)
-                .background(.green.opacity(0.16), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                .pulsarLiquidGlass(cornerRadius: 13, tint: .green.opacity(0.10), isClear: true)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Nutrition")
-                    .pulsarTextStyle(.sectionTitle)
-                    .foregroundStyle(.white)
-                Text("Track meals. Fuel goals.")
-                    .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(.white.opacity(0.76))
-            }
-
-            Spacer(minLength: 0)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Nutrition. Track meals. Fuel goals.")
-        .accessibilityAddTraits(.isHeader)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 3.4).repeatForever(autoreverses: true)) {
-                isGlowing = true
-            }
-        }
+        PulsarTabHeader(
+            systemImage: "fork.knife",
+            title: "Nutrition",
+            subtitle: "Track meals. Fuel goals.",
+            primaryText: .white.opacity(0.96),
+            secondaryText: .white.opacity(0.62),
+            onAdd: onAdd,
+            addAccessibilityLabel: "Add food"
+        )
     }
 }
 
@@ -175,11 +151,7 @@ private struct NutritionMacroTripletColumn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: symbolName)
-                    .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(tint)
-                    .frame(width: 32, height: 32)
-                    .background(tint.opacity(0.12), in: Circle())
+                PulsarGlassIconCircle(size: 32, tint: tint, systemImage: symbolName, symbolScale: 0.42)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
                         .pulsarTextStyle(.captionEmphasis)
@@ -315,11 +287,7 @@ struct NutritionMealRow: View {
             HStack(spacing: 12) {
                 Button(action: onToggleExpanded) {
                     HStack(spacing: 12) {
-                        Image(systemName: category.symbolName)
-                            .pulsarTextStyle(.label)
-                            .foregroundStyle(category.tint)
-                            .frame(width: 44, height: 44)
-                            .background(category.tint.opacity(0.12), in: Circle())
+                        PulsarGlassIconCircle(size: 44, tint: category.tint, systemImage: category.symbolName, symbolScale: 0.38)
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(category.name)
@@ -386,11 +354,7 @@ private struct NutritionMealEntryRow: View {
         HStack(spacing: 10) {
             Button(action: onEdit) {
                 HStack(spacing: 10) {
-                    Image(systemName: "fork.knife")
-                        .pulsarTextStyle(.label)
-                        .foregroundStyle(tint)
-                        .frame(width: 28, height: 28)
-                        .background(tint.opacity(0.10), in: Circle())
+                    PulsarGlassIconCircle(size: 28, tint: tint, systemImage: "fork.knife", symbolScale: 0.40)
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(entry.food.name)

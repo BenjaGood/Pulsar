@@ -10,26 +10,16 @@ import SwiftUI
 struct PulsarRunSummaryView: View {
     var summary: PulsarRunSummary
     var onDone: (() -> Void)? = nil
-    @State private var isShowingShareComposer = false
 
     var body: some View {
-        ScrollView {
+        WorkoutCompleteView(runSummary: summary, onDone: onDone) {
             VStack(alignment: .leading, spacing: 18) {
-                header
                 routeMap
-                heroStats
                 heartRateSourceCard
                 charts
                 splits
-                actionButtons
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 20)
-            .padding(.bottom, 34)
-        }
-        .background(summaryBackground)
-        .sheet(isPresented: $isShowingShareComposer) {
-            PulsarWorkoutShareComposerView(summary: summary)
+            .padding(.top, 4)
         }
     }
 
@@ -90,49 +80,6 @@ struct PulsarRunSummaryView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-        }
-    }
-
-    private var heroStats: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            SummaryTile(title: "Duration", value: PulsarRunFormatters.duration(summary.elapsedTime), symbol: "timer")
-
-            if shouldShowDistanceMetrics {
-                SummaryTile(title: "Distance", value: PulsarRunFormatters.distance(summary.distanceMeters), symbol: "point.topleft.down.curvedto.point.bottomright.up")
-                SummaryTile(title: PulsarRunFormatters.paceOrSpeedTitle(for: summary.workoutKind, average: true), value: PulsarRunFormatters.paceOrSpeed(workoutKind: summary.workoutKind, paceSecondsPerKilometer: summary.averagePaceSecondsPerKilometer, speedMetersPerSecond: summary.averageSpeedMetersPerSecond), symbol: "speedometer")
-            }
-
-            if summary.movingTime > 0, abs(summary.elapsedTime - summary.movingTime) > 1 {
-                SummaryTile(title: "Moving Time", value: PulsarRunFormatters.duration(summary.movingTime), symbol: summary.workoutKind.systemImageName, tint: summary.workoutKind.accentColor)
-            }
-
-            if summary.stoppedTime > 1 {
-                SummaryTile(title: "Stopped", value: PulsarRunFormatters.duration(summary.stoppedTime), symbol: "pause.circle.fill", tint: .orange)
-            }
-
-            SummaryTile(title: "Calories", value: PulsarRunFormatters.calories(summary.activeEnergyKilocalories), symbol: "flame.fill", tint: .orange)
-
-            if shouldShowDistanceMetrics, summary.effectiveElevationGainMeters > 0 {
-                SummaryTile(title: "Gain", value: PulsarRunFormatters.elevation(summary.effectiveElevationGainMeters), symbol: "mountain.2.fill", tint: summary.workoutKind.accentColor)
-            }
-
-            if shouldShowDistanceMetrics, summary.effectiveElevationLossMeters > 0 {
-                SummaryTile(title: "Loss", value: PulsarRunFormatters.elevation(summary.effectiveElevationLossMeters), symbol: "arrow.down.to.line.compact", tint: .blue)
-            }
-
-            if summary.averageHeartRate != nil {
-                SummaryTile(title: "Avg HR", value: PulsarRunFormatters.heartRate(summary.averageHeartRate), unit: "bpm", symbol: "heart.fill", tint: .red)
-            }
-
-            if summary.maxHeartRate != nil {
-                SummaryTile(title: "Max HR", value: PulsarRunFormatters.heartRate(summary.maxHeartRate), unit: "bpm", symbol: "bolt.heart.fill", tint: .red)
-            }
-
-            if let steps = summary.steps, steps > 0 {
-                SummaryTile(title: "Steps", value: steps.formatted(), symbol: "shoeprints.fill", tint: summary.workoutKind.accentColor)
-            }
-
-            SummaryTile(title: "Source", value: summary.sourceDeviceName, symbol: summary.source == .appleWatch ? "applewatch" : "iphone", tint: summary.workoutKind.accentColor)
         }
     }
 
@@ -232,43 +179,6 @@ struct PulsarRunSummaryView: View {
         }
     }
 
-    private var actionButtons: some View {
-        VStack(spacing: 10) {
-            Button {
-                isShowingShareComposer = true
-            } label: {
-                Label(shareActionTitle, systemImage: "square.and.arrow.up")
-                    .pulsarTextStyle(.buttonTitle)
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(summary.workoutKind.accentColor.gradient, in: Capsule(style: .continuous))
-            }
-            .buttonStyle(PulsarRunPressStyle())
-
-            if let onDone {
-                Button(action: onDone) {
-                    Text("Done")
-                        .pulsarTextStyle(.buttonTitle)
-                        .foregroundStyle(summary.workoutKind.accentColor)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(summary.workoutKind.accentColor.opacity(0.12), in: Capsule(style: .continuous))
-                }
-                .buttonStyle(PulsarRunPressStyle())
-            }
-        }
-    }
-
-    private var summaryBackground: some View {
-        LinearGradient(
-            colors: [Color(.systemBackground), summary.workoutKind.accentColor.opacity(0.10), Color(.secondarySystemBackground)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .ignoresSafeArea()
-    }
-
     private var routeCoordinates: [CLLocationCoordinate2D] {
         summary.route.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
     }
@@ -287,40 +197,8 @@ struct PulsarRunSummaryView: View {
         summary.workoutKind.isOutdoorDistanceWorkout || summary.distanceMeters > 10 || routeCoordinates.count > 1
     }
 
-    private var shareActionTitle: String {
-        shouldShowDistanceMetrics ? "Share Route" : "Share"
-    }
-
     private var routeAltitudeSamples: [ElevationSample] {
         shouldShowDistanceMetrics ? summary.gpsRoute.elevationSamples : []
-    }
-}
-
-private struct SummaryTile: View {
-    var title: String
-    var value: String
-    var unit: String? = nil
-    var symbol: String
-    var tint: Color = .green
-
-    var body: some View {
-        PulsarRunGlassCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Image(systemName: symbol)
-                    .pulsarTextStyle(.cardTitle)
-                    .foregroundStyle(tint)
-                Text(value)
-                    .pulsarMonospacedMetric(.metricValue)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.68)
-                HStack(spacing: 4) {
-                    Text(title)
-                    if let unit { Text(unit) }
-                }
-                .pulsarTextStyle(.metricLabel)
-                .foregroundStyle(.secondary)
-            }
-        }
     }
 }
 

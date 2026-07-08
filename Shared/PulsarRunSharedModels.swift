@@ -80,6 +80,7 @@ enum PulsarWorkoutMetadata {
 
 enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hashable {
     case running
+    case indoorRunning
     case walking
     case hiking
     case cycling
@@ -146,6 +147,7 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
     nonisolated var displayName: String {
         switch self {
         case .running: "Running"
+        case .indoorRunning: "Indoor Running"
         case .walking: "Walking"
         case .hiking: "Hiking"
         case .cycling: "Cycling"
@@ -170,6 +172,7 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
     nonisolated var shortName: String {
         switch self {
         case .running: "Run"
+        case .indoorRunning: "Indoor Run"
         case .walking: "Walk"
         case .hiking: "Hike"
         case .cycling: "Ride"
@@ -194,6 +197,7 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
     nonisolated var actionName: String {
         switch self {
         case .running: "run"
+        case .indoorRunning: "indoor run"
         case .walking: "walk"
         case .hiking: "hike"
         case .cycling: "ride"
@@ -230,6 +234,7 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
     nonisolated var systemImageName: String {
         switch self {
         case .running: "figure.run"
+        case .indoorRunning: "figure.run.treadmill"
         case .walking: "figure.walk"
         case .hiking: "mountain.2.fill"
         case .cycling: "bicycle"
@@ -253,7 +258,7 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
 
     nonisolated var healthKitActivityType: HKWorkoutActivityType {
         switch self {
-        case .running: .running
+        case .running, .indoorRunning: .running
         case .walking: .walking
         case .hiking: .hiking
         case .cycling: .cycling
@@ -279,6 +284,8 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
         switch self {
         case .running, .walking, .hiking, .cycling:
             .outdoor
+        case .indoorRunning:
+            .indoor
         case .swimming:
             .unknown
         case .hiit, .strength, .yoga, .pilates, .rowing, .dance, .boxing, .stretching, .core, .mobility, .elliptical, .stairClimber, .cooldown, .other:
@@ -290,15 +297,26 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
         switch self {
         case .running, .walking, .hiking, .cycling:
             true
-        case .hiit, .strength, .yoga, .pilates, .swimming, .rowing, .dance, .boxing, .stretching, .core, .mobility, .elliptical, .stairClimber, .cooldown, .other:
+        case .indoorRunning, .hiit, .strength, .yoga, .pilates, .swimming, .rowing, .dance, .boxing, .stretching, .core, .mobility, .elliptical, .stairClimber, .cooldown, .other:
             false
         }
     }
 
+    nonisolated var workoutConfiguration: HKWorkoutConfiguration {
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = healthKitActivityType
+        configuration.locationType = defaultLocationType
+        return configuration
+    }
+
     nonisolated init(activityType: HKWorkoutActivityType) {
+        self.init(activityType: activityType, locationType: nil)
+    }
+
+    nonisolated init(activityType: HKWorkoutActivityType, locationType: HKWorkoutSessionLocationType?) {
         switch activityType {
         case .running:
-            self = .running
+            self = locationType == .indoor ? .indoorRunning : .running
         case .walking:
             self = .walking
         case .hiking:
@@ -307,9 +325,9 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
             self = .cycling
         case .highIntensityIntervalTraining:
             self = .hiit
-        case .traditionalStrengthTraining, .functionalStrengthTraining:
+        case .traditionalStrengthTraining, .functionalStrengthTraining, .crossTraining:
             self = .strength
-        case .yoga:
+        case .yoga, .mindAndBody:
             self = .yoga
         case .pilates:
             self = .pilates
@@ -337,13 +355,185 @@ enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hash
     }
 
     nonisolated init(metadata: [String: Any]?, fallbackActivityType: HKWorkoutActivityType) {
+        self.init(metadata: metadata, fallbackActivityType: fallbackActivityType, fallbackLocationType: nil)
+    }
+
+    nonisolated init(
+        metadata: [String: Any]?,
+        fallbackActivityType: HKWorkoutActivityType,
+        fallbackLocationType: HKWorkoutSessionLocationType?
+    ) {
         if let rawType = PulsarWorkoutMetadata.workoutType(from: metadata),
            let workoutKind = PulsarOutdoorWorkoutKind(workoutTypeRawValue: rawType) {
             self = workoutKind
         } else {
-            self = PulsarOutdoorWorkoutKind(activityType: fallbackActivityType)
+            self = PulsarOutdoorWorkoutKind(activityType: fallbackActivityType, locationType: fallbackLocationType)
         }
     }
+}
+
+enum PulsarWorkoutCatalogSection: String, CaseIterable, Hashable {
+    case personalized
+    case moreWorkouts
+}
+
+enum PulsarWorkoutCatalogDestination: Hashable {
+    case outdoor(PulsarOutdoorWorkoutKind)
+    case gym
+}
+
+struct PulsarWorkoutCatalogTint: Hashable {
+    var red: Double
+    var green: Double
+    var blue: Double
+}
+
+struct PulsarWorkoutCatalogEntry: Identifiable, Hashable {
+    var id: String
+    var displayName: String
+    var symbolName: String
+    var category: String
+    var tint: PulsarWorkoutCatalogTint
+    var activityType: HKWorkoutActivityType
+    var defaultLocationType: HKWorkoutSessionLocationType
+    var section: PulsarWorkoutCatalogSection
+    var order: Int
+    var destination: PulsarWorkoutCatalogDestination
+
+    nonisolated var outdoorWorkoutKind: PulsarOutdoorWorkoutKind? {
+        guard case .outdoor(let kind) = destination else { return nil }
+        return kind
+    }
+
+    nonisolated var isGym: Bool {
+        if case .gym = destination {
+            return true
+        }
+        return false
+    }
+
+    nonisolated var workoutConfiguration: HKWorkoutConfiguration {
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = activityType
+        configuration.locationType = defaultLocationType
+        return configuration
+    }
+}
+
+enum PulsarWorkoutCatalog {
+    nonisolated static let entries: [PulsarWorkoutCatalogEntry] = [
+        entry(.hiking, category: "Trail", tint: .terrain, section: .personalized, order: 0),
+        entry(.running, category: "GPS Run", tint: .velocity, section: .personalized, order: 1),
+        entry(.indoorRunning, category: "Treadmill", tint: .velocity, section: .personalized, order: 2),
+        entry(.walking, category: "GPS Walk", tint: .balance, section: .personalized, order: 3),
+        gymEntry(section: .personalized, order: 4),
+        entry(.cycling, category: "Endurance", tint: .endurance, section: .moreWorkouts, order: 0),
+        entry(.hiit, category: "Intervals", tint: .fire, section: .moreWorkouts, order: 1),
+        entry(.strength, category: "Power", tint: .power, section: .moreWorkouts, order: 2),
+        entry(.yoga, category: "Restore", tint: .restore, section: .moreWorkouts, order: 3),
+        entry(.pilates, category: "Control", tint: .balance, section: .moreWorkouts, order: 4),
+        entry(.swimming, category: "Water", tint: .water, section: .moreWorkouts, order: 5),
+        entry(.rowing, category: "Endurance", tint: .endurance, section: .moreWorkouts, order: 6),
+        entry(.dance, category: "Rhythm", tint: .rhythm, section: .moreWorkouts, order: 7),
+        entry(.boxing, category: "Power", tint: .fire, section: .moreWorkouts, order: 8),
+        entry(.stretching, category: "Recovery", tint: .restore, section: .moreWorkouts, order: 9),
+        entry(.core, category: "Stability", tint: .balance, section: .moreWorkouts, order: 10),
+        entry(.mobility, category: "Flow", tint: .focus, section: .moreWorkouts, order: 11),
+        entry(.elliptical, category: "Cardio", tint: .cardio, section: .moreWorkouts, order: 12),
+        entry(.stairClimber, category: "Climber", tint: .climber, section: .moreWorkouts, order: 13),
+        entry(.cooldown, category: "Recovery", tint: .focus, section: .moreWorkouts, order: 14)
+    ]
+
+    nonisolated static var personalizedEntries: [PulsarWorkoutCatalogEntry] {
+        entries(for: .personalized)
+    }
+
+    nonisolated static var moreWorkoutEntries: [PulsarWorkoutCatalogEntry] {
+        entries(for: .moreWorkouts)
+    }
+
+    nonisolated static var gymWorkoutConfiguration: HKWorkoutConfiguration {
+        gymEntry(section: .personalized, order: 0).workoutConfiguration
+    }
+
+    nonisolated static func entries(for section: PulsarWorkoutCatalogSection) -> [PulsarWorkoutCatalogEntry] {
+        entries
+            .filter { $0.section == section }
+            .sorted { lhs, rhs in
+                if lhs.order == rhs.order { return lhs.id < rhs.id }
+                return lhs.order < rhs.order
+            }
+    }
+
+    nonisolated static func entry(for id: String) -> PulsarWorkoutCatalogEntry? {
+        entries.first { $0.id == id }
+    }
+
+    nonisolated static func entry(for workoutKind: PulsarOutdoorWorkoutKind) -> PulsarWorkoutCatalogEntry? {
+        entries.first { $0.outdoorWorkoutKind == workoutKind }
+    }
+
+    nonisolated static func entry(
+        activityType: HKWorkoutActivityType,
+        locationType: HKWorkoutSessionLocationType?
+    ) -> PulsarWorkoutCatalogEntry? {
+        let workoutKind = PulsarOutdoorWorkoutKind(activityType: activityType, locationType: locationType)
+        return entry(for: workoutKind)
+    }
+
+    nonisolated private static func entry(
+        _ workoutKind: PulsarOutdoorWorkoutKind,
+        category: String,
+        tint: PulsarWorkoutCatalogTint,
+        section: PulsarWorkoutCatalogSection,
+        order: Int
+    ) -> PulsarWorkoutCatalogEntry {
+        PulsarWorkoutCatalogEntry(
+            id: workoutKind.rawValue,
+            displayName: workoutKind.displayName,
+            symbolName: workoutKind.systemImageName,
+            category: category,
+            tint: tint,
+            activityType: workoutKind.healthKitActivityType,
+            defaultLocationType: workoutKind.defaultLocationType,
+            section: section,
+            order: order,
+            destination: .outdoor(workoutKind)
+        )
+    }
+
+    nonisolated private static func gymEntry(
+        section: PulsarWorkoutCatalogSection,
+        order: Int
+    ) -> PulsarWorkoutCatalogEntry {
+        PulsarWorkoutCatalogEntry(
+            id: "gym",
+            displayName: "Gym",
+            symbolName: "dumbbell.fill",
+            category: "Strength",
+            tint: .power,
+            activityType: .traditionalStrengthTraining,
+            defaultLocationType: .indoor,
+            section: section,
+            order: order,
+            destination: .gym
+        )
+    }
+}
+
+extension PulsarWorkoutCatalogTint {
+    nonisolated static let terrain = PulsarWorkoutCatalogTint(red: 0.34, green: 0.82, blue: 0.58)
+    nonisolated static let velocity = PulsarWorkoutCatalogTint(red: 1.00, green: 0.46, blue: 0.34)
+    nonisolated static let balance = PulsarWorkoutCatalogTint(red: 0.44, green: 0.72, blue: 1.00)
+    nonisolated static let power = PulsarWorkoutCatalogTint(red: 0.72, green: 0.66, blue: 1.00)
+    nonisolated static let endurance = PulsarWorkoutCatalogTint(red: 0.25, green: 0.78, blue: 0.86)
+    nonisolated static let fire = PulsarWorkoutCatalogTint(red: 1.00, green: 0.61, blue: 0.25)
+    nonisolated static let restore = PulsarWorkoutCatalogTint(red: 0.72, green: 0.82, blue: 0.46)
+    nonisolated static let water = PulsarWorkoutCatalogTint(red: 0.34, green: 0.68, blue: 1.00)
+    nonisolated static let rhythm = PulsarWorkoutCatalogTint(red: 1.00, green: 0.44, blue: 0.68)
+    nonisolated static let focus = PulsarWorkoutCatalogTint(red: 0.68, green: 0.74, blue: 0.84)
+    nonisolated static let cardio = PulsarWorkoutCatalogTint(red: 0.38, green: 0.88, blue: 0.72)
+    nonisolated static let climber = PulsarWorkoutCatalogTint(red: 1.00, green: 0.70, blue: 0.30)
 }
 
 enum PulsarActiveWorkoutSyncPhase: String, Codable, Hashable {

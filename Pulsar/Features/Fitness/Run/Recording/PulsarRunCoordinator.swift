@@ -225,6 +225,12 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
             snapshot.statusMessage = watchStartStatusMessage(for: availability)
             PulsarSyncDebugLogger.log("Run start selectedType=\(workoutKind.rawValue) hkType=\(workoutKind.healthKitActivityType.rawValue) session=\(sessionId.uuidString) startedFrom=\(PulsarWorkoutStartedFrom.iPhoneRequestedWatchStart.rawValue) selectedRecorder=AppleWatch activation=\(availability.activationStateDescription) paired=\(availability.isPaired) rawInstalled=\(availability.rawIsWatchAppInstalled) rawReachable=\(availability.rawIsReachable) lastWatchSeenAt=\(availability.lastWatchSeenAt?.description ?? "none") derivedInstalled=\(availability.isWatchAppInstalled) derivedReachable=\(availability.derivedReachabilityDescription)")
             publishActiveWorkoutState(phase: .starting, updatedFrom: .iPhone, reason: "iPhoneRunStartingWatch")
+            if let state = syncStore.activeWorkoutState {
+                await syncStore.broadcastActiveStateAndAwaitDelivery(
+                    state,
+                    reason: "iPhoneRunStartingWatch.prelaunch"
+                )
+            }
 
             do {
                 try await healthStore.startWatchApp(toHandle: Self.outdoorWorkoutConfiguration(for: workoutKind))
@@ -514,7 +520,7 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
 
         workoutSession = session
         workoutBuilder = builder
-        routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: nil)
+        routeBuilder = activeWorkoutKind.isOutdoorDistanceWorkout ? HKWorkoutRouteBuilder(healthStore: healthStore, device: nil) : nil
 
         let start = snapshot.startedAt ?? Date()
         startWorkoutSessionIfNeeded(session, at: start, reason: "iPhoneRunHealthKitStart")
@@ -662,11 +668,18 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
         if didChooseIPhoneFallbackAfterWatchAttempt,
            snapshot.source == .iPhone,
            snapshot.phase.isLiveRunPhase {
-            PulsarSyncDebugLogger.log("Late Apple Watch mirror rejected because iPhone fallback is already recording type=\(PulsarOutdoorWorkoutKind(activityType: session.workoutConfiguration.activityType).rawValue) currentSession=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none")")
+            let rejectedKind = PulsarOutdoorWorkoutKind(
+                activityType: session.workoutConfiguration.activityType,
+                locationType: session.workoutConfiguration.locationType
+            )
+            PulsarSyncDebugLogger.log("Late Apple Watch mirror rejected because iPhone fallback is already recording type=\(rejectedKind.rawValue) currentSession=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none")")
             session.end()
             return
         }
-        let workoutKind = PulsarOutdoorWorkoutKind(activityType: session.workoutConfiguration.activityType)
+        let workoutKind = PulsarOutdoorWorkoutKind(
+            activityType: session.workoutConfiguration.activityType,
+            locationType: session.workoutConfiguration.locationType
+        )
         let shouldPreservePhoneRequestedSession =
             activeWorkoutStartedFrom == .iPhoneRequestedWatchStart ||
             snapshot.phase == .connectingToWatch
@@ -1836,10 +1849,7 @@ final class PulsarRunCoordinator: NSObject, ObservableObject {
     }
 
     private static func outdoorWorkoutConfiguration(for workoutKind: PulsarOutdoorWorkoutKind) -> HKWorkoutConfiguration {
-        let configuration = HKWorkoutConfiguration()
-        configuration.activityType = workoutKind.healthKitActivityType
-        configuration.locationType = workoutKind.defaultLocationType
-        return configuration
+        PulsarWorkoutCatalog.entry(for: workoutKind)?.workoutConfiguration ?? workoutKind.workoutConfiguration
     }
 
     private static func formatMetric(_ value: Double?) -> String {

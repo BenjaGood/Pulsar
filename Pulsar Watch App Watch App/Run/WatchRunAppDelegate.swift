@@ -8,13 +8,14 @@ import WatchKit
 
 final class WatchRunAppDelegate: NSObject, WKApplicationDelegate {
     private let healthStore = HKHealthStore()
+    private let syncStore = PulsarWatchConnectivitySyncStore.shared
 
     func handle(_ workoutConfiguration: HKWorkoutConfiguration) {
         Task { @MainActor in
-            if workoutConfiguration.activityType == .traditionalStrengthTraining ||
-                workoutConfiguration.activityType == .functionalStrengthTraining {
+            switch destination(for: workoutConfiguration) {
+            case .gym:
                 await WatchGymSessionManager.shared.startFromCompanion(configuration: workoutConfiguration)
-            } else {
+            case .run:
                 await WatchRunSessionManager.shared.startRunFromCompanion(configuration: workoutConfiguration)
             }
         }
@@ -33,14 +34,45 @@ final class WatchRunAppDelegate: NSObject, WKApplicationDelegate {
                     return
                 }
 
-                let activityType = recoveredSession.workoutConfiguration.activityType
-                if activityType == .traditionalStrengthTraining ||
-                    activityType == .functionalStrengthTraining {
+                switch self.destination(for: recoveredSession.workoutConfiguration) {
+                case .gym:
                     WatchGymSessionManager.shared.recoverActiveWorkoutSession(recoveredSession)
-                } else {
+                case .run:
                     WatchRunSessionManager.shared.recoverActiveWorkoutSession(recoveredSession)
                 }
             }
         }
+    }
+
+    private enum WorkoutDestination {
+        case run
+        case gym
+    }
+
+    @MainActor
+    private func destination(for configuration: HKWorkoutConfiguration) -> WorkoutDestination {
+        let inferredKind = PulsarOutdoorWorkoutKind(
+            activityType: configuration.activityType,
+            locationType: configuration.locationType
+        )
+
+        if let activeRunState = syncStore.activeWorkoutState,
+           activeRunState.kind.outdoorWorkoutKind == inferredKind,
+           activeRunState.phase.isLive,
+           !activeRunState.isEnded {
+            return .run
+        }
+
+        if let activeGymState = syncStore.activeGymState,
+           syncStore.isRoutableActiveGymState(activeGymState),
+           !activeGymState.isFinished {
+            return .gym
+        }
+
+        if inferredKind != .strength {
+            return .run
+        }
+
+        return .gym
     }
 }

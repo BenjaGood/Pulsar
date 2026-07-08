@@ -83,7 +83,7 @@ final class GymHealthKitWorkoutManager: NSObject, ObservableObject {
         }
 
         do {
-            let configuration = Self.strengthConfiguration
+            let configuration = Self.gymWorkoutConfiguration
             let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
             let builder = session.associatedWorkoutBuilder()
             builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
@@ -415,12 +415,9 @@ final class GymHealthKitWorkoutManager: NSObject, ObservableObject {
         }
     }
 
-    private static let strengthConfiguration: HKWorkoutConfiguration = {
-        let configuration = HKWorkoutConfiguration()
-        configuration.activityType = .traditionalStrengthTraining
-        configuration.locationType = .indoor
-        return configuration
-    }()
+    private static var gymWorkoutConfiguration: HKWorkoutConfiguration {
+        PulsarWorkoutCatalog.gymWorkoutConfiguration
+    }
 
     static func metadata(
         routineName: String,

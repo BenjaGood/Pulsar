@@ -240,11 +240,15 @@ enum PulsarWeightUnit: String, CaseIterable, Identifiable, Codable, Hashable {
 enum PulsarSupersetType: String, Codable, Hashable {
     case biset
     case superset
+    case circuit
+    case compoundSeries
 
     var displayName: String {
         switch self {
         case .biset: "Biset"
         case .superset: "Superset"
+        case .circuit: "Circuit"
+        case .compoundSeries: "Compound Series"
         }
     }
 }
@@ -255,23 +259,31 @@ struct PulsarSupersetGroup: Identifiable, Codable, Hashable {
     var exerciseIds: [UUID]
     var sharedSetCount: Int
     var restTimeSeconds: Int
+    var label: String?
 
     nonisolated init(
         id: UUID = UUID(),
         type: PulsarSupersetType = .superset,
         exerciseIds: [UUID],
         sharedSetCount: Int,
-        restTimeSeconds: Int = 90
+        restTimeSeconds: Int = 90,
+        label: String? = nil
     ) {
         self.id = id
         self.type = type
-        self.exerciseIds = Array(exerciseIds.prefix(2))
+        var seenExerciseIds: Set<UUID> = []
+        self.exerciseIds = Array(exerciseIds.filter { seenExerciseIds.insert($0).inserted }.prefix(6))
         self.sharedSetCount = max(1, sharedSetCount)
         self.restTimeSeconds = max(0, restTimeSeconds)
+        self.label = label?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }
 
     var isCompletePair: Bool {
         exerciseIds.count == 2
+    }
+
+    var isCompleteSeries: Bool {
+        exerciseIds.count >= 2
     }
 }
 
@@ -487,9 +499,10 @@ struct PulsarRoutine: Identifiable, Codable, Hashable {
             return PulsarSupersetGroup(
                 id: group.id,
                 type: group.type,
-                exerciseIds: Array(memberIds.prefix(2)),
+                exerciseIds: Array(memberIds.prefix(6)),
                 sharedSetCount: group.sharedSetCount,
-                restTimeSeconds: group.restTimeSeconds
+                restTimeSeconds: group.restTimeSeconds,
+                label: group.label
             )
         }
     }
@@ -554,13 +567,14 @@ struct PulsarGymWorkoutSession: Identifiable, Codable, Hashable {
         let sessionIdByRoutineExerciseId = Dictionary(uniqueKeysWithValues: exerciseSessions.map { ($0.routineExerciseId, $0.id) })
         let sessionGroups = PulsarRoutine.normalizedSupersetGroups(routine.supersetGroups, for: routineExercises).compactMap { group -> PulsarSupersetGroup? in
             let sessionExerciseIds = group.exerciseIds.compactMap { sessionIdByRoutineExerciseId[$0] }
-            guard sessionExerciseIds.count == 2 else { return nil }
+            guard sessionExerciseIds.count >= 2 else { return nil }
             return PulsarSupersetGroup(
                 id: group.id,
                 type: group.type,
                 exerciseIds: sessionExerciseIds,
                 sharedSetCount: group.sharedSetCount,
-                restTimeSeconds: group.restTimeSeconds
+                restTimeSeconds: group.restTimeSeconds,
+                label: group.label
             )
         }
 
@@ -687,9 +701,10 @@ struct PulsarGymWorkoutSession: Identifiable, Codable, Hashable {
             return PulsarSupersetGroup(
                 id: group.id,
                 type: group.type,
-                exerciseIds: Array(memberIds.prefix(2)),
+                exerciseIds: Array(memberIds.prefix(6)),
                 sharedSetCount: group.sharedSetCount,
-                restTimeSeconds: group.restTimeSeconds
+                restTimeSeconds: group.restTimeSeconds,
+                label: group.label
             )
         }
     }
@@ -710,7 +725,7 @@ struct PulsarGymWorkoutSession: Identifiable, Codable, Hashable {
             return PulsarSupersetGroup(
                 id: groupId,
                 type: .superset,
-                exerciseIds: members.prefix(2).map(\.id),
+                exerciseIds: Array(members.prefix(6).map(\.id)),
                 sharedSetCount: sharedSetCount,
                 restTimeSeconds: restTimeSeconds
             )
@@ -727,6 +742,8 @@ struct PulsarGymWorkoutExerciseSession: Identifiable, Codable, Hashable {
     var primaryMuscles: [PulsarMuscle]
     var secondaryMuscles: [PulsarMuscle]
     var equipment: String
+    var thumbnailURL: String?
+    var instructionsPreview: String?
     var plannedSets: Int
     var plannedReps: Int
     var plannedWeight: Double
@@ -750,6 +767,8 @@ struct PulsarGymWorkoutExerciseSession: Identifiable, Codable, Hashable {
         equipment = routineExercise.exercise.equipment.isEmpty
             ? "Bodyweight"
             : routineExercise.exercise.equipment.map(\.name).joined(separator: ", ")
+        thumbnailURL = routineExercise.exercise.thumbnailURL
+        instructionsPreview = routineExercise.exercise.instructions?.gymInstructionsPreview()
         plannedSets = routineExercise.plannedSets
         plannedReps = routineExercise.plannedReps
         plannedWeight = routineExercise.plannedWeight
@@ -778,6 +797,8 @@ struct PulsarGymWorkoutExerciseSession: Identifiable, Codable, Hashable {
         primaryMuscles = []
         secondaryMuscles = []
         equipment = exercise.equipment
+        thumbnailURL = exercise.thumbnailURL
+        instructionsPreview = exercise.instructionsPreview
         plannedSets = max(1, exercise.plannedSets)
         plannedReps = max(1, exercise.plannedReps)
         plannedWeight = max(0, exercise.plannedWeight)
@@ -812,6 +833,8 @@ struct PulsarGymWorkoutExerciseSession: Identifiable, Codable, Hashable {
         case primaryMuscles
         case secondaryMuscles
         case equipment
+        case thumbnailURL
+        case instructionsPreview
         case plannedSets
         case plannedReps
         case plannedWeight
@@ -835,6 +858,8 @@ struct PulsarGymWorkoutExerciseSession: Identifiable, Codable, Hashable {
         primaryMuscles = (try? container.decodeIfPresent([PulsarMuscle].self, forKey: .primaryMuscles)) ?? []
         secondaryMuscles = (try? container.decodeIfPresent([PulsarMuscle].self, forKey: .secondaryMuscles)) ?? []
         equipment = (try? container.decode(String.self, forKey: .equipment)) ?? "Bodyweight"
+        thumbnailURL = try? container.decodeIfPresent(String.self, forKey: .thumbnailURL)
+        instructionsPreview = try? container.decodeIfPresent(String.self, forKey: .instructionsPreview)
         plannedSets = max(1, (try? container.decode(Int.self, forKey: .plannedSets)) ?? 1)
         plannedReps = max(1, (try? container.decode(Int.self, forKey: .plannedReps)) ?? 1)
         plannedWeight = max(0, (try? container.decode(Double.self, forKey: .plannedWeight)) ?? 0)
@@ -917,9 +942,61 @@ struct PulsarGymWorkoutSetSession: Identifiable, Codable, Hashable {
 
 struct PulsarGymCompletedExerciseSummary: Identifiable, Codable, Hashable {
     var id: UUID
+    var exerciseId: String?
     var exerciseName: String
+    var thumbnailURL: String?
+    var primaryMuscleGroup: PulsarMuscleGroup
+    var equipment: String
+    var supersetGroupId: UUID?
     var weightUnit: PulsarWeightUnit
     var sets: [PulsarGymCompletedSetSummary]
+
+    nonisolated init(
+        id: UUID,
+        exerciseId: String? = nil,
+        exerciseName: String,
+        thumbnailURL: String? = nil,
+        primaryMuscleGroup: PulsarMuscleGroup = .other,
+        equipment: String = "Bodyweight",
+        supersetGroupId: UUID? = nil,
+        weightUnit: PulsarWeightUnit,
+        sets: [PulsarGymCompletedSetSummary]
+    ) {
+        self.id = id
+        self.exerciseId = exerciseId
+        self.exerciseName = exerciseName
+        self.thumbnailURL = thumbnailURL
+        self.primaryMuscleGroup = primaryMuscleGroup
+        self.equipment = equipment
+        self.supersetGroupId = supersetGroupId
+        self.weightUnit = weightUnit
+        self.sets = sets
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case exerciseId
+        case exerciseName
+        case thumbnailURL
+        case primaryMuscleGroup
+        case equipment
+        case supersetGroupId
+        case weightUnit
+        case sets
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? container.decode(UUID.self, forKey: .id)) ?? UUID()
+        exerciseId = try? container.decodeIfPresent(String.self, forKey: .exerciseId)
+        exerciseName = (try? container.decode(String.self, forKey: .exerciseName)) ?? "Exercise"
+        thumbnailURL = try? container.decodeIfPresent(String.self, forKey: .thumbnailURL)
+        primaryMuscleGroup = (try? container.decode(PulsarMuscleGroup.self, forKey: .primaryMuscleGroup)) ?? .other
+        equipment = (try? container.decode(String.self, forKey: .equipment)) ?? "Bodyweight"
+        supersetGroupId = try? container.decodeIfPresent(UUID.self, forKey: .supersetGroupId)
+        weightUnit = (try? container.decode(PulsarWeightUnit.self, forKey: .weightUnit)) ?? .kilograms
+        sets = (try? container.decode([PulsarGymCompletedSetSummary].self, forKey: .sets)) ?? []
+    }
 }
 
 struct PulsarGymCompletedSetSummary: Identifiable, Codable, Hashable {
@@ -1044,7 +1121,12 @@ struct PulsarGymWorkoutSummary: Identifiable, Codable, Hashable {
             guard !completedSets.isEmpty else { return nil }
             return PulsarGymCompletedExerciseSummary(
                 id: exercise.id,
+                exerciseId: exercise.exerciseId,
                 exerciseName: exercise.exerciseName,
+                thumbnailURL: exercise.thumbnailURL,
+                primaryMuscleGroup: exercise.primaryMuscleGroup,
+                equipment: exercise.equipment,
+                supersetGroupId: exercise.supersetGroupId,
                 weightUnit: exercise.weightUnit,
                 sets: completedSets
             )
@@ -1067,11 +1149,31 @@ struct PulsarGymWorkoutSummary: Identifiable, Codable, Hashable {
             guard !completedSets.isEmpty else { return nil }
             return PulsarGymCompletedExerciseSummary(
                 id: exercise.id,
+                exerciseId: exercise.exerciseId,
                 exerciseName: exercise.exerciseName,
+                thumbnailURL: exercise.thumbnailURL,
+                primaryMuscleGroup: PulsarMuscleGroup.gymDisplayName(exercise.muscleGroup),
+                equipment: exercise.equipment,
+                supersetGroupId: exercise.supersetGroupId,
                 weightUnit: PulsarWeightUnit.gymDisplayName(exercise.weightUnit),
                 sets: completedSets
             )
         }
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
+    }
+
+    func gymInstructionsPreview(maxLength: Int = 220) -> String? {
+        let normalized = components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !normalized.isEmpty else { return nil }
+        if normalized.count <= maxLength { return normalized }
+        return String(normalized.prefix(maxLength)).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
     }
 }
 

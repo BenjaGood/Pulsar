@@ -42,6 +42,10 @@ final class ExerciseCatalogStore: ObservableObject {
         return PulsarMuscleGroup.allCases.filter { groups.contains($0) }
     }
 
+    func exercise(id: String) -> PulsarExercise? {
+        exercises.first { $0.id == id }
+    }
+
     func loadCatalogIfNeeded() async {
         guard !hasLoaded else { return }
         hasLoaded = true

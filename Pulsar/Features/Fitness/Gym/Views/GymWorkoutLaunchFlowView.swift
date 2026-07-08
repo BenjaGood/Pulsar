@@ -24,6 +24,7 @@ struct GymWorkoutLaunchFlowView: View {
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var activeWorkoutManager: PulsarActiveWorkoutManager
+    @EnvironmentObject private var completionPresentationStore: WorkoutCompletionPresentationStore
     @StateObject private var routineStore = PulsarRoutineStore()
     @StateObject private var historyStore = PulsarGymWorkoutHistoryStore()
     @StateObject private var gymSettingsStore = GymSettingsStore()
@@ -88,9 +89,7 @@ struct GymWorkoutLaunchFlowView: View {
                             dismiss()
                         },
                         onFinish: {
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            activeWorkoutManager.completeGymWorkout()
-                            dismiss()
+                            dismissGymCompletion(sessionID: viewModel.session.id, source: "gymLaunchSummaryDone")
                         }
                     )
                     .transition(.opacity.combined(with: .scale(scale: 0.99)))
@@ -100,8 +99,10 @@ struct GymWorkoutLaunchFlowView: View {
                         workoutWeightUnit: gymSettingsStore.resolvedWeightUnit(appUnits: appUnitPreference),
                         historyStore: historyStore
                     ) {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        dismiss()
+                        dismissGymCompletion(
+                            sessionID: activeWorkoutManager.activeWorkout?.sessionID,
+                            source: "gymLaunchStandaloneSummaryDone"
+                        )
                     }
                     .transition(.opacity.combined(with: .scale(scale: 0.99)))
                 }
@@ -114,11 +115,9 @@ struct GymWorkoutLaunchFlowView: View {
                         dismiss()
                     },
                     onSummaryDone: {
-                        activeWorkoutManager.clearWatchGymWorkout(
+                        dismissWatchGymCompletion(
                             sessionID: watchSyncStore.lastFinishedGymState?.sessionId ?? watchSyncStore.activeGymState?.sessionId ?? activeWorkoutManager.activeWorkout?.sessionID,
-                            phase: "finished",
-                            source: "watchGymLaunchSummaryDone",
-                            reason: "summaryDismissed"
+                            source: "watchGymLaunchSummaryDone"
                         )
                         dismiss()
                     }
@@ -137,7 +136,7 @@ struct GymWorkoutLaunchFlowView: View {
                 primaryButton: .default(Text("Try Again")) {
                     retryWatchGymStart()
                 },
-                secondaryButton: .default(Text("Use iPhone")) {
+                secondaryButton: .default(Text("Use iPhone Only")) {
                     startPendingGymWorkoutOnIPhone()
                 }
             )
@@ -242,11 +241,16 @@ struct GymWorkoutLaunchFlowView: View {
             healthKitStatusMessage: watchStartStatusMessage(for: availability)
         )
 
-        watchSyncStore.storeActiveGymState(state, broadcast: true, reason: "iPhoneRequestedWatchGymStart")
-        PulsarSyncDebugLogger.log("Gym start selectedType=\(workoutKind.rawValue) hkType=\(Self.strengthConfiguration.activityType.rawValue) session=\(sessionId.uuidString) startedFrom=\(PulsarWorkoutStartedFrom.iPhoneRequestedWatchStart.rawValue) selectedRecorder=AppleWatch activation=\(availability.activationStateDescription) paired=\(availability.isPaired) rawInstalled=\(availability.rawIsWatchAppInstalled) rawReachable=\(availability.rawIsReachable) lastWatchSeenAt=\(availability.lastWatchSeenAt?.description ?? "none") derivedInstalled=\(availability.isWatchAppInstalled) derivedReachable=\(availability.derivedReachabilityDescription)")
+        watchSyncStore.storeActiveGymState(state, broadcast: false, reason: "iPhoneRequestedWatchGymStart")
+        await watchSyncStore.broadcastActiveStateAndAwaitDelivery(
+            state,
+            reason: "iPhoneRequestedWatchGymStart.prelaunch"
+        )
+        let configuration = Self.gymWorkoutConfiguration
+        PulsarSyncDebugLogger.log("Gym start selectedType=\(workoutKind.rawValue) hkType=\(configuration.activityType.rawValue) session=\(sessionId.uuidString) startedFrom=\(PulsarWorkoutStartedFrom.iPhoneRequestedWatchStart.rawValue) selectedRecorder=AppleWatch activation=\(availability.activationStateDescription) paired=\(availability.isPaired) rawInstalled=\(availability.rawIsWatchAppInstalled) rawReachable=\(availability.rawIsReachable) lastWatchSeenAt=\(availability.lastWatchSeenAt?.description ?? "none") derivedInstalled=\(availability.isWatchAppInstalled) derivedReachable=\(availability.derivedReachabilityDescription)")
 
         do {
-            try await healthStore.startWatchApp(toHandle: Self.strengthConfiguration)
+            try await healthStore.startWatchApp(toHandle: configuration)
         } catch {
             if shouldKeepQueuedWatchStart(for: availability) {
                 PulsarSyncDebugLogger.log("Gym Watch start queued after launch failure type=\(workoutKind.rawValue) session=\(sessionId.uuidString) rawReachable=\(availability.rawIsReachable) derivedReachable=\(availability.derivedReachabilityDescription) error=\(error.localizedDescription)")
@@ -285,6 +289,33 @@ struct GymWorkoutLaunchFlowView: View {
         guard let routine = pendingWatchFallbackRoutine else { return }
         pendingWatchFallbackRoutine = nil
         Task { await beginGymWorkout(routine, forceIPhone: true) }
+    }
+
+    private func dismissGymCompletion(sessionID: UUID?, source: String) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        if let sessionID {
+            completionPresentationStore.consume(sessionID: sessionID, reason: source)
+            watchSyncStore.tombstoneActiveWorkoutSession(sessionID, reason: "completionConsumed.\(source)")
+            watchSyncStore.clearFinishedGymPresentationState(sessionID: sessionID, reason: "completionConsumed.\(source)")
+        }
+        step = .routineChoice
+        activeWorkoutManager.completeGymWorkout()
+        dismiss()
+    }
+
+    private func dismissWatchGymCompletion(sessionID: UUID?, source: String) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        if let sessionID {
+            completionPresentationStore.consume(sessionID: sessionID, reason: source)
+            watchSyncStore.tombstoneActiveWorkoutSession(sessionID, reason: "completionConsumed.\(source)")
+            watchSyncStore.clearFinishedGymPresentationState(sessionID: sessionID, reason: "completionConsumed.\(source)")
+        }
+        activeWorkoutManager.clearWatchGymWorkout(
+            sessionID: sessionID,
+            phase: "finished",
+            source: source,
+            reason: "summaryDismissed"
+        )
     }
 
     private func activeGymState(
@@ -350,6 +381,9 @@ struct GymWorkoutLaunchFlowView: View {
             supersetType: group?.type.rawValue,
             supersetRestSeconds: exercise.supersetRestSeconds ?? group?.restTimeSeconds,
             supersetSharedSetCount: group?.sharedSetCount,
+            seriesMemberCount: group?.exerciseIds.count,
+            thumbnailURL: exercise.thumbnailURL,
+            instructionsPreview: exercise.instructionsPreview,
             sets: exercise.sets.map { set in
                 ActiveGymWorkoutSetState(
                     id: set.id,
@@ -365,12 +399,9 @@ struct GymWorkoutLaunchFlowView: View {
         )
     }
 
-    private static let strengthConfiguration: HKWorkoutConfiguration = {
-        let configuration = HKWorkoutConfiguration()
-        configuration.activityType = .traditionalStrengthTraining
-        configuration.locationType = .indoor
-        return configuration
-    }()
+    private static var gymWorkoutConfiguration: HKWorkoutConfiguration {
+        PulsarWorkoutCatalog.gymWorkoutConfiguration
+    }
 }
 
 struct GymRoutineChoiceView: View {

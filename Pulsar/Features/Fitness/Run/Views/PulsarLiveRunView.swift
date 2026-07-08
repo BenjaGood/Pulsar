@@ -476,6 +476,8 @@ struct PulsarLiveRunView: View {
 private extension PulsarOutdoorWorkoutKind {
     var nonGPSDashboardTitle: String {
         switch self {
+        case .indoorRunning:
+            "Indoor Running"
         case .strength:
             "Strength Training"
         case .hiit:
@@ -513,6 +515,8 @@ private extension PulsarOutdoorWorkoutKind {
 
     var nonGPSDashboardSubtitle: String {
         switch self {
+        case .indoorRunning:
+            "Treadmill"
         case .strength:
             "Functional Strength"
         case .hiit:

@@ -30,6 +30,8 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
     private var finishFallbackTask: Task<Void, Never>?
     private var isFinishing = false
     private var lastMetricsSentAt = Date.distantPast
+    private var handledCompanionStartSessionIDs = Set<UUID>()
+    private var cancellables = Set<AnyCancellable>()
 
     private override init() {
         super.init()
@@ -38,9 +40,22 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
                 await self?.handle(action)
             }
         }
+        syncStore.$activeGymState
+            .compactMap { $0 }
+            .sink { [weak self] state in
+                Task { @MainActor in
+                    await self?.startIfNeededWhenCompanionStateArrives(state)
+                }
+            }
+            .store(in: &cancellables)
     }
 
     func startFromCompanion(configuration: HKWorkoutConfiguration) async {
+        if workoutSession != nil,
+           activeSessionId == syncStore.activeGymState?.sessionId {
+            PulsarSyncDebugLogger.log("Watch Gym companion launch ignored because HealthKit session is already active session=\(activeSessionId?.uuidString ?? "none")")
+            return
+        }
         if let state = syncStore.activeGymState,
            syncStore.isRoutableActiveGymState(state),
            state.startedFrom == .iPhone {
@@ -75,7 +90,7 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
             PulsarSyncDebugLogger.log("Watch Gym displaying iPhone-owned workout without starting duplicate HealthKit workout session=\(state.sessionId.uuidString)")
             return
         }
-        await startWorkoutIfNeeded(configuration: Self.strengthConfiguration)
+        await startWorkoutIfNeeded(configuration: Self.gymWorkoutConfiguration)
     }
 
     func startFreeWorkoutFromWatch() async {
@@ -120,7 +135,7 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
         syncStore.storeActiveGymState(state, broadcast: true, reason: "watchGymFreeWorkoutStarted")
         syncStore.sendGymAction(.startFreeWorkoutFromWatch(sessionId: sessionId))
         startStateTicking()
-        await startWorkoutIfNeeded(configuration: Self.strengthConfiguration)
+        await startWorkoutIfNeeded(configuration: Self.gymWorkoutConfiguration)
     }
 
     func recoverActiveWorkoutSession(_ session: HKWorkoutSession) {
@@ -237,7 +252,7 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
         syncStore.storeActiveGymState(state, broadcast: true, reason: "watchGymSavedRoutineStarted")
         syncStore.sendGymAction(.startSavedRoutineFromWatch(sessionId: sessionId, routineId: routine.routineId))
         startStateTicking()
-        await startWorkoutIfNeeded(configuration: Self.strengthConfiguration)
+        await startWorkoutIfNeeded(configuration: Self.gymWorkoutConfiguration)
     }
 
     func completeSet(
@@ -423,7 +438,7 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
         }
     }
 
-    private func companionRequestedWatchGymState(timeoutSeconds: TimeInterval = 2.0) async -> ActiveGymWorkoutState? {
+    private func companionRequestedWatchGymState(timeoutSeconds: TimeInterval = 5.0) async -> ActiveGymWorkoutState? {
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         while Date() < deadline {
             if let state = syncStore.activeGymState,
@@ -435,6 +450,20 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
         }
         PulsarSyncDebugLogger.log("Watch Gym companion launch did not receive an iPhone-requested Watch state before timeout")
         return syncStore.activeGymState?.startedFrom?.isAppleWatchRecorder == true ? syncStore.activeGymState : nil
+    }
+
+    private func startIfNeededWhenCompanionStateArrives(_ state: ActiveGymWorkoutState) async {
+        guard workoutSession == nil,
+              workoutBuilder == nil,
+              activeSessionId == nil,
+              !state.isFinished,
+              state.startedFrom == .iPhoneRequestedWatchStart,
+              handledCompanionStartSessionIDs.insert(state.sessionId).inserted else { return }
+        activeSessionId = state.sessionId
+        startedAt = state.startedAt
+        startStateTicking()
+        PulsarSyncDebugLogger.log("Watch Gym late companion state arrived; starting HealthKit session=\(state.sessionId.uuidString) type=\(state.workoutKind?.rawValue ?? "unknown")")
+        await startWorkoutIfNeeded(configuration: Self.gymWorkoutConfiguration)
     }
 
     private func requestAuthorization() async -> Bool {
@@ -732,6 +761,9 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
             supersetType: exercise.supersetType,
             supersetRestSeconds: exercise.supersetRestSeconds,
             supersetSharedSetCount: exercise.supersetSharedSetCount,
+            seriesMemberCount: exercise.seriesMemberCount,
+            thumbnailURL: exercise.thumbnailURL,
+            instructionsPreview: exercise.instructionsPreview,
             sets: sets
         )
     }
@@ -756,7 +788,7 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
         }
 
         let completedSetNumber = exercise.sets[setIndex].setNumber
-        let roundIsComplete = members.prefix(2).allSatisfy { member in
+        let roundIsComplete = members.allSatisfy { member in
             guard let matchingSet = member.element.sets.first(where: { $0.setNumber == completedSetNumber }) else { return false }
             return matchingSet.isCompleted
         }
@@ -906,12 +938,9 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
         }
     }
 
-    private static let strengthConfiguration: HKWorkoutConfiguration = {
-        let configuration = HKWorkoutConfiguration()
-        configuration.activityType = .traditionalStrengthTraining
-        configuration.locationType = .indoor
-        return configuration
-    }()
+    private static var gymWorkoutConfiguration: HKWorkoutConfiguration {
+        PulsarWorkoutCatalog.gymWorkoutConfiguration
+    }
 
     private static var healthShareTypes: Set<HKSampleType> {
         var types: Set<HKSampleType> = [HKObjectType.workoutType()]

@@ -58,6 +58,15 @@ final class PulsarGymWorkoutHistoryStore: ObservableObject {
         sessions = Self.loadSessions(defaults: defaults, storageKey: storageKey, decoder: decoder)
     }
 
+    func session(id: UUID) -> PulsarGymWorkoutSession? {
+        sessions.first { $0.id == id }
+    }
+
+    @discardableResult
+    func updateSession(_ session: PulsarGymWorkoutSession) -> PulsarGymWorkoutSession {
+        save(session)
+    }
+
     func sessions(start: Date, end: Date) -> [PulsarGymWorkoutSession] {
         return sessions.filter { session in
             session.finishedAt != nil && session.startedAt >= start && session.startedAt < end

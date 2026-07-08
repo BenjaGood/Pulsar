@@ -5,25 +5,36 @@
 
 import Combine
 import Foundation
+import WatchConnectivity
 
 @MainActor
 final class PulsarRoutineStore: ObservableObject {
     @Published private(set) var routines: [PulsarRoutine]
+    @Published private(set) var routinesRevision: Int
 
     private let defaults: UserDefaults
     private let storageKey = "pulsar.gym.routines.v1"
+    private let revisionKey = "pulsar.gym.routines.revision.v1"
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        let loadedRoutines: [PulsarRoutine]
         if let data = defaults.data(forKey: storageKey),
            let routines = try? decoder.decode([PulsarRoutine].self, from: data) {
-            self.routines = routines.sorted { $0.updatedAt > $1.updatedAt }
+            loadedRoutines = routines.sorted { $0.updatedAt > $1.updatedAt }
         } else {
-            self.routines = []
+            loadedRoutines = []
         }
-        syncRoutinesToWatch(reason: "routineStoreLoaded", broadcast: false)
+        var restoredRevision = max(0, defaults.integer(forKey: revisionKey))
+        if restoredRevision == 0, !loadedRoutines.isEmpty {
+            restoredRevision = 1
+            defaults.set(restoredRevision, forKey: revisionKey)
+        }
+        self.routines = loadedRoutines
+        self.routinesRevision = restoredRevision
+        syncRoutinesToWatch(reason: "routineStoreLoaded", broadcast: shouldBroadcastOnLoad)
     }
 
     @discardableResult
@@ -65,13 +76,14 @@ final class PulsarRoutineStore: ObservableObject {
         duplicate.supersetGroups = routine.supersetGroups.compactMap { group in
             guard let nextGroupId = groupIdMap[group.id] else { return nil }
             let nextExerciseIds = group.exerciseIds.compactMap { exerciseIdMap[$0] }
-            guard nextExerciseIds.count == 2 else { return nil }
+            guard nextExerciseIds.count >= 2 else { return nil }
             return PulsarSupersetGroup(
                 id: nextGroupId,
                 type: group.type,
                 exerciseIds: nextExerciseIds,
                 sharedSetCount: group.sharedSetCount,
-                restTimeSeconds: group.restTimeSeconds
+                restTimeSeconds: group.restTimeSeconds,
+                label: group.label
             )
         }
         routines.insert(duplicate, at: 0)
@@ -81,18 +93,50 @@ final class PulsarRoutineStore: ObservableObject {
 
     func delete(_ routine: PulsarRoutine) {
         routines.removeAll { $0.id == routine.id }
-        persist()
+        persist(deletedRoutineIds: [routine.id])
     }
 
-    private func persist() {
+    func syncRoutinesToWatch(reason: String = "routineStoreManualSync", broadcast: Bool = true) {
+        let plans = routines.map(WatchGymRoutinePlan.init(routine:))
+        PulsarWatchConnectivitySyncStore.shared.storeSavedGymRoutines(
+            plans,
+            revision: routinesRevision,
+            broadcast: broadcast,
+            reason: reason
+        )
+    }
+
+    private func persist(deletedRoutineIds: [UUID] = []) {
         guard let data = try? encoder.encode(routines) else { return }
         defaults.set(data, forKey: storageKey)
-        syncRoutinesToWatch(reason: "routineStorePersisted", broadcast: true)
+        routinesRevision += 1
+        defaults.set(routinesRevision, forKey: revisionKey)
+        syncRoutinesToWatch(reason: "routineStorePersisted", deletedRoutineIds: deletedRoutineIds, broadcast: true)
     }
 
-    private func syncRoutinesToWatch(reason: String, broadcast: Bool) {
+    private func syncRoutinesToWatch(
+        reason: String,
+        deletedRoutineIds: [UUID] = [],
+        broadcast: Bool
+    ) {
         let plans = routines.map(WatchGymRoutinePlan.init(routine:))
-        PulsarWatchConnectivitySyncStore.shared.storeSavedGymRoutines(plans, broadcast: broadcast, reason: reason)
+        PulsarWatchConnectivitySyncStore.shared.storeSavedGymRoutines(
+            plans,
+            revision: routinesRevision,
+            deletedRoutineIds: deletedRoutineIds,
+            broadcast: broadcast,
+            reason: reason
+        )
+    }
+
+    private var shouldBroadcastOnLoad: Bool {
+        #if os(iOS)
+        guard WCSession.isSupported() else { return false }
+        let session = WCSession.default
+        return session.activationState == .activated && session.isPaired
+        #else
+        return false
+        #endif
     }
 }
 
@@ -115,6 +159,7 @@ extension WatchGymRoutinePlan {
                         plan.supersetType = group.type.rawValue
                         plan.supersetRestSeconds = group.restTimeSeconds
                         plan.supersetSharedSetCount = group.sharedSetCount
+                        plan.seriesMemberCount = group.exerciseIds.count
                     }
                     return plan
                 }
@@ -141,7 +186,21 @@ extension WatchGymRoutineExercisePlan {
             supersetOrder: routineExercise.supersetOrder,
             supersetType: routineExercise.supersetGroupId == nil ? nil : PulsarSupersetType.superset.rawValue,
             supersetRestSeconds: routineExercise.supersetGroupId == nil ? nil : routineExercise.plannedRestSeconds,
-            supersetSharedSetCount: routineExercise.supersetGroupId == nil ? nil : routineExercise.plannedSets
+            supersetSharedSetCount: routineExercise.supersetGroupId == nil ? nil : routineExercise.plannedSets,
+            seriesMemberCount: nil,
+            thumbnailURL: routineExercise.exercise.thumbnailURL,
+            instructionsPreview: routineExercise.exercise.instructions?.gymInstructionsPreview()
         )
+    }
+}
+
+private extension String {
+    func gymInstructionsPreview(maxLength: Int = 220) -> String? {
+        let normalized = components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !normalized.isEmpty else { return nil }
+        if normalized.count <= maxLength { return normalized }
+        return String(normalized.prefix(maxLength)).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
     }
 }

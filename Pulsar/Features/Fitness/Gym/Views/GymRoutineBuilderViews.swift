@@ -6,7 +6,6 @@
 import PhotosUI
 import SwiftUI
 import UIKit
-import WebKit
 
 struct GymRoutineBuilderFlowView: View {
     private enum Route: Hashable {
@@ -166,7 +165,7 @@ private struct GymExercisePickerView: View {
             .preferredColorScheme(.dark)
         }
         .sheet(item: $selectedExerciseDetails) { exercise in
-            GymExerciseDetailSheet(exercise: exercise)
+            GymExerciseCatalogDetailSheet(exercise: exercise)
                 .environment(\.colorScheme, .dark)
                 .preferredColorScheme(.dark)
         }
@@ -333,7 +332,11 @@ private struct GymExerciseCard: View {
         HStack(spacing: 10) {
             Button(action: action) {
                 HStack(spacing: 13) {
-                    GymExerciseThumbnail(urlString: exercise.thumbnailURL, isSelected: isSelected)
+                    GymExerciseThumbnailView(
+                        thumbnailURL: exercise.thumbnailURL,
+                        muscleGroup: exercise.primaryMuscleGroup,
+                        size: 58
+                    )
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text(exercise.name)
@@ -398,332 +401,6 @@ private struct GymExerciseCard: View {
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
-    }
-}
-
-private struct GymExerciseThumbnail: View {
-    var urlString: String?
-    var isSelected: Bool
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.white.opacity(isSelected ? 0.15 : 0.09))
-
-            if let url = ExerciseDatasetMediaResolver.url(for: urlString) {
-                if url.isFileURL {
-                    if let image = UIImage(contentsOfFile: url.path) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                    } else {
-                        fallbackIcon
-                    }
-                } else {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        case .failure:
-                            fallbackIcon
-                        case .empty:
-                            ProgressView()
-                                .tint(.white.opacity(0.72))
-                        @unknown default:
-                            fallbackIcon
-                        }
-                    }
-                }
-            } else {
-                fallbackIcon
-            }
-        }
-        .frame(width: 58, height: 58)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(.white.opacity(0.12), lineWidth: 1)
-        }
-    }
-
-    private var fallbackIcon: some View {
-        Image(systemName: "figure.strengthtraining.traditional")
-            .pulsarTextStyle(.sectionHeader)
-            .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(.white.opacity(0.74))
-    }
-}
-
-private struct GymExerciseDetailSheet: View {
-    var exercise: PulsarExercise
-    @Environment(\.dismiss) private var dismiss
-
-    private var instructionSteps: [String] {
-        exercise.instructions?
-            .components(separatedBy: "\n\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty } ?? []
-    }
-
-    var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 18) {
-                header
-                mediaPreview
-                metadataGrid
-
-                if !instructionSteps.isEmpty {
-                    instructionsSection
-                }
-
-                attribution
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 22)
-            .padding(.bottom, 30)
-        }
-        .background(GymGlassBackground().ignoresSafeArea())
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-    }
-
-    private var header: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(exercise.name)
-                    .pulsarTextStyle(.title)
-                    .foregroundStyle(.white)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text(exercise.primaryMuscleSummary)
-                    .pulsarTextStyle(.label)
-                    .foregroundStyle(.white.opacity(0.62))
-                    .lineLimit(2)
-            }
-
-            Spacer(minLength: 8)
-
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .pulsarTextStyle(.label)
-                    .foregroundStyle(.white.opacity(0.78))
-                    .frame(width: 34, height: 34)
-                    .background(.white.opacity(0.09), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close exercise details")
-        }
-    }
-
-    @ViewBuilder
-    private var mediaPreview: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.white.opacity(0.08))
-
-            if let animationURL = ExerciseDatasetMediaResolver.url(for: exercise.animationURL) {
-                GymExerciseWebMediaView(url: animationURL)
-            } else if let thumbnailURL = ExerciseDatasetMediaResolver.url(for: exercise.thumbnailURL) {
-                GymExerciseResolvedImage(url: thumbnailURL)
-            } else {
-                GymExerciseMediaFallback()
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 270)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(.white.opacity(0.12), lineWidth: 1)
-        }
-    }
-
-    private var metadataGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-            GymExerciseDetailMetric(title: "Target", value: exercise.primaryMuscleGroup.displayName, symbolName: "scope")
-            GymExerciseDetailMetric(title: "Equipment", value: exercise.equipmentSummary, symbolName: "dumbbell.fill")
-            if let category = exercise.category {
-                GymExerciseDetailMetric(title: "Category", value: category, symbolName: "square.grid.2x2")
-            }
-            if exercise.animationURL != nil {
-                GymExerciseDetailMetric(title: "Media", value: "GIF", symbolName: "play.rectangle.fill")
-            }
-        }
-    }
-
-    private var instructionsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Instructions")
-                .pulsarTextStyle(.cardTitle)
-                .foregroundStyle(.white)
-
-            VStack(spacing: 10) {
-                ForEach(Array(instructionSteps.enumerated()), id: \.offset) { index, step in
-                    HStack(alignment: .top, spacing: 11) {
-                        Text("\(index + 1)")
-                            .pulsarTextStyle(.captionEmphasis)
-                            .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
-                            .frame(width: 24, height: 24)
-                            .background(.white.opacity(0.92), in: Circle())
-
-                        Text(step)
-                            .pulsarTextStyle(.label)
-                            .foregroundStyle(.white.opacity(0.78))
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        Spacer(minLength: 0)
-                    }
-                    .padding(12)
-                    .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                }
-            }
-        }
-    }
-
-    private var attribution: some View {
-        Text("Source: \(exercise.attribution.sourceName)")
-            .pulsarTextStyle(.captionEmphasis)
-            .foregroundStyle(.white.opacity(0.48))
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct GymExerciseDetailMetric: View {
-    var title: String
-    var value: String
-    var symbolName: String
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: symbolName)
-                .pulsarTextStyle(.label)
-                .foregroundStyle(Color(red: 0.78, green: 0.72, blue: 1.0))
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(.white.opacity(0.52))
-                Text(value)
-                    .pulsarTextStyle(.label)
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.82)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
-        .background(.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(.white.opacity(0.09), lineWidth: 1)
-        }
-    }
-}
-
-private struct GymExerciseResolvedImage: View {
-    var url: URL
-
-    var body: some View {
-        if url.isFileURL {
-            if let image = UIImage(contentsOfFile: url.path) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                GymExerciseMediaFallback()
-            }
-        } else {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                case .failure:
-                    GymExerciseMediaFallback()
-                case .empty:
-                    ProgressView()
-                        .tint(.white.opacity(0.72))
-                @unknown default:
-                    GymExerciseMediaFallback()
-                }
-            }
-        }
-    }
-}
-
-private struct GymExerciseMediaFallback: View {
-    var body: some View {
-        Image(systemName: "figure.strengthtraining.traditional")
-            .pulsarTextStyle(.title)
-            .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(.white.opacity(0.70))
-    }
-}
-
-private struct GymExerciseWebMediaView: UIViewRepresentable {
-    var url: URL
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    func makeUIView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
-        webView.scrollView.backgroundColor = .clear
-        webView.scrollView.isScrollEnabled = false
-        webView.scrollView.bounces = false
-        return webView
-    }
-
-    func updateUIView(_ webView: WKWebView, context: Context) {
-        guard context.coordinator.loadedURL != url else { return }
-        context.coordinator.loadedURL = url
-
-        if url.isFileURL {
-            webView.loadHTMLString(html(src: url.lastPathComponent), baseURL: url.deletingLastPathComponent())
-        } else {
-            webView.loadHTMLString(html(src: url.absoluteString), baseURL: nil)
-        }
-    }
-
-    private func html(src: String) -> String {
-        """
-        <!doctype html>
-        <html>
-        <head>
-        <meta name="viewport" content="initial-scale=1, maximum-scale=1">
-        <style>
-        html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
-        img { width: 100%; height: 100%; object-fit: cover; display: block; }
-        </style>
-        </head>
-        <body><img src="\(escapedHTMLAttribute(src))"></body>
-        </html>
-        """
-    }
-
-    private func escapedHTMLAttribute(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-    }
-
-    final class Coordinator {
-        var loadedURL: URL?
     }
 }
 
@@ -1169,6 +846,7 @@ private struct GymRoutineCreationView: View {
     @State private var didSave = false
     @State private var expandedExerciseIDs: Set<UUID> = []
     @State private var isShowingEmojiPicker = false
+    @State private var instructionExercise: PulsarExercise?
     @State private var supersetPickerExercise: PulsarRoutineExercise?
     @State private var supersetEditorContext: GymSupersetEditorContext?
     @FocusState private var focusedPlanningField: GymPlanningInputField?
@@ -1236,6 +914,11 @@ private struct GymRoutineCreationView: View {
             .presentationCornerRadius(34)
             .presentationContentInteraction(.scrolls)
         }
+        .sheet(item: $instructionExercise) { exercise in
+            GymExerciseCatalogDetailSheet(exercise: exercise)
+                .environment(\.colorScheme, .dark)
+                .preferredColorScheme(.dark)
+        }
         .sheet(item: $supersetPickerExercise) { routineExercise in
             GymSupersetPartnerPickerSheet(
                 baseExercise: routineExercise,
@@ -1291,7 +974,8 @@ private struct GymRoutineCreationView: View {
                 .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(.white)
 
-            HStack(spacing: 12) {
+            PulsarGlassCard(cornerRadius: 26, contentPadding: 14, tint: Color(red: 0.78, green: 0.72, blue: 1.0).opacity(0.06)) {
+                HStack(spacing: 12) {
                 Button {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     isShowingEmojiPicker = true
@@ -1299,11 +983,7 @@ private struct GymRoutineCreationView: View {
                     Text(viewModel.resolvedRoutineEmoji)
                         .font(.system(size: 28))
                         .frame(width: 58, height: 58)
-                        .background(.white.opacity(0.10), in: Circle())
-                        .overlay {
-                            Circle()
-                                .stroke(.white.opacity(0.14), lineWidth: 1)
-                        }
+                        .background(PulsarCircularGlassSurface(cornerRadius: 29, tint: Color(red: 0.90, green: 0.78, blue: 1.0)))
                 }
                 .buttonStyle(PulsarGymPressButtonStyle())
                 .accessibilityLabel("Choose routine icon")
@@ -1314,11 +994,8 @@ private struct GymRoutineCreationView: View {
                     .textInputAutocapitalization(.words)
                     .submitLabel(.done)
                     .padding(16)
-                    .background(.white.opacity(0.085), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .stroke(.white.opacity(0.12), lineWidth: 1)
-                    }
+                    .pulsarLiquidGlass(cornerRadius: 20, tint: Color(red: 0.78, green: 0.72, blue: 1.0).opacity(0.055), interactive: true, isClear: true)
+                }
             }
         }
     }
@@ -1332,47 +1009,53 @@ private struct GymRoutineCreationView: View {
 
                 Text("\(viewModel.routineExercises.count)")
                     .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(.white.opacity(0.56))
+                    .foregroundStyle(.white.opacity(0.70))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(.white.opacity(0.08), in: Capsule(style: .continuous))
+                    .pulsarLiquidGlass(cornerRadius: 12, tint: Color(red: 0.78, green: 0.72, blue: 1.0).opacity(0.08), isClear: true)
 
                 Spacer(minLength: 0)
             }
 
-            VStack(spacing: 10) {
-                ForEach(viewModel.routineExercises.sorted { $0.order < $1.order }) { routineExercise in
-                    let supersetGroup = viewModel.supersetGroup(containing: routineExercise.id)
-                    GymRoutineExercisePlanningCard(
-                        routineExercise: routineExercise,
-                        viewModel: viewModel,
-                        focusedField: $focusedPlanningField,
-                        supersetGroup: supersetGroup,
-                        supersetBadge: viewModel.supersetBadge(for: routineExercise),
-                        isExpanded: isExpanded(routineExercise),
-                        canCollapse: viewModel.routineExercises.count > 1,
-                        onToggleExpanded: {
-                            toggleExpanded(routineExercise)
-                        },
-                        onCreateSuperset: {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            supersetPickerExercise = routineExercise
-                        },
-                        onEditSuperset: {
-                            guard let supersetGroup else { return }
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            supersetEditorContext = GymSupersetEditorContext(groupID: supersetGroup.id, routineExerciseID: routineExercise.id)
-                        },
-                        onRemove: {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            withAnimation(.spring(response: 0.32, dampingFraction: 0.84)) {
-                                viewModel.removeRoutineExercise(routineExercise)
+            PulsarGlassEffectGroup(spacing: 12) {
+                LazyVStack(spacing: 12) {
+                    ForEach(viewModel.routineExercises.sorted { $0.order < $1.order }) { routineExercise in
+                        let supersetGroup = viewModel.supersetGroup(containing: routineExercise.id)
+                        GymRoutineExercisePlanningCard(
+                            routineExercise: routineExercise,
+                            viewModel: viewModel,
+                            focusedField: $focusedPlanningField,
+                            supersetGroup: supersetGroup,
+                            supersetBadge: viewModel.supersetBadge(for: routineExercise),
+                            isExpanded: isExpanded(routineExercise),
+                            canCollapse: viewModel.routineExercises.count > 1,
+                            onToggleExpanded: {
+                                toggleExpanded(routineExercise)
+                            },
+                            onShowInstructions: {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                instructionExercise = routineExercise.exercise
+                            },
+                            onCreateSuperset: {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                supersetPickerExercise = routineExercise
+                            },
+                            onEditSuperset: {
+                                guard let supersetGroup else { return }
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                supersetEditorContext = GymSupersetEditorContext(groupID: supersetGroup.id, routineExerciseID: routineExercise.id)
+                            },
+                            onRemove: {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                withAnimation(.spring(response: 0.32, dampingFraction: 0.84)) {
+                                    viewModel.removeRoutineExercise(routineExercise)
+                                }
+                            },
+                            onEdit: {
+                                didSave = false
                             }
-                        },
-                        onEdit: {
-                            didSave = false
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -1395,55 +1078,47 @@ private struct GymRoutineCreationView: View {
     }
 
     private var actionBar: some View {
-        HStack(spacing: 10) {
-            Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                _ = viewModel.save(using: routineStore)
-                withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
-                    didSave = true
+        PulsarGlassCard(cornerRadius: 30, contentPadding: 10, tint: Color(red: 0.78, green: 0.72, blue: 1.0).opacity(0.07)) {
+            HStack(spacing: 10) {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    _ = viewModel.save(using: routineStore)
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                        didSave = true
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: didSave ? "checkmark" : "tray.and.arrow.down.fill")
+                        Text(didSave ? "Saved" : "Save Routine")
+                    }
+                    .pulsarTextStyle(.label)
+                    .foregroundStyle(.white.opacity(0.88))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 15)
                 }
-            } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: didSave ? "checkmark" : "tray.and.arrow.down.fill")
-                    Text(didSave ? "Saved" : "Save Routine")
-                }
-                .pulsarTextStyle(.label)
-                .foregroundStyle(.white.opacity(0.88))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 15)
-                .background(.white.opacity(0.10), in: Capsule(style: .continuous))
-                .overlay {
-                    Capsule(style: .continuous)
-                        .stroke(.white.opacity(0.13), lineWidth: 1)
-                }
-            }
-            .buttonStyle(PulsarGymPressButtonStyle())
-            .disabled(!viewModel.canContinue)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.roundedRectangle(radius: 24))
+                .disabled(!viewModel.canContinue)
 
-            Button {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                let routine = viewModel.makeRoutine()
-                onStartWorkout(routine)
-            } label: {
-                HStack(spacing: 8) {
-                    Text("Start Workout")
-                    Image(systemName: "arrow.right")
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    let routine = viewModel.save(using: routineStore)
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                        didSave = true
+                    }
+                    onStartWorkout(routine)
+                } label: {
+                    HStack(spacing: 8) {
+                        Text("Start Workout")
+                        Image(systemName: "arrow.right")
+                    }
+                    .pulsarTextStyle(.label)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 15)
                 }
-                .pulsarTextStyle(.label)
-                .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 15)
-                .background(
-                    LinearGradient(
-                        colors: [.white.opacity(0.98), Color(red: 0.84, green: 0.78, blue: 1.0)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    in: Capsule(style: .continuous)
-                )
+                .pulsarGlassProminent(tint: Color(red: 0.70, green: 0.55, blue: 1.0).opacity(0.62), cornerRadius: 24)
+                .disabled(!viewModel.canContinue)
             }
-            .buttonStyle(PulsarGymPressButtonStyle())
-            .disabled(!viewModel.canContinue)
         }
     }
 }
@@ -1457,93 +1132,101 @@ private struct GymRoutineExercisePlanningCard: View {
     var isExpanded: Bool
     var canCollapse: Bool
     var onToggleExpanded: () -> Void
+    var onShowInstructions: () -> Void
     var onCreateSuperset: () -> Void
     var onEditSuperset: () -> Void
     var onRemove: () -> Void
     var onEdit: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 13) {
-            HStack(spacing: 12) {
-                Text("\(routineExercise.order + 1)")
-                    .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(Color(red: 0.18, green: 0.14, blue: 0.28))
-                    .frame(width: 28, height: 28)
-                    .background(.white.opacity(0.92), in: Circle())
+        PulsarGlassCard(cornerRadius: 24, contentPadding: 14, tint: cardTint) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 12) {
+                    Button(action: onShowInstructions) {
+                        ZStack(alignment: .topLeading) {
+                            GymExerciseThumbnailView(
+                                thumbnailURL: routineExercise.exercise.thumbnailURL,
+                                muscleGroup: routineExercise.exercise.primaryMuscleGroup,
+                                size: 64
+                            )
+                            .pulsarLiquidGlass(cornerRadius: 18, tint: Color(red: 0.78, green: 0.72, blue: 1.0).opacity(0.08), interactive: true, isClear: true)
 
-                VStack(alignment: .leading, spacing: 5) {
+                            Text("\(routineExercise.order + 1)")
+                                .pulsarTextStyle(.captionEmphasis)
+                                .foregroundStyle(Color(red: 0.18, green: 0.14, blue: 0.28))
+                                .frame(width: 24, height: 24)
+                                .background(.white.opacity(0.94), in: Circle())
+                                .offset(x: -4, y: -4)
+                        }
+                        .frame(width: 68, height: 68)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("View instructions for \(routineExercise.exerciseName)")
+                    .accessibilityHint("Opens exercise media and form instructions.")
+
+                    Button(action: {
+                        if canCollapse {
+                            onToggleExpanded()
+                        }
+                    }) {
+                        VStack(alignment: .leading, spacing: 6) {
                     if let supersetBadge {
                         Text(supersetBadge)
                             .font(.system(size: 10, weight: .semibold, design: .rounded))
                             .foregroundStyle(Color(red: 0.78, green: 0.72, blue: 1.0))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(Color(red: 0.72, green: 0.66, blue: 1.0).opacity(0.14), in: Capsule(style: .continuous))
-                            .overlay {
-                                Capsule(style: .continuous)
-                                    .stroke(Color(red: 0.78, green: 0.72, blue: 1.0).opacity(0.20), lineWidth: 1)
-                            }
+                            .pulsarLiquidGlass(cornerRadius: 10, tint: Color(red: 0.72, green: 0.66, blue: 1.0).opacity(0.12), isClear: true)
                     }
 
                     Text(routineExercise.exerciseName)
-                        .pulsarTextStyle(.label)
+                        .pulsarTextStyle(.sectionHeader)
                         .foregroundStyle(.white)
                         .lineLimit(2)
+                        .minimumScaleFactor(0.86)
 
                     Text(routineExercise.planSummary)
                         .pulsarTextStyle(.captionEmphasis)
                         .foregroundStyle(.white.opacity(0.58))
                         .lineLimit(2)
-                }
-
-                Spacer(minLength: 4)
-
-                Button(action: supersetGroup == nil ? onCreateSuperset : onEditSuperset) {
-                    Image(systemName: supersetGroup == nil ? "link.badge.plus" : "link")
-                        .pulsarTextStyle(.label)
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(supersetGroup == nil ? .white.opacity(0.76) : Color(red: 0.84, green: 0.78, blue: 1.0))
-                        .frame(width: 32, height: 32)
-                        .background(.white.opacity(supersetGroup == nil ? 0.075 : 0.12), in: Circle())
-                        .overlay {
-                            Circle()
-                                .stroke(.white.opacity(supersetGroup == nil ? 0.10 : 0.20), lineWidth: 1)
                         }
-                }
-                .buttonStyle(.plain)
-                .disabled(supersetGroup == nil && viewModel.routineExercises.count < 2)
-                .accessibilityLabel(supersetGroup == nil ? "Create superset" : "Edit superset")
-
-                Button(action: onRemove) {
-                    Image(systemName: "minus.circle.fill")
-                        .pulsarTextStyle(.sectionHeader)
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(Color(red: 1.0, green: 0.58, blue: 0.58))
-                        .frame(width: 32, height: 32)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Remove \(routineExercise.exerciseName)")
-
-                if canCollapse {
-                    Button(action: onToggleExpanded) {
-                        Image(systemName: "chevron.down")
-                            .pulsarTextStyle(.captionEmphasis)
-                            .foregroundStyle(.white.opacity(0.70))
-                            .frame(width: 28, height: 28)
-                            .rotationEffect(.degrees(isExpanded ? 180 : 0))
-                            .background(.white.opacity(0.08), in: Circle())
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(isExpanded ? "Collapse exercise plan" : "Expand exercise plan")
-                }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                onToggleExpanded()
-            }
 
-            if isExpanded {
-                VStack(spacing: 12) {
+                    Spacer(minLength: 4)
+
+                    HStack(spacing: 8) {
+                        planningIconButton(
+                            title: supersetGroup == nil ? "Create superset" : "Edit superset",
+                            systemName: supersetGroup == nil ? "link.badge.plus" : "link",
+                            tint: supersetGroup == nil ? .white.opacity(0.76) : Color(red: 0.84, green: 0.78, blue: 1.0),
+                            action: supersetGroup == nil ? onCreateSuperset : onEditSuperset
+                        )
+                        .disabled(supersetGroup == nil && viewModel.routineExercises.count < 2)
+
+                        planningIconButton(
+                            title: "Remove \(routineExercise.exerciseName)",
+                            systemName: "minus",
+                            tint: Color(red: 1.0, green: 0.58, blue: 0.58),
+                            action: onRemove
+                        )
+
+                        if canCollapse {
+                            planningIconButton(
+                                title: isExpanded ? "Collapse exercise plan" : "Expand exercise plan",
+                                systemName: "chevron.down",
+                                tint: .white.opacity(0.72),
+                                action: onToggleExpanded
+                            )
+                            .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                        }
+                    }
+                }
+
+                if isExpanded {
+                    VStack(spacing: 12) {
                     HStack(spacing: 10) {
                         GymPlanIntegerField(
                             title: supersetGroup == nil ? "Sets" : "Shared Sets",
@@ -1652,22 +1335,26 @@ private struct GymRoutineExercisePlanningCard: View {
                         .lineLimit(2...4)
                         .textInputAutocapitalization(.sentences)
                         .padding(13)
-                        .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(.white.opacity(0.08), lineWidth: 1)
-                        }
+                        .pulsarLiquidGlass(cornerRadius: 18, tint: Color(red: 0.78, green: 0.72, blue: 1.0).opacity(0.045), interactive: true, isClear: true)
                     }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(14)
-        .background(cardBackground, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(cardBorder, lineWidth: 1)
         }
+    }
+
+    private func planningIconButton(title: String, systemName: String, tint: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemName)
+                .labelStyle(.iconOnly)
+                .pulsarTextStyle(.label)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(tint)
+                .frame(width: 36, height: 36)
+                .background(PulsarCircularGlassSurface(cornerRadius: 18, tint: tint, opacity: 0.88))
+        }
+        .buttonStyle(.plain)
     }
 
     private func restPresetTitle(_ seconds: Int) -> String {
@@ -1677,25 +1364,15 @@ private struct GymRoutineExercisePlanningCard: View {
         return "Rest \(seconds)s"
     }
 
-    private var cardBackground: LinearGradient {
-        LinearGradient(
-            colors: supersetGroup == nil
-                ? [.white.opacity(0.080), .white.opacity(0.052)]
-                : [Color(red: 0.72, green: 0.66, blue: 1.0).opacity(0.13), .white.opacity(0.062)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    private var cardBorder: Color {
+    private var cardTint: Color? {
         if supersetGroup != nil {
-            return Color(red: 0.78, green: 0.72, blue: 1.0).opacity(isExpanded ? 0.32 : 0.22)
+            return Color(red: 0.72, green: 0.66, blue: 1.0).opacity(isExpanded ? 0.14 : 0.10)
         }
-        return .white.opacity(isExpanded ? 0.16 : 0.10)
+        return Color(red: 0.78, green: 0.72, blue: 1.0).opacity(isExpanded ? 0.08 : 0.04)
     }
 }
 
-private enum GymPlanningInputField: Hashable {
+fileprivate enum GymPlanningInputField: Hashable {
     case sets(UUID)
     case reps(UUID)
     case weight(UUID)
@@ -2076,11 +1753,7 @@ private struct GymPlanIntegerField: View {
             }
             .padding(13)
             .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-            .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(.white.opacity(0.08), lineWidth: 1)
-            }
+            .pulsarLiquidGlass(cornerRadius: 18, tint: Color(red: 0.78, green: 0.72, blue: 1.0).opacity(0.045), interactive: true, isClear: true)
         }
     }
 }
@@ -2112,11 +1785,7 @@ private struct GymPlanDecimalField: View {
             }
             .padding(13)
             .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-            .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(.white.opacity(0.08), lineWidth: 1)
-            }
+            .pulsarLiquidGlass(cornerRadius: 18, tint: Color(red: 0.78, green: 0.72, blue: 1.0).opacity(0.045), interactive: true, isClear: true)
         }
     }
 }
@@ -2133,23 +1802,14 @@ private struct GymRestPresetButton: View {
                 .foregroundStyle(isSelected ? Color(red: 0.14, green: 0.09, blue: 0.22) : .white.opacity(0.72))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
-                .background(background, in: Capsule(style: .continuous))
-                .overlay {
-                    Capsule(style: .continuous)
-                        .stroke(.white.opacity(isSelected ? 0.34 : 0.08), lineWidth: 1)
-                }
+                .background(selectedFill, in: Capsule(style: .continuous))
+                .pulsarLiquidGlass(cornerRadius: 18, tint: Color(red: 0.84, green: 0.78, blue: 1.0).opacity(isSelected ? 0.18 : 0.04), interactive: true, isClear: !isSelected)
         }
         .buttonStyle(.plain)
     }
 
-    private var background: LinearGradient {
-        LinearGradient(
-            colors: isSelected
-                ? [.white.opacity(0.96), Color(red: 0.84, green: 0.78, blue: 1.0).opacity(0.88)]
-                : [.white.opacity(0.08), .white.opacity(0.045)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+    private var selectedFill: Color {
+        isSelected ? .white.opacity(0.72) : .white.opacity(0.035)
     }
 }
 

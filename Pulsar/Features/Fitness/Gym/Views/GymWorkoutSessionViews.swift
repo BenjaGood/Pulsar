@@ -10,6 +10,8 @@ struct GymWorkoutSessionView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var viewModel: GymWorkoutSessionViewModel
     @State private var selectedExerciseProgressTarget: ExerciseProgressLookup?
+    @State private var selectedPreviousWeightsExercise: PulsarGymWorkoutExerciseSession?
+    @State private var selectedDetailExercise: PulsarGymWorkoutExerciseSession?
     var onMinimize: (() -> Void)?
     var onFinish: () -> Void
 
@@ -89,6 +91,18 @@ struct GymWorkoutSessionView: View {
         }
         .sheet(item: $selectedExerciseProgressTarget) { target in
             ExerciseProgressHistorySheet(target: target, displayUnit: target.displayUnit)
+        }
+        .sheet(item: $selectedPreviousWeightsExercise) { exercise in
+            ExercisePreviousWeightsSheet(
+                exercise: exercise,
+                history: viewModel.progressHistory(for: exercise),
+                recentSessions: viewModel.recentHistorySessions(for: exercise)
+            ) {
+                selectedExerciseProgressTarget = ExerciseProgressLookup(exercise: exercise)
+            }
+        }
+        .sheet(item: $selectedDetailExercise) { exercise in
+            GymSessionExerciseDetailSheet(exercise: exercise)
         }
         .task {
             await viewModel.startWorkoutIfNeeded()
@@ -198,7 +212,8 @@ struct GymWorkoutSessionView: View {
                                         group: group,
                                         exercises: viewModel.supersetMembers(for: group),
                                         viewModel: viewModel,
-                                        onShowProgress: { showProgress(for: $0) }
+                                        onShowDetails: { selectedDetailExercise = $0 },
+                                        onShowProgress: { selectedPreviousWeightsExercise = $0 }
                                     )
                                 }
                             } else {
@@ -207,7 +222,8 @@ struct GymWorkoutSessionView: View {
                                     viewModel: viewModel,
                                     supersetBadge: nil,
                                     allowsSetEditing: true,
-                                    onShowProgress: { showProgress(for: $0) }
+                                    onShowDetails: { selectedDetailExercise = $0 },
+                                    onShowProgress: { selectedPreviousWeightsExercise = $0 }
                                 )
                             }
                         }
@@ -481,6 +497,7 @@ private struct GymSupersetSessionPairView: View {
     var group: PulsarSupersetGroup
     var exercises: [PulsarGymWorkoutExerciseSession]
     @ObservedObject var viewModel: GymWorkoutSessionViewModel
+    var onShowDetails: (PulsarGymWorkoutExerciseSession) -> Void
     var onShowProgress: (PulsarGymWorkoutExerciseSession) -> Void
 
     var body: some View {
@@ -568,6 +585,7 @@ private struct GymSupersetSessionPairView: View {
                             viewModel: viewModel,
                             supersetBadge: viewModel.supersetBadge(for: exercise),
                             allowsSetEditing: false,
+                            onShowDetails: onShowDetails,
                             onShowProgress: onShowProgress
                         )
                         .padding(.leading, 12)
@@ -584,20 +602,24 @@ private struct GymSessionExerciseCard: View {
     @ObservedObject var viewModel: GymWorkoutSessionViewModel
     var supersetBadge: String?
     var allowsSetEditing: Bool
+    var onShowDetails: (PulsarGymWorkoutExerciseSession) -> Void
     var onShowProgress: (PulsarGymWorkoutExerciseSession) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
             HStack(alignment: .top, spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(exercise.isCompleted ? Color(red: 0.66, green: 1.0, blue: 0.78).opacity(0.20) : .white.opacity(0.09))
-                        .frame(width: 38, height: 38)
-
-                    Image(systemName: exercise.isCompleted ? "checkmark" : "figure.strengthtraining.traditional")
-                        .pulsarTextStyle(.label)
-                        .foregroundStyle(exercise.isCompleted ? Color(red: 0.72, green: 1.0, blue: 0.78) : .white.opacity(0.76))
+                Button {
+                    onShowDetails(exercise)
+                } label: {
+                    GymExerciseThumbnailView(
+                        thumbnailURL: exercise.thumbnailURL,
+                        muscleGroup: exercise.primaryMuscleGroup,
+                        size: 44,
+                        isCompleted: exercise.isCompleted
+                    )
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open \(exercise.exerciseName) details")
 
                 VStack(alignment: .leading, spacing: 5) {
                     if let supersetBadge {
@@ -613,10 +635,22 @@ private struct GymSessionExerciseCard: View {
                             }
                     }
 
-                    Text(exercise.exerciseName)
-                        .pulsarTextStyle(.cardTitle)
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
+                    Button {
+                        onShowDetails(exercise)
+                    } label: {
+                        HStack(spacing: 5) {
+                            Text(exercise.exerciseName)
+                                .pulsarTextStyle(.cardTitle)
+                                .foregroundStyle(.white)
+                                .lineLimit(2)
+
+                            Image(systemName: "info.circle")
+                                .pulsarTextStyle(.captionEmphasis)
+                                .foregroundStyle(.white.opacity(0.44))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open \(exercise.exerciseName) details")
 
                     Text("\(exercise.primaryMuscleGroup.displayName) / \(exercise.equipment)")
                         .pulsarTextStyle(.captionEmphasis)
@@ -646,7 +680,7 @@ private struct GymSessionExerciseCard: View {
                                 }
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Open \(exercise.exerciseName) progress")
+                        .accessibilityLabel("Previous weights for \(exercise.exerciseName)")
 
                         Text("\(exercise.completedSetCount)/\(exercise.sets.count)")
                             .pulsarTextStyle(.captionEmphasis)
@@ -921,136 +955,6 @@ private struct GymWorkoutSetRow: View {
     }
 }
 
-private struct GymSetEditorSheet: View {
-    var setNumber: Int
-    var reps: Int
-    var weight: Double
-    var weightUnit: PulsarWeightUnit
-    var onSave: (Int, Double) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var draftReps: Int
-    @State private var draftWeight: Double
-
-    init(
-        setNumber: Int,
-        reps: Int,
-        weight: Double,
-        weightUnit: PulsarWeightUnit,
-        onSave: @escaping (Int, Double) -> Void
-    ) {
-        self.setNumber = setNumber
-        self.reps = reps
-        self.weight = weight
-        self.weightUnit = weightUnit
-        self.onSave = onSave
-        _draftReps = State(initialValue: reps)
-        _draftWeight = State(initialValue: weight)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Set \(setNumber)")
-                    .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(.white.opacity(0.54))
-                    .textCase(.uppercase)
-
-                Text("Adjust performance")
-                    .font(.system(size: 25, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-            }
-
-            VStack(spacing: 12) {
-                GymSetEditorStepper(
-                    title: "Reps",
-                    value: "\(draftReps)",
-                    onMinus: { draftReps = max(1, draftReps - 1) },
-                    onPlus: { draftReps = min(200, draftReps + 1) }
-                )
-
-                GymSetEditorStepper(
-                    title: "Weight",
-                    value: "\(draftWeight.formattedGymDecimal) \(weightUnit.displayName)",
-                    onMinus: { draftWeight = max(0, draftWeight - weightStep) },
-                    onPlus: { draftWeight += weightStep }
-                )
-            }
-
-            Button {
-                onSave(draftReps, draftWeight)
-                dismiss()
-            } label: {
-                Text("Save Set Values")
-                    .pulsarTextStyle(.cardTitle)
-                    .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 15)
-                    .background(
-                        LinearGradient(
-                            colors: [.white.opacity(0.98), Color(red: 0.74, green: 1.0, blue: 0.78)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        in: Capsule(style: .continuous)
-                    )
-            }
-            .buttonStyle(PulsarGymPressButtonStyle())
-        }
-        .padding(22)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(GymGlassBackground().ignoresSafeArea())
-        .preferredColorScheme(.dark)
-    }
-
-    private var weightStep: Double {
-        weightUnit == .pounds ? 5 : 2.5
-    }
-}
-
-private struct GymSetEditorStepper: View {
-    var title: String
-    var value: String
-    var onMinus: () -> Void
-    var onPlus: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(.white.opacity(0.54))
-                Text(value)
-                    .pulsarTextStyle(.sectionHeader)
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-            }
-
-            Spacer(minLength: 0)
-
-            HStack(spacing: 8) {
-                Button(action: onMinus) {
-                    Image(systemName: "minus")
-                        .pulsarTextStyle(.label)
-                        .frame(width: 38, height: 38)
-                        .background(.white.opacity(0.08), in: Circle())
-                }
-
-                Button(action: onPlus) {
-                    Image(systemName: "plus")
-                        .pulsarTextStyle(.label)
-                        .frame(width: 38, height: 38)
-                        .background(.white.opacity(0.12), in: Circle())
-                }
-            }
-            .foregroundStyle(.white.opacity(0.88))
-            .buttonStyle(.plain)
-        }
-        .padding(14)
-        .pulsarLiquidGlass(cornerRadius: 20)
-    }
-}
-
 private struct GymRestTimerCard: View {
     var title: String
     var remainingSeconds: Int
@@ -1165,135 +1069,31 @@ private struct GymEmptySessionExerciseView: View {
 struct GymWorkoutSummaryOverlay: View {
     var summary: PulsarGymWorkoutSummary
     var onDone: () -> Void
-    @State private var isShowingShareComposer = false
+    @State private var selectedExerciseProgressTarget: ExerciseProgressLookup?
 
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.52)
-                .ignoresSafeArea()
-
-            ScrollView {
-                VStack(spacing: 18) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 44, weight: .bold))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(Color(red: 0.70, green: 1.0, blue: 0.76))
-
-                    VStack(spacing: 7) {
-                        Text("Workout Complete")
-                            .font(.system(size: 27, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-
-                        HStack(spacing: 6) {
-                            Text(summary.routineEmoji)
-                            Text(summary.routineName)
-                        }
-                        .pulsarTextStyle(.label)
-                        .foregroundStyle(.white.opacity(0.62))
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-
-                        Label(summary.sourceDeviceName, systemImage: summary.source == .appleWatch || summary.source == .iPhoneRequestedWatchStart ? "applewatch" : "iphone")
-                            .pulsarTextStyle(.captionEmphasis)
-                            .foregroundStyle(.white.opacity(0.56))
-
-                        if let heartRateSource = summary.heartRateSourceSummaryText {
-                            Label(heartRateSource, systemImage: "heart.text.square.fill")
-                                .pulsarTextStyle(.captionEmphasis)
-                                .foregroundStyle(.white.opacity(0.58))
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.82)
-                                .multilineTextAlignment(.center)
-                        }
-
-                        if let startedAt = summary.startedAt {
-                            Text(startedAt.formatted(.dateTime.weekday(.wide).month(.abbreviated).day().hour().minute()))
-                                .pulsarTextStyle(.captionEmphasis)
-                                .foregroundStyle(.white.opacity(0.50))
-                                .multilineTextAlignment(.center)
-                        }
-                    }
-
-                    VStack(spacing: 10) {
-                        HStack(spacing: 10) {
-                            GymSummaryMetric(title: "Duration", value: summary.durationSeconds.formattedGymDuration)
-                            GymSummaryMetric(title: "Exercises", value: "\(summary.exercisesCompleted)/\(summary.totalExercises)")
-                        }
-
-                        HStack(spacing: 10) {
-                            GymSummaryMetric(title: "Sets", value: "\(summary.setsCompleted)/\(summary.totalSets)")
-                            GymSummaryMetric(title: "Volume", value: "\(summary.totalVolume.formattedGymDecimal) \(summary.weightUnit.displayName)")
-                        }
-
-                        if summary.averageHeartRate != nil || summary.maxHeartRate != nil {
-                            HStack(spacing: 10) {
-                                GymSummaryMetric(title: "Avg HR", value: summary.averageHeartRate.map { "\(Int($0.rounded())) bpm" } ?? "--")
-                                GymSummaryMetric(title: "Max HR", value: summary.maxHeartRate.map { "\(Int($0.rounded())) bpm" } ?? "--")
-                            }
-                        }
-
-                        GymSummaryMetric(title: "Active Calories", value: summary.activeEnergyKilocalories.map { "\(Int($0.rounded())) kcal" } ?? "--")
-                    }
-
-                    if !summary.completedExerciseSummaries.isEmpty {
-                        GymSummaryCompletedSetsView(exercises: summary.completedExerciseSummaries)
-                    }
-
-                    VStack(spacing: 10) {
-                        Button {
-                            isShowingShareComposer = true
-                        } label: {
-                            Label("Share", systemImage: "square.and.arrow.up")
-                                .pulsarTextStyle(.cardTitle)
-                                .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
-                                .background(
-                                    LinearGradient(
-                                        colors: [.white.opacity(0.98), Color(red: 0.74, green: 1.0, blue: 0.78)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    in: Capsule(style: .continuous)
-                                )
-                        }
-                        .buttonStyle(PulsarGymPressButtonStyle())
-
-                        Button(action: onDone) {
-                            Text("Done")
-                                .pulsarTextStyle(.cardTitle)
-                                .foregroundStyle(.white.opacity(0.90))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
-                                .background(.white.opacity(0.10), in: Capsule(style: .continuous))
-                                .overlay {
-                                    Capsule(style: .continuous)
-                                        .stroke(.white.opacity(0.12), lineWidth: 1)
-                                }
-                        }
-                        .buttonStyle(PulsarGymPressButtonStyle())
-                    }
+        WorkoutCompleteView(gymSummary: summary, onDone: onDone) {
+            if !summary.completedExerciseSummaries.isEmpty {
+                GymSummaryCompletedSetsView(exercises: summary.completedExerciseSummaries) { exercise in
+                    selectedExerciseProgressTarget = ExerciseProgressLookup(
+                        exerciseId: exercise.exerciseId,
+                        exerciseName: exercise.exerciseName,
+                        primaryMuscleGroup: exercise.primaryMuscleGroup,
+                        equipment: exercise.equipment,
+                        displayUnit: exercise.weightUnit
+                    )
                 }
-                .padding(20)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 30, style: .continuous)
-                        .stroke(.white.opacity(0.18), lineWidth: 1)
-                }
-                .shadow(color: .black.opacity(0.30), radius: 28, y: 18)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 28)
             }
-            .scrollIndicators(.hidden)
         }
-        .sheet(isPresented: $isShowingShareComposer) {
-            PulsarWorkoutShareComposerView(gymSummary: summary)
+        .sheet(item: $selectedExerciseProgressTarget) { target in
+            ExerciseProgressHistorySheet(target: target, displayUnit: target.displayUnit)
         }
     }
 }
 
 private struct GymSummaryCompletedSetsView: View {
     var exercises: [PulsarGymCompletedExerciseSummary]
+    var onSelectExercise: (PulsarGymCompletedExerciseSummary) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1303,46 +1103,17 @@ private struct GymSummaryCompletedSetsView: View {
 
             VStack(spacing: 10) {
                 ForEach(exercises) { exercise in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(exercise.exerciseName)
-                            .pulsarTextStyle(.label)
-                            .foregroundStyle(.white)
-                            .lineLimit(2)
-
-                        VStack(spacing: 6) {
-                            ForEach(exercise.sets) { set in
-                                HStack(spacing: 10) {
-                                    Text("Set \(set.setNumber)")
-                                        .pulsarTextStyle(.captionEmphasis)
-                                        .foregroundStyle(.white.opacity(0.56))
-                                        .frame(width: 48, alignment: .leading)
-
-                                    Text("\(set.reps) reps")
-                                        .pulsarTextStyle(.captionEmphasis)
-                                        .foregroundStyle(.white)
-
-                                    Spacer(minLength: 0)
-
-                                    Text("\(set.weight.formattedGymDecimal) \(exercise.weightUnit.displayName)")
-                                        .pulsarTextStyle(.captionEmphasis)
-                                .monospacedDigit()
-                                        .foregroundStyle(.white.opacity(0.82))
-                                }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 8)
-                                .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            }
-                        }
+                    GymCompletedExerciseCard(exercise: exercise) {
+                        onSelectExercise(exercise)
                     }
                 }
             }
         }
-        .padding(13)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(16)
+        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(.white.opacity(0.08), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(.white.opacity(0.13), lineWidth: 1)
         }
     }
 }

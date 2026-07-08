@@ -493,8 +493,12 @@ private struct WatchRunMetric: View {
 
 private extension PulsarOutdoorWorkoutKind {
     var watchTint: Color {
-        switch self {
-        case .running: .green
+        if let tint = PulsarWorkoutCatalog.entry(for: self)?.tint {
+            return Color(red: tint.red, green: tint.green, blue: tint.blue)
+        }
+        return switch self {
+        case .running: Color.green
+        case .indoorRunning: Color(red: 1.00, green: 0.46, blue: 0.34)
         case .walking: Color(red: 0.44, green: 0.72, blue: 1.00)
         case .hiking: Color(red: 0.34, green: 0.82, blue: 0.58)
         case .cycling: Color(red: 0.25, green: 0.78, blue: 0.86)

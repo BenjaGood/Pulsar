@@ -119,6 +119,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     @Published private(set) var activeGymState: ActiveGymWorkoutState?
     @Published private(set) var lastFinishedGymState: ActiveGymWorkoutState?
     @Published private(set) var savedGymRoutines: [WatchGymRoutinePlan]
+    @Published private(set) var savedGymRoutinesRevision: Int
     @Published private(set) var lastWatchRecorderAvailability: PulsarWatchRecorderAvailabilitySnapshot?
     @Published private(set) var lastWatchSeenAt: Date?
     @Published private(set) var hasEverReceivedWatchPayload: Bool
@@ -137,6 +138,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     private let activeWorkoutTombstoneCacheKey = "pulsar.sync.terminatedActiveWorkoutSessions.v1"
     private let activeGymCacheKey = "pulsar.sync.activeGymWorkoutState.v1"
     private let savedGymRoutinesCacheKey = "pulsar.sync.savedGymRoutines.v1"
+    private let savedGymRoutinesRevisionCacheKey = "pulsar.sync.savedGymRoutines.revision.v1"
     private let lastWatchSeenAtCacheKey = "pulsar.sync.lastWatchSeenAt.v1"
     private let hasEverReceivedWatchPayloadCacheKey = "pulsar.sync.hasEverReceivedWatchPayload.v1"
     private let watchHeartbeatCacheKey = "pulsar.sync.watchHeartbeat.v1"
@@ -339,11 +341,14 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             }
             defaults.removeObject(forKey: activeGymCacheKey)
         }
+        let restoredSavedGymRoutinesRevision = max(0, defaults.integer(forKey: savedGymRoutinesRevisionCacheKey))
         if let data = defaults.data(forKey: savedGymRoutinesCacheKey),
-           let routines = try? JSONDecoder().decode([WatchGymRoutinePlan].self, from: data) {
-            self.savedGymRoutines = routines.sorted { $0.updatedAt > $1.updatedAt }
+           let payload = SavedGymRoutinesSyncCodec.decode(data) {
+            self.savedGymRoutines = payload.routines.sorted { $0.updatedAt > $1.updatedAt }
+            self.savedGymRoutinesRevision = max(restoredSavedGymRoutinesRevision, payload.revision)
         } else {
             self.savedGymRoutines = []
+            self.savedGymRoutinesRevision = restoredSavedGymRoutinesRevision
         }
         super.init()
         if let latestPayload {
@@ -625,6 +630,42 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         return latest
     }
 
+    func hydrateReceivedApplicationContext(reason: String) {
+        activateSessionIfNeeded()
+        guard let session,
+              session.activationState == .activated,
+              !session.receivedApplicationContext.isEmpty else { return }
+        receive(dictionary: session.receivedApplicationContext, reason: reason)
+    }
+
+    @discardableResult
+    func requestSavedGymRoutinesRefresh(reason: String) -> Bool {
+        sendGymAction(.requestSavedRoutines())
+        return true
+    }
+
+    @discardableResult
+    func broadcastActiveStateAndAwaitDelivery(
+        _ state: PulsarActiveWorkoutSyncState,
+        reason: String,
+        timeoutSeconds: TimeInterval = 0.35
+    ) async -> Bool {
+        sendActiveWorkoutStateToCounterpart(state, reason: reason)
+        await waitBrieflyForWorkoutStateDelivery(timeoutSeconds: timeoutSeconds)
+        return true
+    }
+
+    @discardableResult
+    func broadcastActiveStateAndAwaitDelivery(
+        _ state: ActiveGymWorkoutState,
+        reason: String,
+        timeoutSeconds: TimeInterval = 0.35
+    ) async -> Bool {
+        sendGymStateToCounterpart(state, reason: reason)
+        await waitBrieflyForWorkoutStateDelivery(timeoutSeconds: timeoutSeconds)
+        return true
+    }
+
     func setCurrentActiveWorkoutSessionID(_ sessionID: UUID?, reason: String) {
         setCurrentActiveWorkoutSessionContext(
             sessionID: sessionID,
@@ -653,6 +694,35 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             defaults.removeObject(forKey: activeWorkoutCacheKey)
             PulsarSyncDebugLogger.log("Active workout state cleared for tombstoned session reason=\(reason) session=\(sessionID.uuidString)")
         }
+    }
+
+    func clearFinishedGymPresentationState(sessionID: UUID, reason: String) {
+        var didClear = false
+        if lastFinishedGymState?.sessionId == sessionID {
+            lastFinishedGymState = nil
+            didClear = true
+        }
+        if recentTerminalGymState?.sessionId == sessionID {
+            recentTerminalGymState = nil
+            didClear = true
+        }
+        if recentTerminalActiveWorkoutState?.sessionId == sessionID {
+            recentTerminalActiveWorkoutState = nil
+            didClear = true
+        }
+        if activeGymState?.sessionId == sessionID, activeGymState?.isFinished == true {
+            activeGymState = nil
+            defaults.removeObject(forKey: activeGymCacheKey)
+            didClear = true
+        }
+        if activeWorkoutState?.sessionId == sessionID, activeWorkoutState?.isEnded == true {
+            activeWorkoutState = nil
+            defaults.removeObject(forKey: activeWorkoutCacheKey)
+            didClear = true
+        }
+        guard didClear else { return }
+        PulsarSyncDebugLogger.log("Finished gym presentation state cleared reason=\(reason) session=\(sessionID.uuidString)")
+        publishCurrentApplicationContext(reason: "\(reason).finishedGymPresentationCleared")
     }
 
     func isActiveWorkoutSessionTombstoned(_ sessionID: UUID) -> Bool {
@@ -821,13 +891,41 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     }
 
     @discardableResult
-    func storeSavedGymRoutines(_ routines: [WatchGymRoutinePlan], broadcast: Bool, reason: String) -> Bool {
+    func storeSavedGymRoutines(
+        _ routines: [WatchGymRoutinePlan],
+        revision incomingRevision: Int? = nil,
+        deletedRoutineIds: [UUID] = [],
+        broadcast: Bool,
+        reason: String
+    ) -> Bool {
         let sortedRoutines = routines.sorted { $0.updatedAt > $1.updatedAt }
-        guard sortedRoutines != savedGymRoutines else { return false }
+        let resolvedRevision = incomingRevision.map { max(0, $0) } ?? (savedGymRoutinesRevision + 1)
+
+        if let incomingRevision {
+            guard incomingRevision >= savedGymRoutinesRevision || savedGymRoutinesRevision == 0 else {
+                PulsarSyncDebugLogger.log("Skipped saved Gym routines via \(reason) because incoming revision was not newer incoming=\(incomingRevision) current=\(savedGymRoutinesRevision)")
+                return false
+            }
+            if incomingRevision == savedGymRoutinesRevision, sortedRoutines == savedGymRoutines {
+                return false
+            }
+        } else if sortedRoutines == savedGymRoutines {
+            if broadcast {
+                sendSavedGymRoutinesToCounterpart(sortedRoutines)
+            }
+            return false
+        }
 
         savedGymRoutines = sortedRoutines
-        persistSavedGymRoutines(sortedRoutines)
-        PulsarSyncDebugLogger.log("Saved Gym routines updated via \(reason) count=\(sortedRoutines.count)")
+        savedGymRoutinesRevision = max(savedGymRoutinesRevision, resolvedRevision)
+        persistSavedGymRoutines(
+            SavedGymRoutinesSyncPayload(
+                revision: savedGymRoutinesRevision,
+                routines: sortedRoutines,
+                deletedRoutineIds: deletedRoutineIds
+            )
+        )
+        PulsarSyncDebugLogger.log("Saved Gym routines updated via \(reason) count=\(sortedRoutines.count) revision=\(savedGymRoutinesRevision) deleted=\(deletedRoutineIds.count)")
 
         if broadcast {
             sendSavedGymRoutinesToCounterpart(sortedRoutines)
@@ -894,6 +992,21 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             availability.hasRecentWatchHeartbeat
         guard canSendToCounterpart else {
             PulsarSyncDebugLogger.log("Skipped \(reason) transfer because the Watch app is not currently installed or reachable rawInstalled=\(availability.rawIsWatchAppInstalled) rawReachable=\(availability.rawIsReachable) lastWatchSeenAt=\(availability.lastWatchSeenAt?.description ?? "none") everWatchPayload=\(availability.hasEverReceivedWatchPayload)")
+            return nil
+        }
+        #endif
+        return session
+    }
+
+    private func deferredRoutineCatalogSession(for reason: String) -> WCSession? {
+        guard let session else { return nil }
+        guard session.activationState == .activated else {
+            PulsarSyncDebugLogger.log("Skipped \(reason) transfer because WatchConnectivity is not activated state=\(session.activationState.rawValue)")
+            return nil
+        }
+        #if os(iOS)
+        guard session.isPaired else {
+            PulsarSyncDebugLogger.log("Skipped \(reason) transfer because no Apple Watch is paired")
             return nil
         }
         #endif
@@ -992,6 +1105,11 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         @unknown default:
             "unknown(\(activationState.rawValue))"
         }
+    }
+
+    private func waitBrieflyForWorkoutStateDelivery(timeoutSeconds: TimeInterval) async {
+        let delay = max(0.05, min(timeoutSeconds, 0.6))
+        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
     }
 
     @discardableResult
@@ -1437,9 +1555,10 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         defaults.set(data, forKey: activeGymCacheKey)
     }
 
-    private func persistSavedGymRoutines(_ routines: [WatchGymRoutinePlan]) {
-        guard let data = try? JSONEncoder().encode(routines) else { return }
+    private func persistSavedGymRoutines(_ payload: SavedGymRoutinesSyncPayload) {
+        guard let data = SavedGymRoutinesSyncCodec.encode(payload) else { return }
         defaults.set(data, forKey: savedGymRoutinesCacheKey)
+        defaults.set(payload.revision, forKey: savedGymRoutinesRevisionCacheKey)
     }
 
     private func sendToCounterpart(metricPayload: PulsarDailyMetricsSyncPayload? = nil, sleepPreferences: PulsarSleepPreferencesSyncPayload? = nil) {
@@ -1547,14 +1666,20 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
 
     private func sendSavedGymRoutinesToCounterpart(_ routines: [WatchGymRoutinePlan]? = nil) {
         let routines = routines ?? savedGymRoutines
-        guard let session = counterpartSession(for: "saved Gym routines"),
-              let data = try? JSONEncoder().encode(routines) else { return }
+        guard let session = deferredRoutineCatalogSession(for: "saved Gym routines") else { return }
+        let payloadModel = SavedGymRoutinesSyncPayload(
+            revision: savedGymRoutinesRevision,
+            routines: routines
+        )
+        guard let data = SavedGymRoutinesSyncCodec.encode(payloadModel) else { return }
 
         let payload = [Self.savedGymRoutinesPayloadKey: data]
         if session.isReachable {
             session.sendMessage(payload, replyHandler: nil) { error in
                 PulsarSyncDebugLogger.log("Saved Gym routines sendMessage failed error=\(error.localizedDescription)")
             }
+        } else {
+            PulsarSyncDebugLogger.log("Saved Gym routines sendMessage skipped reachable=false fallback=applicationContext+transferUserInfo revision=\(payloadModel.revision)")
         }
 
         let applicationContext = makeApplicationContext(
@@ -1566,7 +1691,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         )
         do {
             try session.updateApplicationContext(applicationContext)
-            PulsarSyncDebugLogger.log("Saved Gym routines applicationContext updated count=\(routines.count)")
+            PulsarSyncDebugLogger.log("Saved Gym routines applicationContext updated count=\(routines.count) revision=\(payloadModel.revision)")
         } catch {
             PulsarSyncDebugLogger.log("Failed to update saved Gym routines applicationContext: \(error.localizedDescription)")
         }
@@ -1606,7 +1731,11 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
            let data = ActiveGymWorkoutCodec.encodeState(contextActiveGymState) {
             applicationContext[Self.activeGymStatePayloadKey] = data
         }
-        if let data = try? JSONEncoder().encode(savedGymRoutines) {
+        let savedGymRoutinesPayload = SavedGymRoutinesSyncPayload(
+            revision: savedGymRoutinesRevision,
+            routines: savedGymRoutines
+        )
+        if let data = SavedGymRoutinesSyncCodec.encode(savedGymRoutinesPayload) {
             applicationContext[Self.savedGymRoutinesPayloadKey] = data
         }
         return applicationContext
@@ -1823,8 +1952,14 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         }
 
         if let data = dictionary[Self.savedGymRoutinesPayloadKey] as? Data,
-           let routines = try? JSONDecoder().decode([WatchGymRoutinePlan].self, from: data) {
-            didApplyAnyPayload = storeSavedGymRoutines(routines, broadcast: false, reason: reason) || didApplyAnyPayload
+           let payload = SavedGymRoutinesSyncCodec.decode(data) {
+            didApplyAnyPayload = storeSavedGymRoutines(
+                payload.routines,
+                revision: payload.revision,
+                deletedRoutineIds: payload.deletedRoutineIds,
+                broadcast: false,
+                reason: reason
+            ) || didApplyAnyPayload
         } else if dictionary[Self.savedGymRoutinesPayloadKey] != nil {
             PulsarSyncDebugLogger.log("Skipped \(reason) saved Gym routines because decoding failed")
         }
@@ -2324,8 +2459,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     private func shouldApply(activeGymState incoming: ActiveGymWorkoutState) -> Bool {
         guard !Self.isExpiredFinishedGymState(incoming) else { return false }
         pruneActiveWorkoutTombstones()
-        if !incoming.isFinished,
-           Self.isActiveWorkoutSessionTombstoned(
+        if Self.isActiveWorkoutSessionTombstoned(
                 incoming.sessionId,
                 tombstones: locallyTerminatedActiveWorkoutSessions
            ) {
@@ -2384,8 +2518,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
 
     private func refreshSavedGymRoutinesFromPhoneStore(reason: String) {
         let routineStore = PulsarRoutineStore()
-        let plans = routineStore.routines.map(WatchGymRoutinePlan.init(routine:))
-        storeSavedGymRoutines(plans, broadcast: false, reason: reason)
+        routineStore.syncRoutinesToWatch(reason: reason, broadcast: false)
     }
     #endif
 }
@@ -2396,6 +2529,9 @@ extension PulsarWatchConnectivitySyncStore: WCSessionDelegate {
         Task { @MainActor in
             self.lastActivationErrorMessage = error?.localizedDescription
             _ = self.watchRecorderAvailabilitySnapshot(reason: "activationDidComplete")
+            if activationState == .activated, !session.receivedApplicationContext.isEmpty {
+                self.receive(dictionary: session.receivedApplicationContext, reason: "activationHydration")
+            }
         }
         #if os(watchOS)
         if activationState == .activated {

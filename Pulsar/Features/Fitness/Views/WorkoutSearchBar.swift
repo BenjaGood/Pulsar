@@ -9,17 +9,19 @@ struct WorkoutSearchBar: View {
     @Binding var text: String
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .pulsarTextStyle(.label)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
 
             TextField("Search workouts", text: $text)
                 .textInputAutocapitalization(.words)
                 .autocorrectionDisabled()
                 .pulsarTextStyle(.label)
+                .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
                 .submitLabel(.search)
 
             if !text.isEmpty {
@@ -28,35 +30,54 @@ struct WorkoutSearchBar: View {
                         text = ""
                     }
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
+                    Label("Clear search", systemImage: "xmark.circle.fill")
+                        .labelStyle(.iconOnly)
                         .pulsarTextStyle(.label)
                         .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Clear search")
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 13)
-        .background(searchBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(searchBackground, in: shape)
+        .pulsarLiquidGlass(cornerRadius: 20, tint: glassTint, interactive: true, isClear: !reduceTransparency)
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(.white.opacity(colorScheme == .dark ? 0.12 : 0.64), lineWidth: 1)
+            shape
+                .stroke(searchBorder, lineWidth: reduceTransparency ? 0.9 : 0.65)
+                .blendMode(.plusLighter)
         }
+        .contentShape(shape)
     }
 
-    private var searchBackground: LinearGradient {
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+    }
+
+    private var searchBackground: Color {
+        if reduceTransparency {
+            return colorScheme == .dark
+                ? Color(red: 0.04, green: 0.055, blue: 0.09).opacity(0.84)
+                : Color.white.opacity(0.86)
+        }
+
+        return colorScheme == .dark
+            ? Color.black.opacity(0.08)
+            : Color.white.opacity(0.18)
+    }
+
+    private var glassTint: Color {
+        Color(red: 0.68, green: 0.80, blue: 0.92).opacity(0.06)
+    }
+
+    private var searchBorder: LinearGradient {
         LinearGradient(
-            colors: colorScheme == .dark
-                ? [
-                    Color.white.opacity(0.08),
-                    Color.white.opacity(0.04)
-                ]
-                : [
-                    Color.white.opacity(0.78),
-                    Color(red: 0.95, green: 0.97, blue: 1.00).opacity(0.58)
-                ],
+            colors: [
+                .white.opacity(colorScheme == .dark ? 0.20 : 0.70),
+                .white.opacity(colorScheme == .dark ? 0.08 : 0.24),
+                .clear
+            ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )

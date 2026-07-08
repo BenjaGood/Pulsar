@@ -21,39 +21,24 @@ struct FoodView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                NutritionBackground()
-                    .ignoresSafeArea()
-
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 16) {
-                        nutritionContent
-
-                        PulsarBottomChromeSpacer(layoutStore: bottomChromeLayoutStore)
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 24)
-                    .padding(.bottom, 34)
-                }
-                .pulsarBottomChromeScrollContainer(layoutStore: bottomChromeLayoutStore)
-                .scrollContentBackground(.hidden)
-                .premiumScrollHeaderBlur()
-                .refreshable {
+            PulsarScreenScaffold(
+                layoutStore: bottomChromeLayoutStore,
+                horizontalPadding: 22,
+                topPadding: 16,
+                spacing: 16,
+                headerBlur: .standard,
+                onRefresh: {
                     store.reload()
+                },
+                background: {
+                    NutritionBackground()
+                },
+                content: {
+                    nutritionContent
                 }
-            }
+            )
             .navigationTitle("")
             .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        activeSheet = .capture(defaultCategoryID(for: .lunch))
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel("Add food")
-                }
-            }
             .sheet(item: $activeSheet) { sheet in
                 sheetView(sheet)
                     .presentationDetents([.large])
@@ -67,46 +52,41 @@ struct FoodView: View {
                 .presentationBackground(.clear)
             }
         }
-        .background(NutritionBackground())
         .toolbarBackground(.hidden, for: .navigationBar)
     }
 
     @ViewBuilder
     private var nutritionContent: some View {
-        if #available(iOS 26.0, *) {
-            GlassEffectContainer(spacing: 16) {
-                dailyStack
-            }
-        } else {
-            dailyStack
+        NutritionPageTitleHeader {
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            activeSheet = .capture(defaultCategoryID(for: .lunch))
         }
+
+        nutritionCards
     }
 
-    private var dailyStack: some View {
-        LazyVStack(alignment: .leading, spacing: 16) {
-            NutritionPageTitleHeader()
-
-            if let error = store.lastPersistenceError {
-                nutritionErrorCard(error)
-            }
-
-            NutritionCalorieSummaryCard(dashboard: store.dashboard)
-            NutritionMacroTripletCard(dashboard: store.dashboard)
-
-            MealScannerEntryCard {
-                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-                isMealScannerPresented = true
-            }
-
-            NutritionMealsSection(
-                categories: store.state.mealCategories,
-                entriesForCategory: { store.entriesForToday(inCategory: $0.id) },
-                onAdd: { category in activeSheet = .capture(category.id) },
-                onEditEntry: { entry in activeSheet = .edit(entry) },
-                onDeleteEntry: store.deleteEntry,
-                onEditMeals: { activeSheet = .editMeals }
-            )
+    @ViewBuilder
+    private var nutritionCards: some View {
+        if let error = store.lastPersistenceError {
+            nutritionErrorCard(error)
         }
+
+        NutritionCalorieSummaryCard(dashboard: store.dashboard)
+        NutritionMacroTripletCard(dashboard: store.dashboard)
+
+        MealScannerEntryCard {
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            isMealScannerPresented = true
+        }
+
+        NutritionMealsSection(
+            categories: store.state.mealCategories,
+            entriesForCategory: { store.entriesForToday(inCategory: $0.id) },
+            onAdd: { category in activeSheet = .capture(category.id) },
+            onEditEntry: { entry in activeSheet = .edit(entry) },
+            onDeleteEntry: store.deleteEntry,
+            onEditMeals: { activeSheet = .editMeals }
+        )
     }
 
     private func defaultCategoryID(for moment: PulsarNutritionMealMoment) -> UUID {

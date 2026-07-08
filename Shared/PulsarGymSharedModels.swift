@@ -57,6 +57,57 @@ struct WatchGymRoutinePlan: Codable, Hashable, Identifiable {
     }
 }
 
+struct SavedGymRoutinesSyncPayload: Codable, Hashable {
+    var revision: Int
+    var routines: [WatchGymRoutinePlan]
+    var deletedRoutineIds: [UUID]
+
+    init(
+        revision: Int,
+        routines: [WatchGymRoutinePlan],
+        deletedRoutineIds: [UUID] = []
+    ) {
+        self.revision = max(0, revision)
+        self.routines = routines.sorted { $0.updatedAt > $1.updatedAt }
+        self.deletedRoutineIds = deletedRoutineIds
+    }
+}
+
+enum SavedGymRoutinesSyncCodec {
+    static func encode(_ payload: SavedGymRoutinesSyncPayload) -> Data? {
+        try? encoder.encode(payload)
+    }
+
+    static func decode(_ data: Data) -> SavedGymRoutinesSyncPayload? {
+        if let payload = try? decoder.decode(SavedGymRoutinesSyncPayload.self, from: data) {
+            return payload
+        }
+        if let routines = try? decoder.decode([WatchGymRoutinePlan].self, from: data) {
+            return SavedGymRoutinesSyncPayload(revision: 0, routines: routines)
+        }
+        if let routines = try? legacyDecoder.decode([WatchGymRoutinePlan].self, from: data) {
+            return SavedGymRoutinesSyncPayload(revision: 0, routines: routines)
+        }
+        return nil
+    }
+
+    private static var encoder: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }
+
+    private static var decoder: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+
+    private static var legacyDecoder: JSONDecoder {
+        JSONDecoder()
+    }
+}
+
 struct WatchGymRoutineExercisePlan: Codable, Hashable, Identifiable {
     var id: UUID
     var exerciseId: String?
@@ -75,6 +126,9 @@ struct WatchGymRoutineExercisePlan: Codable, Hashable, Identifiable {
     var supersetType: String? = nil
     var supersetRestSeconds: Int? = nil
     var supersetSharedSetCount: Int? = nil
+    var seriesMemberCount: Int? = nil
+    var thumbnailURL: String? = nil
+    var instructionsPreview: String? = nil
 }
 
 struct ActiveGymWorkoutState: Codable, Hashable, Identifiable {
@@ -151,6 +205,9 @@ struct ActiveGymWorkoutExerciseState: Codable, Hashable, Identifiable {
     var supersetType: String? = nil
     var supersetRestSeconds: Int? = nil
     var supersetSharedSetCount: Int? = nil
+    var seriesMemberCount: Int? = nil
+    var thumbnailURL: String? = nil
+    var instructionsPreview: String? = nil
     var sets: [ActiveGymWorkoutSetState]
 
     var completedSetIndexes: [Int] {
@@ -189,7 +246,7 @@ extension ActiveGymWorkoutState {
 
                 let sharedSetCount = max(1, members.compactMap { $0.element.supersetSharedSetCount }.first ?? members.map { $0.element.sets.count }.max() ?? 1)
                 for setNumber in 1...sharedSetCount {
-                    for member in members.prefix(2) {
+                    for member in members {
                         guard let setIndex = member.element.sets.firstIndex(where: { $0.setNumber == setNumber }) else { continue }
                         if !member.element.sets[setIndex].isCompleted {
                             return (member.offset, setIndex)

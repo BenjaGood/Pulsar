@@ -46,6 +46,65 @@ struct GymRoutineExperienceTests {
         #expect(duplicate.exercises.first?.weightUnit == .pounds)
     }
 
+    @Test func routineStoreRevisionIncrementsForUpsertAndDelete() throws {
+        let defaults = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: defaultsSuiteName(defaults)) }
+
+        let store = PulsarRoutineStore(defaults: defaults)
+        #expect(store.routinesRevision == 0)
+
+        let routine = PulsarRoutine(
+            name: "Push Day",
+            emoji: "💪",
+            exercises: [PulsarRoutineExercise(exercise: Self.makeExercise(), order: 0)]
+        )
+        let saved = store.upsert(routine)
+        #expect(store.routinesRevision == 1)
+
+        store.delete(saved)
+        #expect(store.routinesRevision == 2)
+
+        let reloaded = PulsarRoutineStore(defaults: defaults)
+        #expect(reloaded.routinesRevision == 2)
+        #expect(reloaded.routines.isEmpty)
+    }
+
+    @Test func savedGymRoutinesPayloadDecodesLegacyRoutineArray() throws {
+        let routine = PulsarRoutine(
+            name: "Push Day",
+            emoji: "💪",
+            exercises: [PulsarRoutineExercise(exercise: Self.makeExercise(), order: 0)]
+        )
+        let plan = WatchGymRoutinePlan(routine: routine)
+        let legacyData = try JSONEncoder().encode([plan])
+
+        let decoded = try #require(SavedGymRoutinesSyncCodec.decode(legacyData))
+
+        #expect(decoded.revision == 0)
+        #expect(decoded.routines.map(\.routineId) == [routine.id])
+        #expect(decoded.deletedRoutineIds.isEmpty)
+    }
+
+    @Test func savedGymRoutinesPayloadPreservesRevisionAndDeletes() throws {
+        let routine = PulsarRoutine(
+            name: "Pull Day",
+            emoji: "🏋️",
+            exercises: [PulsarRoutineExercise(exercise: Self.makeExercise(), order: 0)]
+        )
+        let deletedID = UUID()
+        let payload = SavedGymRoutinesSyncPayload(
+            revision: 7,
+            routines: [WatchGymRoutinePlan(routine: routine)],
+            deletedRoutineIds: [deletedID]
+        )
+        let data = try #require(SavedGymRoutinesSyncCodec.encode(payload))
+        let decoded = try #require(SavedGymRoutinesSyncCodec.decode(data))
+
+        #expect(decoded.revision == 7)
+        #expect(decoded.routines.first?.routineId == routine.id)
+        #expect(decoded.deletedRoutineIds == [deletedID])
+    }
+
     @Test func routineBuilderUsesGymPreferenceForNewLifts() {
         let exercise = Self.makeExercise()
         let viewModel = RoutineBuilderViewModel(defaultWeightUnit: .pounds)
@@ -55,6 +114,20 @@ struct GymRoutineExperienceTests {
 
         #expect(routine.exercises.first?.weightUnit == .pounds)
         #expect(routine.emoji == "💪")
+    }
+
+    @Test func routineBuilderPreservesExerciseMediaAndInstructions() throws {
+        let exercise = Self.makeExercise(
+            thumbnailURL: "images/bench-press.jpg"
+        )
+        let viewModel = RoutineBuilderViewModel(defaultWeightUnit: .pounds)
+
+        viewModel.toggleExercise(exercise)
+        let routine = viewModel.makeRoutine()
+        let routineExercise = try #require(routine.exercises.first)
+
+        #expect(routineExercise.exercise.thumbnailURL == "images/bench-press.jpg")
+        #expect(routineExercise.exercise.instructions == "Press with control.")
     }
 
     @Test func routineSupersetConfigurationPersistsAndDuplicatesSafely() throws {
@@ -194,6 +267,95 @@ struct GymRoutineExperienceTests {
         #expect(setSummary.reps == 7)
         #expect(setSummary.weight == 72.5)
         #expect(exerciseSummary.weightUnit == .pounds)
+        #expect(exerciseSummary.exerciseId == exercise.id)
+        #expect(exerciseSummary.primaryMuscleGroup == .chest)
+        #expect(exerciseSummary.equipment == "Barbell")
+    }
+
+    @Test func workoutSummaryCarriesExerciseSnapshotFields() throws {
+        let exercise = Self.makeExercise(thumbnailURL: "file:///tmp/bench.jpg")
+        let routineExercise = PulsarRoutineExercise(
+            exercise: exercise,
+            order: 0,
+            plannedSets: 1,
+            plannedReps: 10,
+            plannedWeight: 60,
+            weightUnit: .pounds
+        )
+        let routine = PulsarRoutine(name: "Push Day", emoji: "💪", exercises: [routineExercise])
+        var session = Self.makeCompletedSession(
+            routine: routine,
+            startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            completedWeight: 60,
+            reps: 10
+        )
+        session.exercises[0].supersetGroupId = UUID()
+
+        let summary = PulsarGymWorkoutSummary(session: session)
+        let exerciseSummary = try #require(summary.completedExerciseSummaries.first)
+
+        #expect(session.exercises.first?.thumbnailURL == "file:///tmp/bench.jpg")
+        #expect(session.exercises.first?.instructionsPreview == "Press with control.")
+        #expect(exerciseSummary.exerciseId == exercise.id)
+        #expect(exerciseSummary.thumbnailURL == "file:///tmp/bench.jpg")
+        #expect(exerciseSummary.primaryMuscleGroup == .chest)
+        #expect(exerciseSummary.equipment == "Barbell")
+        #expect(exerciseSummary.supersetGroupId == session.exercises[0].supersetGroupId)
+    }
+
+    @Test func circuitSessionProgressionFocusesAllMembersBeforeRest() throws {
+        let bench = Self.makeExercise()
+        let curl = Self.makeExercise(
+            id: "free-exercise-db-test-curl",
+            name: "Biceps Curl",
+            primaryGroup: .biceps,
+            primaryMuscleName: "Biceps",
+            equipmentName: "Dumbbell"
+        )
+        let press = Self.makeExercise(
+            id: "free-exercise-db-test-press",
+            name: "Shoulder Press",
+            primaryGroup: .shoulders,
+            primaryMuscleName: "Shoulders",
+            equipmentName: "Dumbbell"
+        )
+        let first = PulsarRoutineExercise(exercise: bench, order: 0, plannedSets: 2, plannedReps: 8, plannedWeight: 80)
+        let second = PulsarRoutineExercise(exercise: curl, order: 1, plannedSets: 2, plannedReps: 12, plannedWeight: 14)
+        let third = PulsarRoutineExercise(exercise: press, order: 2, plannedSets: 2, plannedReps: 10, plannedWeight: 30)
+        let group = PulsarSupersetGroup(
+            type: .circuit,
+            exerciseIds: [first.id, second.id, third.id],
+            sharedSetCount: 2,
+            restTimeSeconds: 75,
+            label: "Series A"
+        )
+        var routine = PulsarRoutine(name: "Upper Circuit", emoji: "💪", exercises: [first, second, third], supersetGroups: [group])
+        for index in routine.exercises.indices {
+            routine.exercises[index].supersetGroupId = group.id
+            routine.exercises[index].supersetOrder = index
+            routine.exercises[index].plannedSets = group.sharedSetCount
+        }
+
+        let viewModel = GymWorkoutSessionViewModel(routine: routine)
+        let exercises = viewModel.session.exercises
+        let firstSet = try #require(exercises[0].sets.first)
+        let secondSet = try #require(exercises[1].sets.first)
+        let thirdSet = try #require(exercises[2].sets.first)
+
+        #expect(viewModel.session.supersetGroups.first?.exerciseIds.count == 3)
+        #expect(viewModel.session.supersetGroups.first?.type == .circuit)
+
+        #expect(viewModel.toggleSet(exerciseID: exercises[0].id, setID: firstSet.id) == .completed)
+        #expect(viewModel.focusTarget?.exerciseID == exercises[1].id)
+        #expect(viewModel.restCountdownSeconds == nil)
+
+        #expect(viewModel.toggleSet(exerciseID: exercises[1].id, setID: secondSet.id) == .completed)
+        #expect(viewModel.focusTarget?.exerciseID == exercises[2].id)
+        #expect(viewModel.restCountdownSeconds == nil)
+
+        #expect(viewModel.toggleSet(exerciseID: exercises[2].id, setID: thirdSet.id) == .completedSupersetRound)
+        #expect(viewModel.restCountdownSeconds == 75)
+        #expect(viewModel.restContext?.supersetGroupID == group.id)
     }
 
     @Test func gymSetActionCodecPreservesEditedActualValues() throws {
@@ -387,6 +549,165 @@ struct GymRoutineExperienceTests {
         #expect(history.bestWeightEver == 80)
     }
 
+    @Test func exerciseProgressRecentSessionsReturnsWorkoutNamesAndSetRows() throws {
+        let firstStart = Date(timeIntervalSince1970: 1_700_000_000)
+        let secondStart = firstStart.addingTimeInterval(86_400)
+        let exercise = Self.makeExercise()
+        let routineExercise = PulsarRoutineExercise(
+            exercise: exercise,
+            order: 0,
+            plannedSets: 2,
+            plannedReps: 10,
+            plannedWeight: 60,
+            weightUnit: .pounds
+        )
+        let routine = PulsarRoutine(name: "Push Day", emoji: "💪", exercises: [routineExercise])
+        let first = Self.makeCompletedSession(routine: routine, startedAt: firstStart, completedWeight: 60, reps: 10)
+        let second = Self.makeCompletedSession(routine: routine, startedAt: secondStart, completedWeight: 70, reps: 8)
+        let target = ExerciseProgressLookup(
+            exerciseId: exercise.id,
+            exerciseName: exercise.name,
+            primaryMuscleGroup: exercise.primaryMuscleGroup,
+            equipment: exercise.equipmentSummary,
+            displayUnit: .pounds
+        )
+
+        let recent = ExerciseProgressService.recentSessions(
+            target: target,
+            sessions: [first, second],
+            displayUnit: .pounds,
+            limit: 1
+        )
+        let latest = try #require(recent.first)
+
+        #expect(recent.count == 1)
+        #expect(latest.workoutName == "Push Day")
+        #expect(latest.performedAt == secondStart)
+        #expect(latest.sets.count == 2)
+        #expect(latest.sets.first?.weight == 70)
+        #expect(latest.bestSet?.reps == 8)
+    }
+
+    @Test func completedWorkoutResolverFallsBackToCatalogByName() throws {
+        let catalogExercise = Self.makeExercise(
+            id: "free-exercise-db-catalog-incline",
+            name: "Barbell Incline Bench Press",
+            thumbnailURL: "images/incline.jpg"
+        )
+        let summary = PulsarGymCompletedExerciseSummary(
+            id: UUID(),
+            exerciseName: "Barbell Incline Bench Press",
+            primaryMuscleGroup: .other,
+            equipment: "Bodyweight",
+            weightUnit: .pounds,
+            sets: [
+                PulsarGymCompletedSetSummary(id: UUID(), setNumber: 1, reps: 10, weight: 140)
+            ]
+        )
+
+        let presentations = CompletedWorkoutExerciseResolver.presentations(
+            summaries: [summary],
+            sourceSession: nil,
+            catalogExercises: [catalogExercise]
+        )
+        let presentation = try #require(presentations.first)
+        let set = try #require(presentation.sets.first)
+
+        #expect(presentation.exerciseId == catalogExercise.id)
+        #expect(presentation.thumbnailURL == "images/incline.jpg")
+        #expect(presentation.instructionsPreview == "Press with control.")
+        #expect(presentation.primaryMuscleGroup == .chest)
+        #expect(presentation.equipment == "Barbell")
+        #expect(set.estimatedOneRepMax == 140 * (1 + Double(10) / 30))
+    }
+
+    @Test func completedWorkoutEditorPersistsCompletedSetEdits() throws {
+        let defaults = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: defaultsSuiteName(defaults)) }
+
+        let exercise = Self.makeExercise()
+        let routineExercise = PulsarRoutineExercise(
+            exercise: exercise,
+            order: 0,
+            plannedSets: 1,
+            plannedReps: 10,
+            plannedWeight: 60,
+            weightUnit: .pounds
+        )
+        let routine = PulsarRoutine(name: "Push Day", emoji: "💪", exercises: [routineExercise])
+        let session = Self.makeCompletedSession(
+            routine: routine,
+            startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            completedWeight: 60,
+            reps: 10
+        )
+        let historyStore = PulsarGymWorkoutHistoryStore(defaults: defaults)
+        let saved = historyStore.save(session)
+        let savedExercise = try #require(saved.exercises.first)
+        let savedSet = try #require(savedExercise.sets.first)
+
+        let edited = try CompletedWorkoutEditor(historyStore: historyStore).updateSet(
+            sessionId: saved.id,
+            exerciseId: savedExercise.id,
+            setId: savedSet.id,
+            reps: 7,
+            weight: 72.5
+        )
+        let editedSet = try #require(edited.exercises.first?.sets.first)
+        let reloadedSet = try #require(PulsarGymWorkoutHistoryStore(defaults: defaults).sessions.first?.exercises.first?.sets.first)
+
+        #expect(editedSet.completedReps == 7)
+        #expect(editedSet.completedWeight == 72.5)
+        #expect(editedSet.targetReps == 7)
+        #expect(editedSet.targetWeight == 72.5)
+        #expect(reloadedSet.completedReps == 7)
+        #expect(reloadedSet.completedWeight == 72.5)
+    }
+
+    @Test func legacyGymExerciseAndSummaryDecodeWithoutSnapshotFields() throws {
+        let exerciseId = UUID()
+        let setId = UUID()
+        let exerciseJSON = """
+        {
+          "id": "\(exerciseId.uuidString)",
+          "routineExerciseId": "\(UUID().uuidString)",
+          "exerciseName": "Bench Press",
+          "primaryMuscleGroup": "chest",
+          "primaryMuscles": [],
+          "secondaryMuscles": [],
+          "equipment": "Barbell",
+          "plannedSets": 1,
+          "plannedReps": 10,
+          "plannedWeight": 60,
+          "weightUnit": "lb",
+          "plannedRestSeconds": 90,
+          "orderIndex": 0,
+          "sets": []
+        }
+        """.data(using: .utf8)!
+        let summaryJSON = """
+        {
+          "id": "\(exerciseId.uuidString)",
+          "exerciseName": "Bench Press",
+          "weightUnit": "lb",
+          "sets": [
+            { "id": "\(setId.uuidString)", "setNumber": 1, "reps": 10, "weight": 60 }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let exercise = try JSONDecoder().decode(PulsarGymWorkoutExerciseSession.self, from: exerciseJSON)
+        let summary = try JSONDecoder().decode(PulsarGymCompletedExerciseSummary.self, from: summaryJSON)
+
+        #expect(exercise.thumbnailURL == nil)
+        #expect(exercise.instructionsPreview == nil)
+        #expect(summary.exerciseId == nil)
+        #expect(summary.thumbnailURL == nil)
+        #expect(summary.primaryMuscleGroup == .other)
+        #expect(summary.equipment == "Bodyweight")
+        #expect(summary.supersetGroupId == nil)
+    }
+
     @Test func freeWorkoutPersistsAsGymFreeWorkout() throws {
         let defaults = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: defaultsSuiteName(defaults)) }
@@ -461,7 +782,8 @@ struct GymRoutineExperienceTests {
         name: String = "Bench Press",
         primaryGroup: PulsarMuscleGroup = .chest,
         primaryMuscleName: String = "Chest",
-        equipmentName: String = "Barbell"
+        equipmentName: String = "Barbell",
+        thumbnailURL: String? = nil
     ) -> PulsarExercise {
         PulsarExercise(
             id: id,
@@ -473,8 +795,8 @@ struct GymRoutineExperienceTests {
             secondaryMuscles: [PulsarMuscle(name: "Triceps", englishName: "triceps", group: .triceps)],
             primaryMuscleGroup: primaryGroup,
             equipment: [PulsarEquipment(name: equipmentName)],
-            imageURLs: [],
-            thumbnailURL: nil,
+            imageURLs: thumbnailURL.map { [$0] } ?? [],
+            thumbnailURL: thumbnailURL,
             attribution: .freeExerciseDB(sourceExerciseID: id)
         )
     }

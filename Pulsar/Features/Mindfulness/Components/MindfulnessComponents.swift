@@ -38,8 +38,6 @@ struct PulsarMindfulnessGlassCard<Content: View>: View {
     var tint: Color?
     @ViewBuilder var content: Content
 
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
     init(
         cornerRadius: CGFloat = 28,
         contentPadding: CGFloat = 18,
@@ -54,96 +52,25 @@ struct PulsarMindfulnessGlassCard<Content: View>: View {
 
     @ViewBuilder
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-
-        if tint != nil {
-            baseContent
-                .background {
-                    shape.fill(
-                        Color.black
-                            .opacity(reduceTransparency ? 0.84 : 0.22)
-                    )
-                }
-                .overlay {
-                    shape.fill(
-                        LinearGradient(
-                            colors: [
-                                .white.opacity(reduceTransparency ? 0.05 : 0.10),
-                                .white.opacity(0.02),
-                                Color.black.opacity(reduceTransparency ? 0.06 : 0.14)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .allowsHitTesting(false)
-                }
-                .overlay {
-                    shape.strokeBorder(.white.opacity(reduceTransparency ? 0.26 : 0.18), lineWidth: 0.9)
-                }
-                .shadow(color: .black.opacity(0.18), radius: 16, y: 9)
-                .pulsarLiquidGlass(cornerRadius: cornerRadius, isClear: true)
-        } else {
-            baseContent
-                .background {
-                    shape.fill(
-                        Color.black
-                            .opacity(reduceTransparency ? 0.84 : 0.18)
-                    )
-                }
-                .overlay {
-                    shape.strokeBorder(.white.opacity(reduceTransparency ? 0.24 : 0.14), lineWidth: 0.8)
-                }
-                .pulsarLiquidGlass(cornerRadius: cornerRadius)
+        PulsarGlassCard(
+            cornerRadius: cornerRadius,
+            contentPadding: contentPadding,
+            tint: tint
+        ) {
+            content
         }
-    }
-
-    private var baseContent: some View {
-        content
-            .padding(contentPadding)
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 struct MindfulnessPageTitleHeader: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
     var body: some View {
-        HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 14) {
-            ZStack {
-                Circle()
-                    .stroke(.white.opacity(0.16), lineWidth: 0.8)
-                    .padding(5)
-
-                Image(systemName: "camera.macro")
-                    .font(.system(size: 30, weight: .medium))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.white.opacity(0.90))
-            }
-            .frame(width: 58, height: 58)
-            .background(.black.opacity(0.14), in: Circle())
-            .pulsarLiquidGlass(
-                cornerRadius: 29,
-                tint: MindfulnessVisualStyle.calmBlue.opacity(0.08),
-                isClear: true
-            )
-            .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Mindfulness")
-                    .font(.system(.largeTitle, design: .default, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-                    .accessibilityAddTraits(.isHeader)
-
-                Text("Understand your mind.\nElevate your day.")
-                    .pulsarTextStyle(.screenSubtitle)
-                    .foregroundStyle(MindfulnessVisualStyle.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
+        PulsarTabHeader(
+            systemImage: "camera.macro",
+            title: "Mindfulness",
+            subtitle: "Understand your mind.\nElevate your day.",
+            primaryText: .white.opacity(0.96),
+            secondaryText: .white.opacity(0.62)
+        )
     }
 }
 

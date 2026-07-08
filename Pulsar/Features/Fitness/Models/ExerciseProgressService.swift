@@ -54,6 +54,16 @@ struct ExerciseProgressLookup: Identifiable, Hashable {
             displayUnit: displayUnit ?? exercise.weightUnit
         )
     }
+
+    init(summary: PulsarGymCompletedExerciseSummary) {
+        self.init(
+            exerciseId: summary.exerciseId,
+            exerciseName: summary.exerciseName,
+            primaryMuscleGroup: summary.primaryMuscleGroup,
+            equipment: summary.equipment,
+            displayUnit: summary.weightUnit
+        )
+    }
 }
 
 struct ExerciseSetProgressPoint: Identifiable, Hashable {
@@ -65,7 +75,7 @@ struct ExerciseSetProgressPoint: Identifiable, Hashable {
     var estimatedOneRepMax: Double?
 }
 
-struct ExerciseBestSet: Hashable {
+struct ExerciseBestSet: Codable, Hashable {
     var reps: Int
     var weight: Double
     var volume: Double
@@ -153,6 +163,23 @@ struct ExerciseProgressHistory: Identifiable, Hashable {
             points: []
         )
     }
+}
+
+struct ExerciseRecentSessionSetSummary: Identifiable, Hashable {
+    var id: String
+    var setNumber: Int
+    var reps: Int
+    var weight: Double
+}
+
+struct ExerciseRecentSessionSummary: Identifiable, Hashable {
+    var id: String
+    var sessionId: UUID
+    var workoutName: String
+    var performedAt: Date
+    var sets: [ExerciseRecentSessionSetSummary]
+    var bestSet: ExerciseBestSet?
+    var estimatedOneRepMax: Double?
 }
 
 enum ExerciseProgressService {
@@ -264,6 +291,60 @@ enum ExerciseProgressService {
             displayUnit: displayUnit,
             calendar: calendar
         ).points
+    }
+
+    static func recentSessions(
+        target: ExerciseProgressLookup,
+        sessions: [PulsarGymWorkoutSession],
+        displayUnit: PulsarWeightUnit,
+        limit: Int = 5
+    ) -> [ExerciseRecentSessionSummary] {
+        completedSessions(from: sessions)
+            .reversed()
+            .compactMap { session -> ExerciseRecentSessionSummary? in
+                guard let exercise = session.exercises.first(where: {
+                    StrengthProgressAnalyticsService.exerciseKey(id: $0.exerciseId, name: $0.exerciseName) == target.exerciseKey
+                }) else { return nil }
+
+                let sets = exercise.sets
+                    .filter(\.isCompleted)
+                    .sorted { $0.setNumber < $1.setNumber }
+                    .map { set in
+                        let reps = max(1, set.completedReps ?? set.targetReps)
+                        let rawWeight = max(0, set.completedWeight ?? set.targetWeight)
+                        let displayWeight = exercise.weightUnit.convert(rawWeight, to: displayUnit)
+                        return ExerciseRecentSessionSetSummary(
+                            id: "\(session.id.uuidString)-\(exercise.id.uuidString)-\(set.id.uuidString)",
+                            setNumber: set.setNumber,
+                            reps: reps,
+                            weight: displayWeight
+                        )
+                    }
+                guard !sets.isEmpty else { return nil }
+
+                let points = sets.map { set in
+                    ExerciseSetProgressPoint(
+                        id: set.id,
+                        setNumber: set.setNumber,
+                        reps: set.reps,
+                        weight: set.weight,
+                        volume: Double(set.reps) * set.weight,
+                        estimatedOneRepMax: calculateEstimated1RM(weight: set.weight, reps: set.reps)
+                    )
+                }
+
+                return ExerciseRecentSessionSummary(
+                    id: "\(session.id.uuidString)-\(exercise.id.uuidString)",
+                    sessionId: session.id,
+                    workoutName: session.activityLogDisplayName,
+                    performedAt: session.startedAt,
+                    sets: sets,
+                    bestSet: calculateBestSet(points),
+                    estimatedOneRepMax: points.compactMap(\.estimatedOneRepMax).max()
+                )
+            }
+            .prefix(max(0, limit))
+            .map { $0 }
     }
 
     static func exerciseCountsByDay(

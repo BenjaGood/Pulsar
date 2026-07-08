@@ -12,36 +12,36 @@ enum PersonalizedWorkoutKind: String, CaseIterable, Identifiable, Hashable {
     case walking = "Walking"
     case gym = "Gym"
 
-    var id: String { rawValue }
+    nonisolated var id: String { rawValue }
 
-    var title: String { rawValue }
+    nonisolated var title: String { rawValue }
 
-    var symbolName: String {
-        switch self {
-        case .hiking: "mountain.2.fill"
-        case .running: "figure.run"
-        case .indoorRunning: "figure.run"
-        case .walking: "figure.walk"
-        case .gym: "dumbbell.fill"
-        }
+    nonisolated var symbolName: String {
+        catalogEntry?.symbolName ?? "figure.mixed.cardio"
     }
 
-    var accent: WorkoutAccent {
-        switch self {
-        case .hiking: .terrain
-        case .running: .velocity
-        case .indoorRunning: .velocity
-        case .walking: .balance
-        case .gym: .power
-        }
+    nonisolated var accent: WorkoutAccent {
+        catalogEntry.map { WorkoutAccent.catalogAccent(for: $0) } ?? .focus
     }
 
-    var outdoorWorkoutKind: PulsarOutdoorWorkoutKind? {
+    nonisolated var outdoorWorkoutKind: PulsarOutdoorWorkoutKind? {
         switch self {
         case .running: .running
         case .walking: .walking
         case .hiking: .hiking
-        case .indoorRunning, .gym: nil
+        case .indoorRunning: .indoorRunning
+        case .gym: nil
+        }
+    }
+
+    nonisolated private var catalogEntry: PulsarWorkoutCatalogEntry? {
+        PulsarWorkoutCatalog.entries.first { entry in
+            switch entry.destination {
+            case .outdoor(let kind):
+                return kind == outdoorWorkoutKind
+            case .gym:
+                return self == .gym
+            }
         }
     }
 }
@@ -81,53 +81,20 @@ struct WorkoutOption: Identifiable, Hashable {
     let category: String
     let accent: WorkoutAccent
     let personalizedKind: PersonalizedWorkoutKind?
+    let outdoorWorkoutKind: PulsarOutdoorWorkoutKind?
 
-    var isPersonalized: Bool {
+    nonisolated var isPersonalized: Bool {
         personalizedKind != nil
     }
 
-    var outdoorWorkoutKind: PulsarOutdoorWorkoutKind? {
-        if let personalizedKind {
-            return personalizedKind.outdoorWorkoutKind
-        }
-
-        switch id {
-        case "cycling":
-            return .cycling
-        case "hiit":
-            return .hiit
-        case "strength":
-            return .strength
-        case "yoga":
-            return .yoga
-        case "pilates":
-            return .pilates
-        case "swimming":
-            return .swimming
-        case "rowing":
-            return .rowing
-        case "dance":
-            return .dance
-        case "boxing":
-            return .boxing
-        case "stretching":
-            return .stretching
-        case "core":
-            return .core
-        case "mobility":
-            return .mobility
-        default:
-            return nil
-        }
-    }
-
-    init(
+    nonisolated init(
         id: String? = nil,
         name: String,
         symbolName: String,
         category: String,
         accent: WorkoutAccent,
-        personalizedKind: PersonalizedWorkoutKind? = nil
+        personalizedKind: PersonalizedWorkoutKind? = nil,
+        outdoorWorkoutKind: PulsarOutdoorWorkoutKind? = nil
     ) {
         self.id = id ?? name.lowercased().replacingOccurrences(of: " ", with: "-")
         self.name = name
@@ -135,32 +102,71 @@ struct WorkoutOption: Identifiable, Hashable {
         self.category = category
         self.accent = accent
         self.personalizedKind = personalizedKind
+        self.outdoorWorkoutKind = outdoorWorkoutKind ?? personalizedKind?.outdoorWorkoutKind
     }
 }
 
 extension WorkoutOption {
-    static let personalized: [WorkoutOption] = PersonalizedWorkoutKind.allCases.map { workout in
-        WorkoutOption(
-            name: workout.title,
-            symbolName: workout.symbolName,
-            category: "Personalized",
-            accent: workout.accent,
-            personalizedKind: workout
+    static let personalized: [WorkoutOption] = PulsarWorkoutCatalog.personalizedEntries.map(Self.init(catalogEntry:))
+
+    static let general: [WorkoutOption] = PulsarWorkoutCatalog.moreWorkoutEntries.map(Self.init(catalogEntry:))
+
+    nonisolated private init(catalogEntry entry: PulsarWorkoutCatalogEntry) {
+        let personalizedKind = PersonalizedWorkoutKind.allCases.first { kind in
+            switch entry.destination {
+            case .outdoor(let workoutKind):
+                return kind.outdoorWorkoutKind == workoutKind
+            case .gym:
+                return kind == .gym
+            }
+        }
+        self.init(
+            id: entry.id,
+            name: entry.displayName,
+            symbolName: entry.symbolName,
+            category: entry.category,
+            accent: WorkoutAccent.catalogAccent(for: entry),
+            personalizedKind: entry.section == .personalized ? personalizedKind : nil,
+            outdoorWorkoutKind: entry.outdoorWorkoutKind
         )
     }
+}
 
-    static let general: [WorkoutOption] = [
-        WorkoutOption(name: "Cycling", symbolName: "bicycle", category: "Endurance", accent: .endurance),
-        WorkoutOption(name: "HIIT", symbolName: "flame.fill", category: "Intervals", accent: .fire),
-        WorkoutOption(name: "Strength", symbolName: "figure.strengthtraining.traditional", category: "Power", accent: .power),
-        WorkoutOption(name: "Yoga", symbolName: "figure.yoga", category: "Restore", accent: .restore),
-        WorkoutOption(name: "Pilates", symbolName: "figure.core.training", category: "Control", accent: .balance),
-        WorkoutOption(name: "Swimming", symbolName: "figure.pool.swim", category: "Water", accent: .water),
-        WorkoutOption(name: "Rowing", symbolName: "figure.rower", category: "Endurance", accent: .endurance),
-        WorkoutOption(name: "Dance", symbolName: "figure.dance", category: "Rhythm", accent: .rhythm),
-        WorkoutOption(name: "Boxing", symbolName: "figure.boxing", category: "Power", accent: .fire),
-        WorkoutOption(name: "Stretching", symbolName: "figure.flexibility", category: "Recovery", accent: .restore),
-        WorkoutOption(name: "Core", symbolName: "figure.core.training", category: "Stability", accent: .balance),
-        WorkoutOption(name: "Mobility", symbolName: "figure.cooldown", category: "Flow", accent: .focus)
-    ]
+extension WorkoutAccent {
+    nonisolated static func catalogAccent(for entry: PulsarWorkoutCatalogEntry) -> WorkoutAccent {
+        switch entry.id {
+        case PulsarOutdoorWorkoutKind.hiking.rawValue:
+            return .terrain
+        case PulsarOutdoorWorkoutKind.running.rawValue,
+             PulsarOutdoorWorkoutKind.indoorRunning.rawValue:
+            return .velocity
+        case PulsarOutdoorWorkoutKind.walking.rawValue,
+             PulsarOutdoorWorkoutKind.pilates.rawValue,
+             PulsarOutdoorWorkoutKind.core.rawValue:
+            return .balance
+        case "gym",
+             PulsarOutdoorWorkoutKind.strength.rawValue:
+            return .power
+        case PulsarOutdoorWorkoutKind.cycling.rawValue,
+             PulsarOutdoorWorkoutKind.rowing.rawValue,
+             PulsarOutdoorWorkoutKind.elliptical.rawValue:
+            return .endurance
+        case PulsarOutdoorWorkoutKind.hiit.rawValue,
+             PulsarOutdoorWorkoutKind.boxing.rawValue,
+             PulsarOutdoorWorkoutKind.stairClimber.rawValue:
+            return .fire
+        case PulsarOutdoorWorkoutKind.yoga.rawValue,
+             PulsarOutdoorWorkoutKind.stretching.rawValue:
+            return .restore
+        case PulsarOutdoorWorkoutKind.swimming.rawValue:
+            return .water
+        case PulsarOutdoorWorkoutKind.dance.rawValue:
+            return .rhythm
+        case PulsarOutdoorWorkoutKind.mobility.rawValue,
+             PulsarOutdoorWorkoutKind.cooldown.rawValue:
+            return .focus
+        default:
+            return .focus
+        }
+    }
 }

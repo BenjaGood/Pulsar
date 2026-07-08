@@ -11,6 +11,7 @@ struct LabView: View {
     @ObservedObject var profileStore: ProfileStore
     private let onClose: (() -> Void)?
     @StateObject private var store = LabModuleStore()
+    @StateObject private var bottomChromeLayoutStore = PulsarBottomChromeLayoutStore()
     @State private var isVisible = false
     @State private var isShowingImport = false
     @State private var isShowingManualEntry = false
@@ -24,68 +25,65 @@ struct LabView: View {
 
     var body: some View {
         NavigationStack {
-            GeometryReader { proxy in
-                let topChromeClearance = Self.topChromeClearance(for: proxy.safeAreaInsets.top)
+            PulsarScreenScaffold(
+                layoutStore: bottomChromeLayoutStore,
+                horizontalPadding: 22,
+                spacing: 14,
+                reservesBottomChrome: false,
+                background: {
+                    LabModuleBackground()
+                },
+                content: {
+                    if let onClose {
+                        LabCloseButton(action: onClose)
+                            .labStaggered(isVisible: isVisible, index: 0)
+                    }
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        if let onClose {
-                            LabCloseButton(action: onClose)
-                                .labStaggered(isVisible: isVisible, index: 0)
-                        }
+                    LabHeaderView()
+                        .labStaggered(isVisible: isVisible, index: onClose == nil ? 0 : 1)
 
-                        LabHeaderView()
-                            .labStaggered(isVisible: isVisible, index: onClose == nil ? 0 : 1)
-
-                        if let result = store.state.latestBiologicalAgeResult {
-                            LabBiologicalAgeHeroView(result: result)
-                                .labStaggered(isVisible: isVisible, index: onClose == nil ? 1 : 2)
-
-                            LabPrivacyFooter()
-                                .labStaggered(isVisible: isVisible, index: onClose == nil ? 2 : 3)
-
-                            LabSectionTitle(title: "Pillar Signals", subtitle: "A conservative estimate weighted by fitness, lifestyle, and recent blood markers.")
-                                .labStaggered(isVisible: isVisible, index: onClose == nil ? 3 : 4)
-
-                            LabPillarSignalsList(pillars: result.pillarResults)
-                                .labStaggered(isVisible: isVisible, index: onClose == nil ? 4 : 5)
-
-                            DataConfidenceCard(result: result)
-                                .labStaggered(isVisible: isVisible, index: onClose == nil ? 5 : 6)
-                        } else {
-                            LabEmptyStateCard(
-                                hasBiomarkers: !store.state.biomarkers.isEmpty,
-                                onConnectData: {
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                    store.refresh(profile: profileStore.profile)
-                                },
-                                onImport: { isShowingImport = true },
-                                onManualEntry: { isShowingManualEntry = true }
-                            )
+                    if let result = store.state.latestBiologicalAgeResult {
+                        LabBiologicalAgeHeroView(result: result)
                             .labStaggered(isVisible: isVisible, index: onClose == nil ? 1 : 2)
 
-                            LabPrivacyFooter()
-                                .labStaggered(isVisible: isVisible, index: onClose == nil ? 2 : 3)
-                        }
+                        LabPrivacyFooter()
+                            .labStaggered(isVisible: isVisible, index: onClose == nil ? 2 : 3)
 
-                        BiomarkersSection(
-                            biomarkers: store.displayedBiomarkers,
+                        LabSectionTitle(title: "Pillar Signals", subtitle: "A conservative estimate weighted by fitness, lifestyle, and recent blood markers.")
+                            .labStaggered(isVisible: isVisible, index: onClose == nil ? 3 : 4)
+
+                        LabPillarSignalsList(pillars: result.pillarResults)
+                            .labStaggered(isVisible: isVisible, index: onClose == nil ? 4 : 5)
+
+                        DataConfidenceCard(result: result)
+                            .labStaggered(isVisible: isVisible, index: onClose == nil ? 5 : 6)
+                    } else {
+                        LabEmptyStateCard(
+                            hasBiomarkers: !store.state.biomarkers.isEmpty,
+                            onConnectData: {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                store.refresh(profile: profileStore.profile)
+                            },
                             onImport: { isShowingImport = true },
-                            onManualEntry: { isShowingManualEntry = true },
-                            onDelete: { biomarker in
-                                store.deleteBiomarker(biomarker, profile: profileStore.profile)
-                            }
+                            onManualEntry: { isShowingManualEntry = true }
                         )
-                        .labStaggered(isVisible: isVisible, index: onClose == nil ? 6 : 7)
+                        .labStaggered(isVisible: isVisible, index: onClose == nil ? 1 : 2)
+
+                        LabPrivacyFooter()
+                            .labStaggered(isVisible: isVisible, index: onClose == nil ? 2 : 3)
                     }
-                    .padding(.horizontal, 22)
-                    .padding(.top, topChromeClearance)
-                    .padding(.bottom, 8)
+
+                    BiomarkersSection(
+                        biomarkers: store.displayedBiomarkers,
+                        onImport: { isShowingImport = true },
+                        onManualEntry: { isShowingManualEntry = true },
+                        onDelete: { biomarker in
+                            store.deleteBiomarker(biomarker, profile: profileStore.profile)
+                        }
+                    )
+                    .labStaggered(isVisible: isVisible, index: onClose == nil ? 6 : 7)
                 }
-                .safeAreaPadding(.bottom, 16)
-                .background(LabModuleBackground())
-                .scrollContentBackground(.hidden)
-            }
+            )
             .navigationTitle("")
             .toolbarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
@@ -127,9 +125,6 @@ struct LabView: View {
         }
     }
 
-    private static func topChromeClearance(for safeAreaTop: CGFloat) -> CGFloat {
-        safeAreaTop > 0 ? 16 : 64
-    }
 }
 
 private struct LabCloseButton: View {
@@ -160,30 +155,14 @@ private struct LabCloseButton: View {
 }
 
 private struct LabHeaderView: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            LabHeaderIconView()
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Lab")
-                    .pulsarTextStyle(.displayLarge)
-                    .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-
-                Text("Biological age & biomarker insights")
-                    .pulsarTextStyle(.label)
-                    .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Lab")
-        .accessibilityAddTraits(.isHeader)
+        PulsarTabHeader(
+            systemImage: "testtube.2",
+            title: "Lab",
+            subtitle: "Biological age & biomarker insights",
+            primaryText: .white.opacity(0.96),
+            secondaryText: .white.opacity(0.62)
+        )
     }
 }
 
@@ -397,8 +376,7 @@ private struct LabBiologicalAgeHeroView: View {
                 }
             }
             .padding(12)
-            .background(PulsarTheme.matrixPanelBackground(for: colorScheme), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .modifier(FitnessGlassSurfaceModifier(cornerRadius: 26, tint: LabPalette.glassTint(for: colorScheme)))
             .overlay {
                 RoundedRectangle(cornerRadius: 26, style: .continuous)
                     .stroke(.white.opacity(colorScheme == .dark ? 0.12 : 0.72), lineWidth: 1)
@@ -3044,14 +3022,13 @@ private struct LabGlassCardModifier: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        content
-            .modifier(
-                FitnessGlassSurfaceModifier(
-                    cornerRadius: cornerRadius,
-                    tint: LabPalette.glassTint(for: colorScheme),
-                    borderOpacity: 1
-                )
-            )
+        PulsarGlassCard(
+            cornerRadius: cornerRadius,
+            contentPadding: 0,
+            tint: LabPalette.glassTint(for: colorScheme).opacity(0.08)
+        ) {
+            content
+        }
     }
 }
 

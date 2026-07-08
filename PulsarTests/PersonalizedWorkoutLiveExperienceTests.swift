@@ -8,10 +8,10 @@ import Testing
 @testable import Pulsar
 
 struct PersonalizedWorkoutLiveExperienceTests {
-    @Test func indoorRunningIsPersonalizedButNotOutdoor() {
+    @Test func indoorRunningRoutesThroughSharedWorkoutCoordinator() {
         #expect(PersonalizedWorkoutKind.allCases.contains(.indoorRunning))
         #expect(PersonalizedWorkoutKind.indoorRunning.title == "Indoor Running")
-        #expect(PersonalizedWorkoutKind.indoorRunning.outdoorWorkoutKind == nil)
+        #expect(PersonalizedWorkoutKind.indoorRunning.outdoorWorkoutKind == .indoorRunning)
         #expect(WorkoutOption.personalized.contains { $0.personalizedKind == .indoorRunning })
     }
 

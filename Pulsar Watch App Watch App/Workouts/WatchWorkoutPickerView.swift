@@ -18,53 +18,32 @@ private struct WatchWorkoutOption: Identifiable, Hashable {
     let symbolName: String
     let tint: Color
     let section: WatchWorkoutSection
+    let outdoorWorkoutKind: PulsarOutdoorWorkoutKind?
+    let isGym: Bool
 
-    var outdoorWorkoutKind: PulsarOutdoorWorkoutKind? {
-        switch id {
-        case "running": .running
-        case "walking": .walking
-        case "hiking": .hiking
-        case "cycling": .cycling
-        case "strength-training": .strength
-        case "yoga": .yoga
-        case "hiit": .hiit
-        case "swimming": .swimming
-        case "rowing": .rowing
-        case "pilates": .pilates
-        case "core": .core
-        case "dance": .dance
-        case "elliptical": .elliptical
-        case "stair-climber": .stairClimber
-        case "cooldown": .cooldown
-        default: nil
-        }
-    }
-    var isGym: Bool { id == "gym" }
     var isPersonalized: Bool { section == .personalized }
 }
 
 private extension WatchWorkoutOption {
-    static let personalized: [WatchWorkoutOption] = [
-        WatchWorkoutOption(id: "hiking", name: "Hiking", category: "Trail", symbolName: "mountain.2.fill", tint: Color(red: 0.34, green: 0.82, blue: 0.58), section: .personalized),
-        WatchWorkoutOption(id: "running", name: "Running", category: "GPS Run", symbolName: "figure.run", tint: Color(red: 1.00, green: 0.46, blue: 0.34), section: .personalized),
-        WatchWorkoutOption(id: "walking", name: "Walking", category: "GPS Walk", symbolName: "figure.walk", tint: Color(red: 0.44, green: 0.72, blue: 1.00), section: .personalized),
-        WatchWorkoutOption(id: "gym", name: "Gym", category: "Strength", symbolName: "dumbbell.fill", tint: Color(red: 0.72, green: 0.66, blue: 1.00), section: .personalized)
-    ]
+    @MainActor
+    static let personalized: [WatchWorkoutOption] = PulsarWorkoutCatalog.personalizedEntries.map(Self.init(catalogEntry:))
 
-    static let general: [WatchWorkoutOption] = [
-        WatchWorkoutOption(id: "cycling", name: "Cycling", category: "Endurance", symbolName: "bicycle", tint: Color(red: 0.25, green: 0.78, blue: 0.86), section: .general),
-        WatchWorkoutOption(id: "strength-training", name: "Strength", category: "Training", symbolName: "figure.strengthtraining.traditional", tint: Color(red: 0.72, green: 0.66, blue: 1.00), section: .general),
-        WatchWorkoutOption(id: "yoga", name: "Yoga", category: "Restore", symbolName: "figure.yoga", tint: Color(red: 0.72, green: 0.82, blue: 0.46), section: .general),
-        WatchWorkoutOption(id: "hiit", name: "HIIT", category: "Intervals", symbolName: "flame.fill", tint: Color(red: 1.00, green: 0.61, blue: 0.25), section: .general),
-        WatchWorkoutOption(id: "swimming", name: "Swimming", category: "Water", symbolName: "figure.pool.swim", tint: Color(red: 0.34, green: 0.68, blue: 1.00), section: .general),
-        WatchWorkoutOption(id: "rowing", name: "Rowing", category: "Endurance", symbolName: "figure.rower", tint: Color(red: 0.25, green: 0.78, blue: 0.86), section: .general),
-        WatchWorkoutOption(id: "pilates", name: "Pilates", category: "Control", symbolName: "figure.core.training", tint: Color(red: 0.44, green: 0.72, blue: 1.00), section: .general),
-        WatchWorkoutOption(id: "core", name: "Core", category: "Stability", symbolName: "figure.core.training", tint: Color(red: 0.44, green: 0.72, blue: 1.00), section: .general),
-        WatchWorkoutOption(id: "dance", name: "Dance", category: "Rhythm", symbolName: "figure.dance", tint: Color(red: 1.00, green: 0.44, blue: 0.68), section: .general),
-        WatchWorkoutOption(id: "elliptical", name: "Elliptical", category: "Cardio", symbolName: "figure.elliptical", tint: Color(red: 0.38, green: 0.88, blue: 0.72), section: .general),
-        WatchWorkoutOption(id: "stair-climber", name: "Stairs", category: "Climber", symbolName: "figure.stair.stepper", tint: Color(red: 1.00, green: 0.70, blue: 0.30), section: .general),
-        WatchWorkoutOption(id: "cooldown", name: "Cooldown", category: "Recovery", symbolName: "figure.cooldown", tint: Color(red: 0.68, green: 0.74, blue: 0.84), section: .general)
-    ]
+    @MainActor
+    static let general: [WatchWorkoutOption] = PulsarWorkoutCatalog.moreWorkoutEntries.map(Self.init(catalogEntry:))
+
+    @MainActor
+    init(catalogEntry entry: PulsarWorkoutCatalogEntry) {
+        self.init(
+            id: entry.id,
+            name: entry.displayName,
+            category: entry.category,
+            symbolName: entry.symbolName,
+            tint: Color(red: entry.tint.red, green: entry.tint.green, blue: entry.tint.blue),
+            section: entry.section == .personalized ? .personalized : .general,
+            outdoorWorkoutKind: entry.outdoorWorkoutKind,
+            isGym: entry.isGym
+        )
+    }
 }
 
 struct WatchWorkoutFloatingAddButton: View {

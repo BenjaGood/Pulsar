@@ -63,13 +63,17 @@ struct WatchHomeView: View {
             }
         }
         .task {
+            syncStore.hydrateReceivedApplicationContext(reason: "watchHomeAppearedHydration")
             syncStore.pruneStaleActiveWorkoutState(reason: "watchHomeAppeared")
             syncStore.sendWatchHeartbeat(reason: "watchHomeAppeared")
+            syncStore.requestSavedGymRoutinesRefresh(reason: "watchHomeAppeared")
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
+            syncStore.hydrateReceivedApplicationContext(reason: "watchAppBecameActiveHydration")
             syncStore.pruneStaleActiveWorkoutState(reason: "watchAppBecameActive")
             syncStore.sendWatchHeartbeat(reason: "watchAppBecameActive")
+            syncStore.requestSavedGymRoutinesRefresh(reason: "watchAppBecameActive")
         }
         .onChange(of: syncStore.activeWorkoutState) { _, state in
             guard let state,

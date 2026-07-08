@@ -149,6 +149,14 @@ struct WatchActiveGymWorkoutView: View {
     private var currentSetCard: some View {
         WatchGymGlassCard {
             VStack(alignment: .leading, spacing: 9) {
+                if let seriesProgressText {
+                    Text(seriesProgressText)
+                        .pulsarTextStyle(.watchLabel)
+                        .foregroundStyle(Color(red: 0.72, green: 1.0, blue: 0.78))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                }
+
                 Text(currentExercise?.exerciseName ?? "Open Gym")
                     .pulsarTextStyle(.watchTitle)
                     .foregroundStyle(.white)
@@ -291,6 +299,31 @@ struct WatchActiveGymWorkoutView: View {
     private var subtitleText: String {
         guard let currentExercise else { return "Freestyle strength session" }
         return "\(currentExercise.muscleGroup) / \(currentExercise.equipment)"
+    }
+
+    private var seriesProgressText: String? {
+        guard let currentExercise,
+              currentExercise.supersetGroupId != nil,
+              let memberCount = currentExercise.seriesMemberCount,
+              memberCount > 1 else { return nil }
+        let memberIndex = min(max((currentExercise.supersetOrder ?? 0) + 1, 1), memberCount)
+        let type = seriesDisplayName(for: currentExercise.supersetType)
+        return "\(type) \(memberIndex)/\(memberCount)"
+    }
+
+    private func seriesDisplayName(for rawValue: String?) -> String {
+        switch rawValue {
+        case "biset":
+            return "Biset"
+        case "superset":
+            return "Superset"
+        case "circuit":
+            return "Circuit"
+        case "compoundSeries":
+            return "Series"
+        default:
+            return "Series"
+        }
     }
 
     private var energyText: String {

@@ -42,61 +42,52 @@ struct MindfulnessView: View {
 
     var body: some View {
         NavigationStack {
-            GeometryReader { proxy in
-                let topChromeClearance = Self.topChromeClearance(for: proxy.safeAreaInsets.top)
-                let weekSnapshot = PulsarMindfulnessWeekSnapshot(
-                    entries: store.state.entries,
-                    referenceDate: Date(),
-                    calendar: calendar
-                )
-                let meditationSnapshot = PulsarMindfulnessMeditationWeekSnapshot(
-                    sessions: store.state.sessions,
-                    referenceDate: Date(),
-                    calendar: calendar
-                )
+            let weekSnapshot = PulsarMindfulnessWeekSnapshot(
+                entries: store.state.entries,
+                referenceDate: Date(),
+                calendar: calendar
+            )
+            let meditationSnapshot = PulsarMindfulnessMeditationWeekSnapshot(
+                sessions: store.state.sessions,
+                referenceDate: Date(),
+                calendar: calendar
+            )
 
-                ZStack {
+            PulsarScreenScaffold(
+                layoutStore: bottomChromeLayoutStore,
+                horizontalPadding: 22,
+                spacing: 14,
+                headerBlur: PulsarScreenHeaderBlur(height: 48, fadeStart: 12, fadeEnd: 48),
+                background: {
                     MindfulnessScenicBackground()
+                },
+                content: {
+                    MindfulnessPageTitleHeader()
 
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 14) {
-                            MindfulnessPageTitleHeader()
+                    MindfulnessMoodLoggingCard(
+                        draft: $dailyDraft,
+                        loggedEntry: store.dashboard.todayEntry,
+                        loggedStreakDays: store.dashboard.streak.currentStreak,
+                        isCelebratingStreak: streakCelebration != nil,
+                        onLog: saveDailyMood
+                    )
 
-                            MindfulnessMoodLoggingCard(
-                                draft: $dailyDraft,
-                                loggedEntry: store.dashboard.todayEntry,
-                                loggedStreakDays: store.dashboard.streak.currentStreak,
-                                isCelebratingStreak: streakCelebration != nil,
-                                onLog: saveDailyMood
-                            )
+                    MindfulnessWeeklySummaryCard(
+                        snapshot: weekSnapshot,
+                        onViewMore: openMoodHistory
+                    )
 
-                            MindfulnessWeeklySummaryCard(
-                                snapshot: weekSnapshot,
-                                onViewMore: openMoodHistory
-                            )
+                    MindfulnessCompactInsightsCard(
+                        average: weekSnapshot.wellnessAverage
+                    )
 
-                            MindfulnessCompactInsightsCard(
-                                average: weekSnapshot.wellnessAverage
-                            )
-
-                            MindfulnessGuidedMeditationSection(
-                                snapshot: meditationSnapshot,
-                                templates: PulsarMindfulnessContentLibrary.meditationTemplates,
-                                onStart: startMeditation
-                            )
-
-                            PulsarBottomChromeSpacer(layoutStore: bottomChromeLayoutStore)
-                        }
-                        .padding(.horizontal, 22)
-                        .padding(.top, topChromeClearance)
-                        .padding(.bottom, 8)
-                    }
-                    .pulsarBottomChromeScrollContainer(layoutStore: bottomChromeLayoutStore)
-                    .scrollContentBackground(.hidden)
-                    .ignoresSafeArea(edges: .bottom)
-                    .premiumScrollHeaderBlur(height: 48, fadeStart: 12, fadeEnd: 48)
+                    MindfulnessGuidedMeditationSection(
+                        snapshot: meditationSnapshot,
+                        templates: PulsarMindfulnessContentLibrary.meditationTemplates,
+                        onStart: startMeditation
+                    )
                 }
-            }
+            )
             .navigationTitle("")
             .toolbarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)

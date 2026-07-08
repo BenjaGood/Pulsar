@@ -6,114 +6,76 @@
 import SwiftUI
 import UIKit
 
+private enum WorkoutPickerGlassTokens {
+    static let cornerRadius: CGFloat = 36
+    static let panelTint = Color(red: 0.68, green: 0.80, blue: 0.92)
+    static let panelTintOpacity = 0.04
+}
+
 struct WorkoutPickerSheet: View {
-    @Binding var isPresented: Bool
     var onSelectPersonalizedWorkout: (WorkoutOption) -> Void
 
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var searchText = ""
-    @State private var sheetIsVisible = false
 
     private let columns = [
-        GridItem(.flexible(), spacing: 10),
-        GridItem(.flexible(), spacing: 10)
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12)
     ]
 
     var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .bottom) {
-                dimmedBackdrop
-                    .opacity(sheetIsVisible ? 1 : 0)
-                    .onTapGesture {
-                        dismiss()
-                    }
-
-                sheetCard
-                    .frame(maxHeight: min(proxy.size.height * 0.82, 690))
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 12)
-                    .offset(y: sheetIsVisible ? 0 : 90)
-                    .opacity(sheetIsVisible ? 1 : 0.35)
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .bottom)
-        }
-        .onAppear {
-            withAnimation(.spring(response: 0.50, dampingFraction: 0.82)) {
-                sheetIsVisible = true
-            }
-        }
-    }
-
-    private var dimmedBackdrop: some View {
-        Color.black
-            .opacity(colorScheme == .dark ? 0.36 : 0.22)
-            .background(.ultraThinMaterial)
-            .ignoresSafeArea()
-    }
-
-    private var sheetCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Capsule(style: .continuous)
-                .fill(.secondary.opacity(0.34))
-                .frame(width: 42, height: 5)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, 2)
-
-            header
-
-            WorkoutSearchBar(text: $searchText)
+        ZStack(alignment: .top) {
+            WorkoutPickerGlassBackground()
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 20) {
-                    if !filteredPersonalizedWorkouts.isEmpty {
-                        workoutSection(title: "Personalized Trainings", workouts: filteredPersonalizedWorkouts)
-                    }
+                VStack(alignment: .leading, spacing: 16) {
+                    header
 
-                    if !filteredGeneralWorkouts.isEmpty {
-                        workoutSection(title: "Explore Workouts", workouts: filteredGeneralWorkouts)
-                    }
+                    WorkoutSearchBar(text: $searchText)
 
-                    if filteredPersonalizedWorkouts.isEmpty && filteredGeneralWorkouts.isEmpty {
-                        emptyState
+                    VStack(alignment: .leading, spacing: 20) {
+                        if !filteredPersonalizedWorkouts.isEmpty {
+                            workoutSection(title: "Personalized Trainings", workouts: filteredPersonalizedWorkouts)
+                        }
+
+                        if !filteredGeneralWorkouts.isEmpty {
+                            workoutSection(title: "Explore Workouts", workouts: filteredGeneralWorkouts)
+                        }
+
+                        if filteredPersonalizedWorkouts.isEmpty && filteredGeneralWorkouts.isEmpty {
+                            emptyState
+                        }
                     }
                 }
-                .padding(.bottom, 8)
+                .padding(.horizontal, 18)
+                .padding(.top, 8)
+                .padding(.bottom, 32)
+                .safeAreaPadding(.bottom, 16)
             }
+            .scrollContentBackground(.hidden)
+            .scrollDismissesKeyboard(.interactively)
         }
-        .padding(18)
-        .background(sheetBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
-        .overlay(sheetBorder)
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.36 : 0.16), radius: 28, y: 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .accessibilityAddTraits(.isModal)
+        .accessibilityAction(.escape) {
+            dismiss()
+        }
     }
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Choose training")
-                    .pulsarTextStyle(.sectionTitle)
-                    .foregroundStyle(primaryText)
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Choose training")
+                .pulsarTextStyle(.sectionTitle)
+                .foregroundStyle(primaryText)
 
-                Text("Quick-start a personalized workout or explore more movement modes.")
-                    .pulsarTextStyle(.screenSubtitle)
-                    .foregroundStyle(secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 8)
-
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(secondaryText)
-                    .frame(width: 32, height: 32)
-                    .background(closeButtonBackground, in: Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close workout picker")
+            Text("Quick-start a personalized workout or explore more movement modes.")
+                .pulsarTextStyle(.screenSubtitle)
+                .foregroundStyle(secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 
     private func workoutSection(title: String, workouts: [WorkoutOption]) -> some View {
@@ -121,10 +83,11 @@ struct WorkoutPickerSheet: View {
             Text(title)
                 .pulsarTextStyle(.cardTitle)
                 .foregroundStyle(primaryText)
+                .accessibilityAddTraits(.isHeader)
 
-            LazyVGrid(columns: columns, spacing: 10) {
+            LazyVGrid(columns: columns, spacing: 12) {
                 ForEach(workouts) { workout in
-                    WorkoutOptionCard(workout: workout) {
+                    WorkoutOptionCard(workout: workout, usesPickerGlass: true) {
                         handleSelection(workout)
                     }
                 }
@@ -135,8 +98,7 @@ struct WorkoutPickerSheet: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             ZStack {
-                Circle()
-                    .fill(.ultraThinMaterial)
+                PulsarCircularGlassSurface(cornerRadius: 31)
                     .frame(width: 62, height: 62)
 
                 Image(systemName: "sparkle.magnifyingglass")
@@ -161,20 +123,8 @@ struct WorkoutPickerSheet: View {
 
         guard workout.isPersonalized || workout.outdoorWorkoutKind != nil else { return }
 
-        dismiss {
-            onSelectPersonalizedWorkout(workout)
-        }
-    }
-
-    private func dismiss(completion: (() -> Void)? = nil) {
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.88)) {
-            sheetIsVisible = false
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-            isPresented = false
-            completion?()
-        }
+        onSelectPersonalizedWorkout(workout)
+        dismiss()
     }
 
     private var filteredPersonalizedWorkouts: [WorkoutOption] {
@@ -195,63 +145,88 @@ struct WorkoutPickerSheet: View {
     }
 
     private var primaryText: Color {
-        colorScheme == .dark ? .white.opacity(0.97) : Color(red: 0.08, green: 0.10, blue: 0.15)
+        PulsarTheme.fitnessPrimaryText(for: colorScheme)
     }
 
     private var secondaryText: Color {
-        colorScheme == .dark ? .white.opacity(0.62) : Color(red: 0.34, green: 0.38, blue: 0.46)
+        PulsarTheme.fitnessSecondaryText(for: colorScheme)
+    }
+}
+
+private struct WorkoutPickerGlassBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: WorkoutPickerGlassTokens.cornerRadius, style: .continuous)
+
+        Rectangle()
+            .fill(panelFill)
+            .pulsarLiquidGlass(
+                cornerRadius: 0,
+                tint: WorkoutPickerGlassTokens.panelTint.opacity(reduceTransparency ? 0 : WorkoutPickerGlassTokens.panelTintOpacity),
+                isClear: !reduceTransparency
+            )
+            .overlay {
+                shape
+                    .stroke(borderHighlight, lineWidth: reduceTransparency ? 0.85 : 0.65)
+                    .blendMode(.plusLighter)
+            }
+            .overlay(alignment: .top) {
+                specularHighlight
+            }
+            .ignoresSafeArea()
     }
 
-    private var closeButtonBackground: LinearGradient {
+    private var panelFill: some ShapeStyle {
+        if reduceTransparency {
+            return AnyShapeStyle(
+                colorScheme == .dark
+                    ? Color(red: 0.04, green: 0.055, blue: 0.09).opacity(0.88)
+                    : Color.white.opacity(0.92)
+            )
+        }
+
+        return AnyShapeStyle(
+            colorScheme == .dark
+                ? Color.white.opacity(0.03)
+                : Color.white.opacity(0.08)
+        )
+    }
+
+    private var borderHighlight: LinearGradient {
         LinearGradient(
-            colors: colorScheme == .dark
-                ? [Color.white.opacity(0.10), Color.white.opacity(0.04)]
-                : [Color.white.opacity(0.84), Color(red: 0.94, green: 0.97, blue: 1.00).opacity(0.58)],
+            colors: [
+                .white.opacity(colorScheme == .dark ? 0.30 : 0.72),
+                .white.opacity(colorScheme == .dark ? 0.11 : 0.28),
+                .white.opacity(colorScheme == .dark ? 0.04 : 0.12)
+            ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
     }
 
-    private var sheetBackground: some View {
-        RoundedRectangle(cornerRadius: 34, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: colorScheme == .dark
-                        ? [
-                            Color(red: 0.11, green: 0.13, blue: 0.21).opacity(0.88),
-                            Color(red: 0.05, green: 0.07, blue: 0.12).opacity(0.94),
-                            Color.accentColor.opacity(0.10)
-                        ]
-                        : [
-                            Color.white.opacity(0.92),
-                            Color(red: 0.95, green: 0.97, blue: 1.00).opacity(0.88),
-                            Color.accentColor.opacity(0.08)
-                        ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 34, style: .continuous))
-    }
-
-    private var sheetBorder: some View {
-        RoundedRectangle(cornerRadius: 34, style: .continuous)
-            .stroke(
-                LinearGradient(
-                    colors: [
-                        .white.opacity(colorScheme == .dark ? 0.22 : 0.92),
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.15 : 0.20),
-                        .black.opacity(colorScheme == .dark ? 0.22 : 0.06)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: 1
-            )
+    private var specularHighlight: some View {
+        LinearGradient(
+            colors: [
+                .clear,
+                .white.opacity(colorScheme == .dark ? 0.46 : 0.72),
+                .white.opacity(colorScheme == .dark ? 0.18 : 0.34),
+                .clear
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+        .frame(height: 1.2)
+        .padding(.horizontal, 28)
+        .padding(.top, 1.8)
+        .clipShape(Capsule())
+        .blendMode(.plusLighter)
+        .allowsHitTesting(false)
     }
 }
 
 #Preview {
-    WorkoutPickerSheet(isPresented: .constant(true)) { _ in }
-        .background(PulsarSectionBackground())
+    WorkoutPickerSheet { _ in }
+        .background(FitnessWeeklyBackground())
 }
