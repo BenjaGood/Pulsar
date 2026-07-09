@@ -14,6 +14,7 @@ struct PersonalizedLiveWorkoutExperienceView: View {
     @StateObject private var viewModel: PersonalizedWorkoutSessionViewModel
     @State private var isShowingLiveWorkout = false
     @State private var completionSummary: PulsarRunSummary?
+    @State private var isStartingWorkout = false
 
     init(workout: PersonalizedWorkoutKind, profile: UserProfile) {
         self.workout = workout
@@ -62,11 +63,14 @@ struct PersonalizedLiveWorkoutExperienceView: View {
     }
 
     private func startWorkout() {
+        guard !isStartingWorkout else { return }
+        isStartingWorkout = true
         withAnimation(.smooth(duration: 0.36)) {
             isShowingLiveWorkout = true
         }
         Task {
             await viewModel.start()
+            isStartingWorkout = false
         }
     }
 }

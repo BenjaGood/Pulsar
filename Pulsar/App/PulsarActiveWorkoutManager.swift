@@ -224,6 +224,12 @@ final class PulsarActiveWorkoutManager: ObservableObject {
         if case .run = presentedWorkout {
             presentedWorkout = nil
         }
+        if let sessionID {
+            PulsarWorkoutStartCoordinator.shared.markSessionEnded(
+                sessionID: sessionID,
+                reason: reason
+            )
+        }
         clearPresentationStateIfNeeded(
             sessionID: sessionID,
             phase: phase,
@@ -246,11 +252,40 @@ final class PulsarActiveWorkoutManager: ObservableObject {
             return
         }
 
+        let preparedRoutine = StrengthProgressAnalyticsService.routineWithLatestPerformanceOverlay(
+            routine,
+            sessions: (historyStore ?? PulsarGymWorkoutHistoryStore()).sessions,
+            displayUnit: workoutWeightUnit ?? routine.exercises.first?.weightUnit ?? .kilograms
+        )
+        let sessionID = UUID()
+        switch PulsarWorkoutStartCoordinator.shared.requestStart(
+            sessionID: sessionID,
+            kind: .gym,
+            source: "GymWorkoutLaunchFlow",
+            workoutType: PulsarGymWorkoutKind.inferred(
+                routineName: preparedRoutine.name,
+                exerciseCount: preparedRoutine.exercises.count
+            ).rawValue
+        ) {
+        case .granted:
+            break
+        case .duplicateStart, .alreadyActive:
+            isGymWorkoutMinimized = false
+            if let activeWorkout {
+                setPresentation(.expanded(activeWorkout.sessionID), reason: "resumeExistingGymStart")
+            }
+            return
+        case .rejectedConflict:
+            PulsarStateDebugLogger.log("Gym workout start rejected because another workout is active requestedSession=\(sessionID.uuidString)")
+            return
+        }
+
         gymSessionViewModel = GymWorkoutSessionViewModel(
-            routine: routine,
+            routine: preparedRoutine,
             workoutWeightUnit: workoutWeightUnit,
             historyStore: historyStore,
-            adaptiveStrainPlan: adaptiveStrainPlan
+            adaptiveStrainPlan: adaptiveStrainPlan,
+            sessionID: sessionID
         )
         if let sessionID = gymSessionViewModel?.session.id {
             setActiveWorkout(kind: .gym, sessionID: sessionID, phase: "active")
@@ -308,6 +343,12 @@ final class PulsarActiveWorkoutManager: ObservableObject {
         isGymWorkoutMinimized = false
         if case .gym = presentedWorkout {
             presentedWorkout = nil
+        }
+        if let sessionID {
+            PulsarWorkoutStartCoordinator.shared.markSessionEnded(
+                sessionID: sessionID,
+                reason: "completeGymWorkout"
+            )
         }
         clearPresentationStateIfNeeded(
             sessionID: sessionID,
@@ -378,6 +419,12 @@ final class PulsarActiveWorkoutManager: ObservableObject {
         }
         if case .watchGym = presentedWorkout {
             presentedWorkout = nil
+        }
+        if let sessionID {
+            PulsarWorkoutStartCoordinator.shared.markSessionEnded(
+                sessionID: sessionID,
+                reason: reason
+            )
         }
         clearPresentationStateIfNeeded(
             sessionID: sessionID,

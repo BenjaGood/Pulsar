@@ -33,6 +33,7 @@ struct GymWorkoutLaunchFlowView: View {
     @State private var builderReturnTarget: BuilderReturnTarget = .choice
     @State private var watchFallbackPrompt: PulsarWatchRecorderFallbackPrompt?
     @State private var pendingWatchFallbackRoutine: PulsarRoutine?
+    @State private var isGymStartInFlight = false
 
     private let healthStore = HKHealthStore()
 
@@ -94,15 +95,8 @@ struct GymWorkoutLaunchFlowView: View {
                     )
                     .transition(.opacity.combined(with: .scale(scale: 0.99)))
                 } else {
-                    GymWorkoutSessionView(
-                        routine: routine,
-                        workoutWeightUnit: gymSettingsStore.resolvedWeightUnit(appUnits: appUnitPreference),
-                        historyStore: historyStore
-                    ) {
-                        dismissGymCompletion(
-                            sessionID: activeWorkoutManager.activeWorkout?.sessionID,
-                            source: "gymLaunchStandaloneSummaryDone"
-                        )
+                    GymWorkoutLaunchPreparingView(routineName: routine.name) {
+                        startGymWorkoutOnIPhone(routine)
                     }
                     .transition(.opacity.combined(with: .scale(scale: 0.99)))
                 }
@@ -122,6 +116,7 @@ struct GymWorkoutLaunchFlowView: View {
                         dismiss()
                     }
                 )
+                .environmentObject(completionPresentationStore)
                 .transition(.opacity.combined(with: .scale(scale: 0.99)))
             }
         }
@@ -186,6 +181,10 @@ struct GymWorkoutLaunchFlowView: View {
     }
 
     private func beginGymWorkout(_ routine: PulsarRoutine, forceIPhone: Bool = false) async {
+        guard !isGymStartInFlight else { return }
+        isGymStartInFlight = true
+        defer { isGymStartInFlight = false }
+
         if !forceIPhone {
             let workoutKind = PulsarGymWorkoutKind.inferred(
                 routineName: routine.name,
@@ -233,6 +232,21 @@ struct GymWorkoutLaunchFlowView: View {
         availability: PulsarWatchRecorderAvailabilitySnapshot
     ) async throws {
         let sessionId = UUID()
+        switch PulsarWorkoutStartCoordinator.shared.requestStart(
+            sessionID: sessionId,
+            kind: .watchGym,
+            source: "iPhoneRequestedWatchGymStart",
+            workoutType: workoutKind.rawValue
+        ) {
+        case .granted:
+            break
+        case .duplicateStart, .alreadyActive:
+            step = .watchWorkoutSession(sessionId)
+            return
+        case .rejectedConflict:
+            throw WorkoutStartConflictError.anotherWorkoutActive
+        }
+
         let now = Date()
         let session = PulsarGymWorkoutSession(id: sessionId, routine: routine, startedAt: now)
         let state = activeGymState(
@@ -242,6 +256,12 @@ struct GymWorkoutLaunchFlowView: View {
         )
 
         watchSyncStore.storeActiveGymState(state, broadcast: false, reason: "iPhoneRequestedWatchGymStart")
+        PulsarWorkoutLifecycleLogger.log(
+            .workoutWatchSyncRequested,
+            sessionID: sessionId,
+            workoutType: workoutKind.rawValue,
+            source: "iPhoneRequestedWatchGymStart"
+        )
         await watchSyncStore.broadcastActiveStateAndAwaitDelivery(
             state,
             reason: "iPhoneRequestedWatchGymStart.prelaunch"
@@ -251,11 +271,37 @@ struct GymWorkoutLaunchFlowView: View {
 
         do {
             try await healthStore.startWatchApp(toHandle: configuration)
+            PulsarWorkoutLifecycleLogger.log(
+                .workoutWatchSyncSucceeded,
+                sessionID: sessionId,
+                workoutType: workoutKind.rawValue,
+                source: "iPhoneRequestedWatchGymStart"
+            )
         } catch {
             if shouldKeepQueuedWatchStart(for: availability) {
+                PulsarWorkoutLifecycleLogger.log(
+                    .workoutWatchSyncSucceeded,
+                    sessionID: sessionId,
+                    workoutType: workoutKind.rawValue,
+                    source: "iPhoneRequestedWatchGymStart.queued",
+                    detail: error.localizedDescription
+                )
                 PulsarSyncDebugLogger.log("Gym Watch start queued after launch failure type=\(workoutKind.rawValue) session=\(sessionId.uuidString) rawReachable=\(availability.rawIsReachable) derivedReachable=\(availability.derivedReachabilityDescription) error=\(error.localizedDescription)")
             } else {
                 watchSyncStore.clearActiveGymState(reason: "iPhoneGymWatchLaunchFailed", broadcastEndedState: false)
+                PulsarWorkoutStartCoordinator.shared.markStartFailed(
+                    sessionID: sessionId,
+                    workoutType: workoutKind.rawValue,
+                    source: "iPhoneRequestedWatchGymStart",
+                    error: error.localizedDescription
+                )
+                PulsarWorkoutLifecycleLogger.log(
+                    .workoutWatchSyncFailed,
+                    sessionID: sessionId,
+                    workoutType: workoutKind.rawValue,
+                    source: "iPhoneRequestedWatchGymStart",
+                    detail: error.localizedDescription
+                )
                 throw error
             }
         }
@@ -265,6 +311,11 @@ struct GymWorkoutLaunchFlowView: View {
             sessionID: sessionId,
             phase: "starting",
             reason: "iPhoneRequestedWatchGymStart"
+        )
+        PulsarWorkoutStartCoordinator.shared.markActivated(
+            sessionID: sessionId,
+            workoutType: workoutKind.rawValue,
+            source: "iPhoneRequestedWatchGymStart"
         )
         step = .watchWorkoutSession(sessionId)
     }
@@ -401,6 +452,36 @@ struct GymWorkoutLaunchFlowView: View {
 
     private static var gymWorkoutConfiguration: HKWorkoutConfiguration {
         PulsarWorkoutCatalog.gymWorkoutConfiguration
+    }
+}
+
+private enum WorkoutStartConflictError: LocalizedError {
+    case anotherWorkoutActive
+
+    var errorDescription: String? {
+        switch self {
+        case .anotherWorkoutActive:
+            "Another workout is already active. Finish it before starting a new one."
+        }
+    }
+}
+
+private struct GymWorkoutLaunchPreparingView: View {
+    var routineName: String
+    var onRetry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 18) {
+            ProgressView()
+                .tint(.white)
+            Text("Preparing \(routineName)")
+                .pulsarTextStyle(.sectionTitle)
+                .foregroundStyle(.white)
+            Button("Retry Start", action: onRetry)
+                .pulsarTextStyle(.buttonTitle)
+                .foregroundStyle(.white.opacity(0.82))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -960,4 +1041,5 @@ struct PulsarGymPressButtonStyle: ButtonStyle {
 #Preview {
     GymWorkoutLaunchFlowView()
         .environmentObject(PulsarActiveWorkoutManager())
+        .environmentObject(WorkoutCompletionPresentationStore())
 }

@@ -14,6 +14,7 @@ struct GymWatchMirroredWorkoutView: View {
     @State private var finishedSummary: PulsarGymWorkoutSummary?
     @State private var lastMirroredState: ActiveGymWorkoutState?
     @State private var isRequestingFinish = false
+    @State private var finishTimeoutTask: Task<Void, Never>?
 
     private var state: ActiveGymWorkoutState? {
         guard let state = syncStore.activeGymState,
@@ -293,10 +294,7 @@ struct GymWatchMirroredWorkoutView: View {
 
     private func bottomControls(_ state: ActiveGymWorkoutState) -> some View {
         Button {
-            guard !isRequestingFinish else { return }
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-            isRequestingFinish = true
-            syncStore.sendGymAction(.finishWorkout(sessionId: state.sessionId))
+            requestFinish(for: state)
         } label: {
             HStack(spacing: 10) {
                 if isRequestingFinish {
@@ -364,6 +362,8 @@ struct GymWatchMirroredWorkoutView: View {
     }
 
     private func presentFinishedSummary(from state: ActiveGymWorkoutState) {
+        finishTimeoutTask?.cancel()
+        finishTimeoutTask = nil
         guard completionPresentationStore.shouldAutoPresent(sessionID: state.sessionId) else {
             finishedSummary = nil
             isRequestingFinish = false
@@ -377,6 +377,70 @@ struct GymWatchMirroredWorkoutView: View {
         lastMirroredState = finishedState
         isRequestingFinish = false
         finishedSummary = PulsarGymWorkoutSummary(activeGymState: finishedState)
+    }
+
+    private func requestFinish(for state: ActiveGymWorkoutState) {
+        guard !isRequestingFinish else { return }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        isRequestingFinish = true
+        PulsarWorkoutLifecycleLogger.log(
+            .wcSend,
+            sessionID: state.sessionId,
+            workoutType: state.workoutKind?.rawValue,
+            device: "iPhone",
+            messageType: "finishWorkout"
+        )
+        PulsarWorkoutLifecycleLogger.log(
+            .finishRequested,
+            sessionID: state.sessionId,
+            workoutType: state.workoutKind?.rawValue,
+            device: "iPhone",
+            previousState: "active",
+            nextState: "finishing"
+        )
+        syncStore.sendGymAction(.finishWorkout(sessionId: state.sessionId))
+        scheduleFinishTimeout(for: state)
+    }
+
+    private func scheduleFinishTimeout(for state: ActiveGymWorkoutState) {
+        finishTimeoutTask?.cancel()
+        finishTimeoutTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            guard !Task.isCancelled,
+                  isRequestingFinish,
+                  finishedSummary == nil,
+                  let activeState = lastMirroredState ?? syncStore.activeGymState,
+                  activeState.sessionId == state.sessionId else { return }
+
+            var finishedState = activeState
+            let finishedAt = Date()
+            finishedState.isFinished = true
+            finishedState.updatedAt = finishedAt
+            finishedState.elapsedSeconds = max(
+                finishedState.elapsedSeconds,
+                Int(finishedAt.timeIntervalSince(finishedState.startedAt))
+            )
+            _ = syncStore.storeActiveGymState(
+                finishedState,
+                broadcast: false,
+                reason: "gymMirrorFinishTimeout"
+            )
+            syncStore.tombstoneActiveWorkoutSession(
+                finishedState.sessionId,
+                reason: "gymMirrorFinishTimeout"
+            )
+            PulsarWorkoutLifecycleLogger.log(
+                .finishFallback,
+                sessionID: finishedState.sessionId,
+                workoutType: finishedState.workoutKind?.rawValue,
+                detail: "reason=gymMirrorFinishTimeout",
+                device: "iPhone",
+                previousState: "finishing",
+                nextState: "finished"
+            )
+            isRequestingFinish = false
+            presentFinishedSummary(from: finishedState)
+        }
     }
 
     private func updateCurrentSetValues(
@@ -579,4 +643,5 @@ private struct GymWatchMirrorSetStepper: View {
 
 #Preview {
     GymWatchMirroredWorkoutView(syncStore: .shared, onMinimize: {}, onSummaryDone: {})
+        .environmentObject(WorkoutCompletionPresentationStore())
 }

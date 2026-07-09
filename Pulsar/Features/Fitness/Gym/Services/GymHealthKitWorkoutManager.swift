@@ -78,6 +78,16 @@ final class GymHealthKitWorkoutManager: NSObject, ObservableObject {
         heartRates = []
         fallbackEnergyEstimator.reset()
 
+        if workoutSession != nil {
+            PulsarHealthKitWorkoutSessionTeardown.stopAndEnd(
+                workoutSession,
+                reason: "iPhoneGymStartReplaceExisting"
+            )
+            workoutSession = nil
+            workoutBuilder = nil
+            workoutStartedAt = nil
+        }
+
         guard await requestAuthorization() else {
             return false
         }
@@ -85,6 +95,12 @@ final class GymHealthKitWorkoutManager: NSObject, ObservableObject {
         do {
             let configuration = Self.gymWorkoutConfiguration
             let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
+            PulsarWorkoutLifecycleLogger.log(
+                .workoutHealthKitSessionCreated,
+                sessionID: sessionId,
+                workoutType: workoutKind.rawValue,
+                source: "iPhoneGymHealthKitStart"
+            )
             let builder = session.associatedWorkoutBuilder()
             builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
             session.delegate = self
@@ -96,6 +112,12 @@ final class GymHealthKitWorkoutManager: NSObject, ObservableObject {
 
             session.startActivity(with: startedAt)
             try await builder.beginCollection(at: startedAt)
+            PulsarWorkoutLifecycleLogger.log(
+                .workoutBuilderStarted,
+                sessionID: sessionId,
+                workoutType: workoutKind.rawValue,
+                source: "iPhoneGymHealthKitStart"
+            )
             addMetadata(
                 Self.metadata(
                     routineName: routineName,
@@ -347,6 +369,10 @@ final class GymHealthKitWorkoutManager: NSObject, ObservableObject {
             self.sessionStoppedContinuation = nil
             sessionStoppedContinuation.resume()
         }
+        PulsarHealthKitWorkoutSessionTeardown.stopAndEnd(
+            workoutSession,
+            reason: "iPhoneGymHealthKitCleanup"
+        )
         workoutSession = nil
         workoutBuilder = nil
         workoutStartedAt = nil

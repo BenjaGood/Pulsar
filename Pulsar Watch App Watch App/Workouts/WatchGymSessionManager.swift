@@ -802,7 +802,34 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
     private func handle(_ action: ActiveGymWorkoutAction) async {
         switch action.kind {
         case .finishWorkout:
-            guard shouldHandleSessionScopedAction(action, reason: "watchGymFinishFromPhone") != nil else { return }
+            PulsarWorkoutLifecycleLogger.log(
+                .wcReceive,
+                sessionID: action.sessionId,
+                device: "Watch",
+                messageType: "finishWorkout"
+            )
+            if activeSessionId == nil,
+               let state = syncStore.activeGymState,
+               state.sessionId == action.sessionId {
+                activeSessionId = state.sessionId
+            }
+            guard let sessionID = shouldHandleSessionScopedAction(action, reason: "watchGymFinishFromPhone") else { return }
+            PulsarWorkoutLifecycleLogger.log(
+                .stateTransition,
+                sessionID: sessionID,
+                workoutType: syncStore.activeGymState?.workoutKind?.rawValue,
+                device: "Watch",
+                previousState: "active",
+                nextState: "finishing"
+            )
+            PulsarWorkoutLifecycleLogger.log(
+                .finishRequested,
+                sessionID: sessionID,
+                workoutType: syncStore.activeGymState?.workoutKind?.rawValue,
+                device: "Watch",
+                previousState: "active",
+                nextState: "finishing"
+            )
             await finishCurrentWorkoutIfNeeded()
         case .requestState:
             activeSessionId = activeSessionId ?? action.sessionId
@@ -848,7 +875,6 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
     private func finishWorkout() async {
         guard !isFinishing, workoutSession != nil || workoutBuilder != nil else { return }
         isFinishing = true
-        let session = workoutSession
         let builder = workoutBuilder
         tickTask?.cancel()
         tickTask = nil
@@ -860,7 +886,16 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
 
         let end = Date()
         defer {
-            session?.end()
+            cleanup(preservingFinishState: true)
+            isFinishing = false
+            PulsarWorkoutLifecycleLogger.log(
+                .finishCompleted,
+                sessionID: activeSessionId,
+                workoutType: syncStore.lastFinishedGymState?.workoutKind?.rawValue,
+                device: "Watch",
+                previousState: "finishing",
+                nextState: "finished"
+            )
             PulsarSyncDebugLogger.log("[PulsarWorkoutLifecycle] Watch Gym HealthKit session ended after builder finish session=\(activeSessionId?.uuidString ?? "none")")
         }
         do {
@@ -875,10 +910,9 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
             sendMetricsIfNeeded(force: true)
             markActiveStateFinished(workoutUUID: nil)
         }
-        cleanup()
     }
 
-    private func cleanup() {
+    private func cleanup(preservingFinishState: Bool = false) {
         tickTask?.cancel()
         tickTask = nil
         stateTickTask?.cancel()
@@ -886,10 +920,16 @@ final class WatchGymSessionManager: NSObject, ObservableObject {
         finishFallbackTask?.cancel()
         finishFallbackTask = nil
         stopRest()
+        PulsarHealthKitWorkoutSessionTeardown.stopAndEnd(
+            workoutSession,
+            reason: "watchGymCleanup"
+        )
         workoutSession = nil
         workoutBuilder = nil
         startedAt = nil
-        isFinishing = false
+        if !preservingFinishState {
+            isFinishing = false
+        }
     }
 
     private func requestWorkoutSessionStop(reason: String) {

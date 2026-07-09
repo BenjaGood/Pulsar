@@ -148,8 +148,25 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
             return
         }
         guard snapshot.phase == .running || snapshot.phase == .paused else { return }
+        let previousPhase = snapshot.phase
         snapshot.phase = .finishing
         message = "Finishing workout..."
+        PulsarWorkoutLifecycleLogger.log(
+            .stateTransition,
+            sessionID: snapshot.pulsarWorkoutSessionId,
+            workoutType: activeWorkoutKind.rawValue,
+            device: "Watch",
+            previousState: previousPhase.rawValue,
+            nextState: snapshot.phase.rawValue
+        )
+        PulsarWorkoutLifecycleLogger.log(
+            .finishRequested,
+            sessionID: snapshot.pulsarWorkoutSessionId,
+            workoutType: activeWorkoutKind.rawValue,
+            device: "Watch",
+            previousState: previousPhase.rawValue,
+            nextState: snapshot.phase.rawValue
+        )
         publishActiveWorkoutState(phase: .ending, updatedFrom: .appleWatch, reason: "watchRunEnding")
         endWorkoutSessionIfNeeded(reason: "watchRunFinish")
         scheduleFinishFallback(reason: "watchRunFinish")
@@ -524,6 +541,10 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
         finishFallbackTask = nil
         locationManager?.stopUpdatingLocation()
         if !keepsWorkoutObjects {
+            PulsarHealthKitWorkoutSessionTeardown.stopAndEnd(
+                workoutSession,
+                reason: "watchRunCleanupRuntime"
+            )
             workoutSession = nil
             workoutBuilder = nil
             routeBuilder = nil
@@ -537,7 +558,6 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
         splitElevationGain = 0
         splitElevationLoss = 0
         splitHeartRates = []
-        isFinishing = false
         lastMetricsSentAt = .distantPast
         lastRoutePointSentCount = 0
         activeWorkoutStartedFrom = nil
@@ -858,11 +878,22 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
         isFinishing = true
 
         defer {
-            session?.end()
+            PulsarHealthKitWorkoutSessionTeardown.stopAndEnd(
+                session,
+                reason: "watchRunFinishCompleted"
+            )
             workoutSession = nil
             workoutBuilder = nil
             self.routeBuilder = nil
             isFinishing = false
+            PulsarWorkoutLifecycleLogger.log(
+                .finishCompleted,
+                sessionID: snapshot.pulsarWorkoutSessionId,
+                workoutType: activeWorkoutKind.rawValue,
+                device: "Watch",
+                previousState: PulsarRunPhase.finishing.rawValue,
+                nextState: snapshot.phase.rawValue
+            )
             PulsarSyncDebugLogger.log("[PulsarWorkoutLifecycle] Watch run HealthKit session ended after builder finish session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none")")
         }
 

@@ -1748,6 +1748,7 @@ struct PulsarRootView: View {
                     )
                 }
             )
+            .environmentObject(completionPresentationStore)
         }
     }
 }

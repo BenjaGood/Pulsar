@@ -45,20 +45,57 @@ final class PersonalizedWorkoutHealthKitManager: NSObject, ObservableObject {
     func start(workout: PersonalizedWorkoutKind) async {
         guard phase != .running, phase != .finishing else { return }
 
+        let sessionID = UUID()
+        let workoutType = workout.rawValue
+        switch PulsarWorkoutStartCoordinator.shared.requestStart(
+            sessionID: sessionID,
+            kind: .run(workout.outdoorWorkoutKind ?? .indoorRunning),
+            source: "PersonalizedWorkoutStart",
+            workoutType: workoutType
+        ) {
+        case .granted, .duplicateStart:
+            break
+        case .alreadyActive:
+            return
+        case .rejectedConflict:
+            healthAccessMessage = "Another workout is already active. Finish it before starting a new one."
+            statusMessage = "Workout Unavailable"
+            return
+        }
+
         resetRuntime()
         phase = .preparing
         statusMessage = "Requesting Apple Health"
         healthAccessMessage = nil
         watchConnectionMessage = nil
-        workoutSessionId = UUID()
+        workoutSessionId = sessionID
 
         guard await requestAuthorization() else {
+            PulsarWorkoutStartCoordinator.shared.markStartFailed(
+                sessionID: sessionID,
+                workoutType: workoutType,
+                source: "PersonalizedWorkoutStart",
+                error: healthAccessMessage ?? "authorizationDenied"
+            )
             return
         }
+
+        PulsarHealthKitWorkoutSessionTeardown.stopAndEnd(
+            workoutSession,
+            reason: "PersonalizedWorkoutStartReplaceExisting"
+        )
+        workoutSession = nil
+        workoutBuilder = nil
 
         do {
             let configuration = Self.workoutConfiguration(for: workout)
             let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
+            PulsarWorkoutLifecycleLogger.log(
+                .workoutHealthKitSessionCreated,
+                sessionID: sessionID,
+                workoutType: workoutType,
+                source: "PersonalizedWorkoutStart"
+            )
             let builder = session.associatedWorkoutBuilder()
             builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
             session.delegate = self
@@ -71,6 +108,12 @@ final class PersonalizedWorkoutHealthKitManager: NSObject, ObservableObject {
             startedAt = start
             session.startActivity(with: start)
             try await builder.beginCollection(at: start)
+            PulsarWorkoutLifecycleLogger.log(
+                .workoutBuilderStarted,
+                sessionID: sessionID,
+                workoutType: workoutType,
+                source: "PersonalizedWorkoutStart"
+            )
             addMetadata(Self.metadata(for: workout, sessionId: workoutSessionId), to: builder)
 
             isHealthKitEnabled = true
@@ -78,12 +121,23 @@ final class PersonalizedWorkoutHealthKitManager: NSObject, ObservableObject {
             statusMessage = "Apple Health Live"
             updateElapsedTime(at: start, phase: .running)
             startTicking()
+            PulsarWorkoutStartCoordinator.shared.markActivated(
+                sessionID: sessionID,
+                workoutType: workoutType,
+                source: "PersonalizedWorkoutStart"
+            )
             PulsarSyncDebugLogger.log("Personalized workout started type=\(workout.rawValue) session=\(workoutSessionId.uuidString)")
         } catch {
             phase = .preparing
             isHealthKitEnabled = false
             statusMessage = "Apple Health Unavailable"
             healthAccessMessage = "Apple Health could not start this workout: \(error.localizedDescription)"
+            PulsarWorkoutStartCoordinator.shared.markStartFailed(
+                sessionID: sessionID,
+                workoutType: workoutType,
+                source: "PersonalizedWorkoutStart",
+                error: error.localizedDescription
+            )
             cleanup(keepsMetrics: true)
         }
     }
@@ -149,6 +203,10 @@ final class PersonalizedWorkoutHealthKitManager: NSObject, ObservableObject {
 
         workoutSession?.end()
         cleanup(keepsMetrics: true)
+        PulsarWorkoutStartCoordinator.shared.markSessionEnded(
+            sessionID: workoutSessionId,
+            reason: "personalizedWorkoutFinished"
+        )
     }
 
     func stopWithoutSaving() {
@@ -158,6 +216,10 @@ final class PersonalizedWorkoutHealthKitManager: NSObject, ObservableObject {
         cleanup(keepsMetrics: true)
         phase = .finished
         statusMessage = "Workout Discarded"
+        PulsarWorkoutStartCoordinator.shared.markSessionEnded(
+            sessionID: workoutSessionId,
+            reason: "personalizedWorkoutDiscarded"
+        )
     }
 
     private func requestAuthorization() async -> Bool {
@@ -314,6 +376,10 @@ final class PersonalizedWorkoutHealthKitManager: NSObject, ObservableObject {
             self.sessionStoppedContinuation = nil
             sessionStoppedContinuation.resume()
         }
+        PulsarHealthKitWorkoutSessionTeardown.stopAndEnd(
+            workoutSession,
+            reason: "PersonalizedWorkoutResetRuntime"
+        )
         workoutSession = nil
         workoutBuilder = nil
         metrics = PersonalizedWorkoutLiveMetrics()
@@ -333,6 +399,10 @@ final class PersonalizedWorkoutHealthKitManager: NSObject, ObservableObject {
             self.sessionStoppedContinuation = nil
             sessionStoppedContinuation.resume()
         }
+        PulsarHealthKitWorkoutSessionTeardown.stopAndEnd(
+            workoutSession,
+            reason: "PersonalizedWorkoutCleanup"
+        )
         workoutSession = nil
         workoutBuilder = nil
         startedAt = nil

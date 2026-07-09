@@ -16,6 +16,7 @@ struct PulsarRunSetupView: View {
     @State private var countdown: Int?
     @State private var isShowingHistory = false
     @State private var watchFallbackPrompt: PulsarWatchRecorderFallbackPrompt?
+    @State private var isStartingWorkout = false
 
     var body: some View {
         ZStack {
@@ -210,6 +211,7 @@ struct PulsarRunSetupView: View {
             .shadow(color: workoutKind.accentColor.opacity(0.28), radius: 22, y: 12)
         }
         .buttonStyle(PulsarRunPressStyle())
+        .disabled(isStartingWorkout || countdown != nil)
     }
 
     private var historyButton: some View {
@@ -245,6 +247,10 @@ struct PulsarRunSetupView: View {
     }
 
     private func beginCountdownAndStart() async {
+        guard !isStartingWorkout else { return }
+        isStartingWorkout = true
+        defer { isStartingWorkout = false }
+
         if options.prefersWatchRecorder {
             let availability = await coordinator.watchRecorderAvailability(for: workoutKind)
             guard availability.canStartOnWatch else {

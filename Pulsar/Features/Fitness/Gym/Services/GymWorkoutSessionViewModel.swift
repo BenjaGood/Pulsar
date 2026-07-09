@@ -77,7 +77,8 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         healthKitManager: GymHealthKitWorkoutManager? = nil,
         watchSyncStore: PulsarWatchConnectivitySyncStore? = nil,
         liveActivityManager: GymLiveActivityManager? = nil,
-        adaptiveStrainPlan: AdaptiveStrainPlan? = nil
+        adaptiveStrainPlan: AdaptiveStrainPlan? = nil,
+        sessionID: UUID? = nil
     ) {
         let resolvedHistoryStore = historyStore ?? PulsarGymWorkoutHistoryStore()
         let displayUnit = workoutWeightUnit ?? routine.exercises.first?.weightUnit ?? .kilograms
@@ -92,7 +93,11 @@ final class GymWorkoutSessionViewModel: ObservableObject {
             displayUnit: displayUnit
         )
 
-        self.session = PulsarGymWorkoutSession(routine: preparedRoutine)
+        if let sessionID {
+            self.session = PulsarGymWorkoutSession(id: sessionID, routine: preparedRoutine)
+        } else {
+            self.session = PulsarGymWorkoutSession(routine: preparedRoutine)
+        }
         self.historyStore = resolvedHistoryStore
         self.healthKitManager = healthKitManager ?? GymHealthKitWorkoutManager()
         self.watchSyncStore = watchSyncStore ?? .shared
@@ -181,12 +186,35 @@ final class GymWorkoutSessionViewModel: ObservableObject {
 
     func startWorkoutIfNeeded() async {
         guard !didStartWorkoutSystems else { return }
+
+        switch PulsarWorkoutStartCoordinator.shared.requestStart(
+            sessionID: session.id,
+            kind: .gym,
+            source: "iPhoneGymSessionView",
+            workoutType: session.workoutKind.rawValue
+        ) {
+        case .granted, .duplicateStart:
+            break
+        case .alreadyActive:
+            didStartWorkoutSystems = true
+            return
+        case .rejectedConflict:
+            healthKitStatusMessage = "Another workout is already active. Finish it before starting a new gym session."
+            return
+        }
+
         didStartWorkoutSystems = true
         startTimerIfNeeded()
 
         let initialState = activeState(isFinished: false)
         watchSyncStore.storeActiveGymState(initialState, broadcast: true, reason: "gymWorkoutStarted")
         liveActivityManager.startIfPossible(state: initialState)
+        PulsarWorkoutLifecycleLogger.log(
+            .workoutWatchSyncRequested,
+            sessionID: session.id,
+            workoutType: session.workoutKind.rawValue,
+            source: "iPhoneGymSessionView"
+        )
         PulsarSyncDebugLogger.log("Gym workout start selectedType=\(session.workoutKind.rawValue) hkType=\(PulsarWorkoutCatalog.gymWorkoutConfiguration.activityType.rawValue) session=\(session.id.uuidString) startedFrom=iPhone")
 
         let didStartHealthKit = await healthKitManager.startWorkout(
@@ -199,6 +227,33 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         isHealthKitEnabled = didStartHealthKit
         healthKitStatusMessage = healthKitManager.statusMessage
         session.healthKitStatusMessage = healthKitStatusMessage
+        if didStartHealthKit {
+            PulsarWorkoutStartCoordinator.shared.markActivated(
+                sessionID: session.id,
+                workoutType: session.workoutKind.rawValue,
+                source: "iPhoneGymHealthKitStarted"
+            )
+            PulsarWorkoutLifecycleLogger.log(
+                .workoutWatchSyncSucceeded,
+                sessionID: session.id,
+                workoutType: session.workoutKind.rawValue,
+                source: "iPhoneGymHealthKitStarted"
+            )
+        } else {
+            PulsarWorkoutStartCoordinator.shared.markStartFailed(
+                sessionID: session.id,
+                workoutType: session.workoutKind.rawValue,
+                source: "iPhoneGymHealthKitStarted",
+                error: healthKitStatusMessage ?? "HealthKit unavailable"
+            )
+            PulsarWorkoutLifecycleLogger.log(
+                .workoutWatchSyncFailed,
+                sessionID: session.id,
+                workoutType: session.workoutKind.rawValue,
+                source: "iPhoneGymHealthKitStarted",
+                detail: healthKitStatusMessage
+            )
+        }
         publishState(reason: "gymHealthKitStarted")
     }
 
@@ -406,6 +461,10 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         liveActivityManager.end(state: finishedState)
         watchSyncStore.unregisterGymActionHandler()
         isFinishing = false
+        PulsarWorkoutStartCoordinator.shared.markSessionEnded(
+            sessionID: session.id,
+            reason: "gymWorkoutFinished"
+        )
         return workoutSummary
     }
 
