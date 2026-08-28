@@ -99,6 +99,33 @@ final class RecoveryDetailsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.insights, makeViewModel(summary: summary).insights)
     }
 
+    func testRecoveryDriversHaveStableOrderAndBaselineStatuses() {
+        let summary = makeSummary(hrv: 44, restingHeartRate: 62, sleepPerformance: 0.7, strain: 0.8)
+        let drivers = makeViewModel(summary: summary).recoveryDrivers
+
+        XCTAssertEqual(drivers.map(\.kind), [.hrv, .restingHeartRate, .sleep, .strain])
+        XCTAssertEqual(drivers[0].status, "Below average")
+        XCTAssertEqual(drivers[1].status, "Elevated")
+        XCTAssertEqual(drivers[2].value, "No data")
+        XCTAssertEqual(drivers[3].status, "High")
+    }
+
+    func testMissingSleepKeepsCompactNoDataDriver() {
+        let viewModel = makeViewModel(
+            summary: makeSummary(
+                hrv: 58,
+                restingHeartRate: 53,
+                sleepPerformance: 0.8,
+                strain: 0.4
+            )
+        )
+
+        let sleep = viewModel.recoveryDrivers.first { $0.kind == .sleep }
+        XCTAssertEqual(sleep?.context, "Total sleep")
+        XCTAssertEqual(sleep?.value, "No data")
+        XCTAssertEqual(sleep?.status, "No data")
+    }
+
     private func makeViewModel(summary: RecoverySummary, providerSummary: RecoverySummary? = nil, canRequestHealthData: Bool = true) -> RecoveryDetailsViewModel {
         RecoveryDetailsViewModel(
             initialSummary: summary,

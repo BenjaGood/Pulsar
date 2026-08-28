@@ -259,10 +259,19 @@ struct PulsarNutritionExternalReference: Codable, Equatable, Hashable {
 struct PulsarFoodMetadata: Codable, Equatable, Hashable {
     var barcode: String?
     var externalReference: PulsarNutritionExternalReference?
+    var calculatedNutrients: [String: Double]?
+    var servingMilliliters: Double?
 
-    init(barcode: String? = nil, externalReference: PulsarNutritionExternalReference? = nil) {
+    init(
+        barcode: String? = nil,
+        externalReference: PulsarNutritionExternalReference? = nil,
+        calculatedNutrients: [String: Double]? = nil,
+        servingMilliliters: Double? = nil
+    ) {
         self.barcode = barcode?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.externalReference = externalReference
+        self.calculatedNutrients = calculatedNutrients
+        self.servingMilliliters = servingMilliliters
     }
 }
 
@@ -287,6 +296,7 @@ struct PulsarNutritionFacts: Codable, Equatable, Hashable {
     var fiber: Double
     var sugar: Double
     var sodiumMilligrams: Double
+    var reportedNutrientKeys: Set<String>?
 
     init(
         calories: Double,
@@ -295,7 +305,8 @@ struct PulsarNutritionFacts: Codable, Equatable, Hashable {
         fat: Double,
         fiber: Double = 0,
         sugar: Double = 0,
-        sodiumMilligrams: Double = 0
+        sodiumMilligrams: Double = 0,
+        reportedNutrientKeys: Set<String>? = nil
     ) {
         self.calories = max(0, calories)
         self.protein = max(0, protein)
@@ -304,6 +315,7 @@ struct PulsarNutritionFacts: Codable, Equatable, Hashable {
         self.fiber = max(0, fiber)
         self.sugar = max(0, sugar)
         self.sodiumMilligrams = max(0, sodiumMilligrams)
+        self.reportedNutrientKeys = reportedNutrientKeys
     }
 
     init(
@@ -313,7 +325,8 @@ struct PulsarNutritionFacts: Codable, Equatable, Hashable {
         fats: Double,
         fiber: Double = 0,
         sugar: Double = 0,
-        sodiumMilligrams: Double = 0
+        sodiumMilligrams: Double = 0,
+        reportedNutrientKeys: Set<String>? = nil
     ) {
         self.init(
             calories: calories,
@@ -322,7 +335,8 @@ struct PulsarNutritionFacts: Codable, Equatable, Hashable {
             fat: fats,
             fiber: fiber,
             sugar: sugar,
-            sodiumMilligrams: sodiumMilligrams
+            sodiumMilligrams: sodiumMilligrams,
+            reportedNutrientKeys: reportedNutrientKeys
         )
     }
 
@@ -354,7 +368,8 @@ struct PulsarNutritionFacts: Codable, Equatable, Hashable {
             fat: fat * multiplier,
             fiber: fiber * multiplier,
             sugar: sugar * multiplier,
-            sodiumMilligrams: sodiumMilligrams * multiplier
+            sodiumMilligrams: sodiumMilligrams * multiplier,
+            reportedNutrientKeys: reportedNutrientKeys
         )
     }
 
@@ -366,7 +381,10 @@ struct PulsarNutritionFacts: Codable, Equatable, Hashable {
             fat: lhs.fat + rhs.fat,
             fiber: lhs.fiber + rhs.fiber,
             sugar: lhs.sugar + rhs.sugar,
-            sodiumMilligrams: lhs.sodiumMilligrams + rhs.sodiumMilligrams
+            sodiumMilligrams: lhs.sodiumMilligrams + rhs.sodiumMilligrams,
+            reportedNutrientKeys: lhs.reportedNutrientKeys.flatMap { lhsKeys in
+                rhs.reportedNutrientKeys.map { lhsKeys.intersection($0) }
+            }
         )
     }
 }
@@ -375,12 +393,14 @@ struct PulsarNutritionServing: Codable, Equatable, Hashable {
     var amount: Double
     var unit: String
     var grams: Double?
+    var milliliters: Double?
 
-    init(amount: Double, unit: String, grams: Double? = nil) {
+    init(amount: Double, unit: String, grams: Double? = nil, milliliters: Double? = nil) {
         self.amount = max(0.05, amount)
         let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
         self.unit = trimmedUnit.isEmpty ? "serving" : trimmedUnit
         self.grams = grams.map { max(0, $0) }
+        self.milliliters = milliliters.map { max(0, $0) }
     }
 
     var title: String {
@@ -389,6 +409,9 @@ struct PulsarNutritionServing: Codable, Equatable, Hashable {
             : String(format: "%.1f", amount)
         if let grams {
             return "\(amountText) \(unit) / \(Int(grams.rounded()))g"
+        }
+        if let milliliters {
+            return "\(amountText) \(unit) / \(Int(milliliters.rounded()))ml"
         }
         return "\(amountText) \(unit)"
     }
@@ -615,6 +638,10 @@ struct PulsarNutritionTargetSnapshot: Identifiable, Codable, Equatable, Hashable
     var recoveryScore: Int
     var activityLoad: String
     var rationale: String
+    var carbohydratesTargetGrams: Double?
+    var fatTargetGrams: Double?
+    var source: PulsarNutritionTargetSource
+    var calculationID: UUID?
 
     init(
         id: UUID = UUID(),
@@ -625,7 +652,11 @@ struct PulsarNutritionTargetSnapshot: Identifiable, Codable, Equatable, Hashable
         hydrationTargetMilliliters: Double,
         recoveryScore: Int,
         activityLoad: String,
-        rationale: String
+        rationale: String,
+        carbohydratesTargetGrams: Double? = nil,
+        fatTargetGrams: Double? = nil,
+        source: PulsarNutritionTargetSource = .heuristic,
+        calculationID: UUID? = nil
     ) {
         self.id = id
         self.date = date
@@ -636,7 +667,39 @@ struct PulsarNutritionTargetSnapshot: Identifiable, Codable, Equatable, Hashable
         self.recoveryScore = min(max(recoveryScore, 0), 100)
         self.activityLoad = activityLoad
         self.rationale = rationale
+        self.carbohydratesTargetGrams = carbohydratesTargetGrams.map { max(0, $0) }
+        self.fatTargetGrams = fatTargetGrams.map { max(0, $0) }
+        self.source = source
+        self.calculationID = calculationID
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, date, fuelRange, proteinRange, fiberTarget, hydrationTargetMilliliters
+        case recoveryScore, activityLoad, rationale, carbohydratesTargetGrams, fatTargetGrams
+        case source, calculationID
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        date = try container.decodeIfPresent(Date.self, forKey: .date) ?? .now
+        fuelRange = try container.decode(ClosedRange<Double>.self, forKey: .fuelRange)
+        proteinRange = try container.decode(ClosedRange<Double>.self, forKey: .proteinRange)
+        fiberTarget = try container.decode(Double.self, forKey: .fiberTarget)
+        hydrationTargetMilliliters = try container.decode(Double.self, forKey: .hydrationTargetMilliliters)
+        recoveryScore = try container.decodeIfPresent(Int.self, forKey: .recoveryScore) ?? 0
+        activityLoad = try container.decodeIfPresent(String.self, forKey: .activityLoad) ?? "Unknown"
+        rationale = try container.decodeIfPresent(String.self, forKey: .rationale) ?? ""
+        carbohydratesTargetGrams = try container.decodeIfPresent(Double.self, forKey: .carbohydratesTargetGrams)
+        fatTargetGrams = try container.decodeIfPresent(Double.self, forKey: .fatTargetGrams)
+        source = try container.decodeIfPresent(PulsarNutritionTargetSource.self, forKey: .source) ?? .heuristic
+        calculationID = try container.decodeIfPresent(UUID.self, forKey: .calculationID)
+    }
+}
+
+enum PulsarNutritionTargetSource: String, Codable, Equatable, Hashable {
+    case heuristic
+    case orionCalculation
 }
 
 struct PulsarMealTemplateItem: Identifiable, Codable, Equatable, Hashable {
@@ -840,6 +903,7 @@ struct PulsarNutritionState: Codable, Equatable {
     var recipes: [PulsarRecipe]
     var bodyCheckIns: [PulsarBodyCheckIn]
     var targetSnapshots: [PulsarNutritionTargetSnapshot]
+    var savedNutritionalCalculations: [SavedNutritionalCalculation]
     var eatingWindow: PulsarEatingWindow
 
     static let empty = PulsarNutritionState(
@@ -851,6 +915,7 @@ struct PulsarNutritionState: Codable, Equatable {
         recipes: [],
         bodyCheckIns: [],
         targetSnapshots: [],
+        savedNutritionalCalculations: [],
         eatingWindow: .default
     )
 
@@ -863,6 +928,7 @@ struct PulsarNutritionState: Codable, Equatable {
         recipes: [PulsarRecipe],
         bodyCheckIns: [PulsarBodyCheckIn],
         targetSnapshots: [PulsarNutritionTargetSnapshot],
+        savedNutritionalCalculations: [SavedNutritionalCalculation] = [],
         eatingWindow: PulsarEatingWindow
     ) {
         self.entries = entries
@@ -873,6 +939,7 @@ struct PulsarNutritionState: Codable, Equatable {
         self.recipes = recipes
         self.bodyCheckIns = bodyCheckIns
         self.targetSnapshots = targetSnapshots
+        self.savedNutritionalCalculations = savedNutritionalCalculations
         self.eatingWindow = eatingWindow
     }
 
@@ -885,6 +952,7 @@ struct PulsarNutritionState: Codable, Equatable {
         case recipes
         case bodyCheckIns
         case targetSnapshots
+        case savedNutritionalCalculations
         case eatingWindow
     }
 
@@ -898,6 +966,7 @@ struct PulsarNutritionState: Codable, Equatable {
         recipes = try container.decodeIfPresent([PulsarRecipe].self, forKey: .recipes) ?? []
         bodyCheckIns = try container.decodeIfPresent([PulsarBodyCheckIn].self, forKey: .bodyCheckIns) ?? []
         targetSnapshots = try container.decodeIfPresent([PulsarNutritionTargetSnapshot].self, forKey: .targetSnapshots) ?? []
+        savedNutritionalCalculations = try container.decodeIfPresent([SavedNutritionalCalculation].self, forKey: .savedNutritionalCalculations) ?? []
         eatingWindow = try container.decodeIfPresent(PulsarEatingWindow.self, forKey: .eatingWindow) ?? .default
     }
 }
@@ -968,11 +1037,11 @@ struct PulsarNutritionDashboard: Equatable {
     }
 
     var carbohydratesGoal: Double {
-        max(1, calorieGoal * 0.45 / 4)
+        max(1, target.carbohydratesTargetGrams ?? calorieGoal * 0.45 / 4)
     }
 
     var fatGoal: Double {
-        max(1, calorieGoal * 0.30 / 9)
+        max(1, target.fatTargetGrams ?? calorieGoal * 0.30 / 9)
     }
 }
 

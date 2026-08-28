@@ -40,6 +40,7 @@ struct DevicesView: View {
                         .padding(.vertical, 14)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(SettingsMonochromeDesign.primary)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 
                 SettingsSectionCard(title: "Compatible Through Apple Health") {
@@ -74,7 +75,7 @@ struct DevicesView: View {
             }
         }
         .padding(18)
-        .pulsarLiquidGlass(cornerRadius: 28)
+        .pulsarSettingsCardSurface(cornerRadius: 28)
     }
 
     private var currentSourceLabel: String {
@@ -103,86 +104,15 @@ struct DevicesView: View {
     }
 }
 
-struct DataSourcesView: View {
-    @ObservedObject var healthKitStore: HealthKitSettingsStore
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 18) {
-                HelperCard(symbol: "list.bullet.rectangle", title: "HealthKit Sample Types", message: "Pulsar reads these data types when you grant access. Availability depends on your device and connected Apple Health sources.", tint: .teal)
-                SettingsSectionCard(title: "Expected Data") {
-                    ForEach(Array(healthKitStore.dataSources.enumerated()), id: \.element.id) { index, item in
-                        HealthDataSourceRow(item: item)
-                        if index < healthKitStore.dataSources.count - 1 { SettingsDivider() }
-                    }
-                }
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, 12)
-            .padding(.bottom, 30)
-        }
-        .background(PulsarSectionBackground())
-        .navigationTitle("Data Sources")
-        .navigationBarTitleDisplayMode(.large)
-        .onAppear { healthKitStore.refreshStatus() }
-    }
-}
-
 struct HealthPermissionsView: View {
     @ObservedObject var healthKitStore: HealthKitSettingsStore
     var onAuthorizationUpdated: (() -> Void)? = nil
-    @State private var isRequesting = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 18) {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        SettingsIcon(symbol: "heart.text.square.fill", tint: healthKitStore.permissionState.tint)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Apple Health")
-                                .pulsarTextStyle(.cardTitle)
-                            Text(healthKitStore.permissionState.title)
-                                .pulsarTextStyle(.title)
-                        }
-                        Spacer()
-                        HealthStatusBadge(text: healthKitStore.permissionState.title, tint: healthKitStore.permissionState.tint)
-                    }
-                    Text("Pulsar reads compatible HealthKit data to estimate Sleep, Recovery, and Strain. You stay in control of what Apple Health shares.")
-                        .pulsarTextStyle(.metadata)
-                        .foregroundStyle(.secondary)
-                    Button {
-                        Task {
-                            isRequesting = true
-                            await healthKitStore.requestAuthorization()
-                            isRequesting = false
-                            if healthKitStore.permissionState == .connected {
-                                onAuthorizationUpdated?()
-                            }
-                        }
-                    } label: {
-                        Label(isRequesting ? "Requesting..." : "Connect Apple Health", systemImage: "heart.circle.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isRequesting || healthKitStore.permissionState == .notAvailable)
-                }
-                .padding(18)
-                .pulsarLiquidGlass(cornerRadius: 28)
-
-                if let message = healthKitStore.lastErrorMessage {
-                    HelperCard(symbol: "exclamationmark.triangle.fill", title: "Permission Note", message: message, tint: .orange)
-                }
-
-                HelperCard(symbol: "gearshape.fill", title: "Review Later", message: "To change access later, open the Health app, go to Sharing, then Apps and Services, and choose Pulsar.", tint: .gray)
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, 12)
-            .padding(.bottom, 30)
-        }
-        .background(PulsarSectionBackground())
-        .navigationTitle("Health Permissions")
-        .navigationBarTitleDisplayMode(.large)
+        HealthSettingsView(
+            healthKitStore: healthKitStore,
+            onAuthorizationUpdated: onAuthorizationUpdated
+        )
     }
 }
 
@@ -191,66 +121,153 @@ struct DataPrivacyView: View {
     @ObservedObject var healthKitStore: HealthKitSettingsStore
     var onReset: (() -> Void)? = nil
 
+    @Environment(\.dismiss) private var dismiss
     @State private var isShowingResetProfile = false
     @State private var isShowingResetSources = false
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 18) {
-                HelperCard(symbol: "lock.shield.fill", title: "Your Data", message: "Pulsar uses Apple Health as the central health data source. Local profile values are stored on this device for now.", tint: .gray)
-                SettingsSectionCard(title: "Usage") {
-                    SettingsValueRow(title: "HealthKit", value: "Read only", subtitle: "Used for Sleep, Recovery, and Strain insights")
-                    SettingsDivider()
-                    SettingsValueRow(title: "Local Profile", value: "On device", subtitle: "Name, preferences, measurements, and baselines")
-                    SettingsDivider()
-                    SettingsValueRow(title: "Medical Claims", value: "None", subtitle: "Pulsar helps estimate trends and is not diagnostic")
+            VStack(alignment: .leading, spacing: 0) {
+                DataPrivacyHeader()
+                    .padding(.top, 4)
+
+                PrivacySummaryCard()
+                    .padding(.top, 16)
+
+                PrivacySettingsSection(title: "Data Usage") {
+                    PrivacySettingsRow(
+                        title: "HealthKit",
+                        subtitle: "Used for Sleep, Recovery, and Strain insights",
+                        symbol: "heart",
+                        tint: DataPrivacyDesign.violet,
+                        trailingValue: "Read only"
+                    )
+                    PrivacySettingsDivider()
+                    PrivacySettingsRow(
+                        title: "Local Profile",
+                        subtitle: "Name, preferences, measurements, and baselines",
+                        symbol: "person",
+                        tint: DataPrivacyDesign.violet,
+                        trailingValue: "On device"
+                    )
+                    PrivacySettingsDivider()
+                    PrivacySettingsRow(
+                        title: "Medical Claims",
+                        subtitle: "Pulsar helps estimate trends and is not diagnostic",
+                        symbol: "cross.case",
+                        tint: DataPrivacyDesign.violet,
+                        trailingValue: "None"
+                    )
                 }
-                SettingsSectionCard(title: "Reset") {
-                    Button(role: .destructive) { isShowingResetProfile = true } label: {
-                        Label("Reset Local Profile Data", systemImage: "trash")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
+                .padding(.top, 22)
+
+                PrivacySettingsSection(title: "Data Controls") {
+                    Button(action: showResetProfileConfirmation) {
+                        PrivacySettingsRow(
+                            title: "Reset Local Profile Data",
+                            subtitle: "Remove all locally stored profile data",
+                            symbol: "trash",
+                            tint: .black
+                        )
                     }
-                    SettingsDivider()
-                    Button(role: .destructive) { isShowingResetSources = true } label: {
-                        Label("Reset Device & Source Preferences", systemImage: "arrow.counterclockwise")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
+                    .buttonStyle(.plain)
+                    .confirmationDialog(
+                        "Reset local profile data?",
+                        isPresented: $isShowingResetProfile,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Reset Profile", action: resetLocalProfile)
+                        Button("Cancel", role: .cancel) { }
+                    } message: {
+                        Text("This clears locally saved profile and preference values. It does not delete Apple Health data.")
                     }
-                    SettingsDivider()
-                    SettingsValueRow(title: "Export / Delete Data", value: "Coming later", subtitle: "Placeholder for a full account data flow")
+
+                    PrivacySettingsDivider()
+
+                    Button(action: showResetSourcesConfirmation) {
+                        PrivacySettingsRow(
+                            title: "Reset Device & Source Preferences",
+                            subtitle: "Restore default data source settings",
+                            symbol: "arrow.counterclockwise",
+                            tint: .black
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .confirmationDialog(
+                        "Reset source preferences?",
+                        isPresented: $isShowingResetSources,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Reset Sources", action: resetSourcePreferences)
+                        Button("Cancel", role: .cancel) { }
+                    }
+
+                    PrivacySettingsDivider()
+
+                    PrivacySettingsRow(
+                        title: "Export / Delete Data",
+                        subtitle: "Coming soon",
+                        symbol: "square.and.arrow.up",
+                        tint: .black,
+                        trailingValue: "Coming later",
+                        usesStatusCapsule: true
+                    )
+                    .accessibilityLabel("Export or delete data")
+                    .accessibilityValue("Coming later")
                 }
+                .padding(.top, 22)
+
+                PrivacyFooter()
+                    .padding(.top, 16)
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 12)
-            .padding(.bottom, 30)
+            .frame(maxWidth: DataPrivacyDesign.maximumContentWidth)
+            .padding(.horizontal, DataPrivacyDesign.horizontalPadding)
+            .padding(.bottom, 18)
+            .frame(maxWidth: .infinity)
         }
-        .background(PulsarSectionBackground())
-        .navigationTitle("Data & Privacy")
-        .navigationBarTitleDisplayMode(.large)
-        .confirmationDialog("Reset local profile data?", isPresented: $isShowingResetProfile, titleVisibility: .visible) {
-            Button("Reset Profile", role: .destructive) {
-                store.resetLocalProfile()
-                onReset?()
+        .scrollIndicators(.hidden)
+        .scrollBounceBehavior(.basedOnSize)
+        .background(DataPrivacyDesign.pageBackground.ignoresSafeArea())
+        .navigationBarBackButtonHidden()
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Back", systemImage: "chevron.left", action: dismissDataPrivacy)
+                    .profileActionControl(tint: .primary)
             }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("This clears locally saved profile and preference values. It does not delete Apple Health data.")
         }
-        .confirmationDialog("Reset source preferences?", isPresented: $isShowingResetSources, titleVisibility: .visible) {
-            Button("Reset Sources", role: .destructive) {
-                store.update { profile in
-                    profile.preferredDataSource = .automatic
-                    profile.primarySleepSource = .automatic
-                }
-                healthKitStore.resetPermissionIntroduction()
-                onReset?()
-            }
-            Button("Cancel", role: .cancel) { }
-        }
+        .tint(SettingsMonochromeDesign.primary)
+        .preferredColorScheme(.light)
     }
+
+    private func dismissDataPrivacy() {
+        dismiss()
+    }
+
+    private func showResetProfileConfirmation() {
+        isShowingResetProfile = true
+    }
+
+    private func showResetSourcesConfirmation() {
+        isShowingResetSources = true
+    }
+
+    private func resetLocalProfile() {
+        store.resetLocalProfile()
+        onReset?()
+    }
+
+    private func resetSourcePreferences() {
+        store.update { profile in
+            profile.preferredDataSource = .automatic
+            profile.primarySleepSource = .automatic
+        }
+        healthKitStore.resetPermissionIntroduction()
+        onReset?()
+    }
+
 }
 
 private struct CompatibleSource: Hashable {
@@ -263,7 +280,7 @@ private struct DeviceSourceRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            SettingsIcon(symbol: "checkmark.seal.fill", tint: .blue)
+            SettingsIcon(symbol: "checkmark.seal.fill", tint: .black)
             VStack(alignment: .leading, spacing: 3) {
                 Text(source.name)
                     .pulsarTextStyle(.bodyEmphasis)
@@ -278,27 +295,6 @@ private struct DeviceSourceRow: View {
     }
 }
 
-private struct HealthDataSourceRow: View {
-    var item: HealthDataSourceItem
-
-    var body: some View {
-        HStack(spacing: 14) {
-            SettingsIcon(symbol: item.symbol, tint: item.status.tint)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.title)
-                    .pulsarTextStyle(.bodyEmphasis)
-                Text(item.description)
-                    .pulsarTextStyle(.metadata)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 10)
-            HealthStatusBadge(text: item.status.rawValue, tint: item.status.tint)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-    }
-}
-
 private struct AddDeviceExplanationView: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -306,7 +302,7 @@ private struct AddDeviceExplanationView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {
-                    HelperCard(symbol: "heart.text.square.fill", title: "Add Through Apple Health", message: "Pulsar reads compatible devices through Apple Health / HealthKit. Connect your device or app to Apple Health first, then grant Pulsar access.", tint: .pink)
+                    HelperCard(symbol: "heart.text.square.fill", title: "Add Through Apple Health", message: "Pulsar reads compatible devices through Apple Health / HealthKit. Connect your device or app to Apple Health first, then grant Pulsar access.", tint: .black)
                     SettingsSectionCard(title: "How It Works") {
                         SettingsValueRow(title: "1. Connect Device", value: "Apple Health", subtitle: "Use the device maker's app to share data with Health")
                         SettingsDivider()
@@ -317,15 +313,24 @@ private struct AddDeviceExplanationView: View {
                 }
                 .padding(18)
             }
-            .background(PulsarSectionBackground())
+            .background(PulsarSettingsBackground())
             .navigationTitle("Add Device")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            .tint(SettingsMonochromeDesign.primary)
+            .preferredColorScheme(.light)
         }
     }
 }
 
 #Preview("Devices") { NavigationStack { DevicesView(store: SettingsPreviewStore.make(), healthKitStore: HealthKitSettingsStore()) } }
-#Preview("Data Sources") { NavigationStack { DataSourcesView(healthKitStore: HealthKitSettingsStore()) } }
 #Preview("Health Permissions") { NavigationStack { HealthPermissionsView(healthKitStore: HealthKitSettingsStore()) } }
-#Preview("Data Privacy") { NavigationStack { DataPrivacyView(store: SettingsPreviewStore.make(), healthKitStore: HealthKitSettingsStore()) } }
+#Preview("Data Privacy") {
+    NavigationStack {
+        DataPrivacyView(
+            store: SettingsPreviewStore.make(),
+            healthKitStore: HealthKitSettingsStore()
+        )
+    }
+    .id("data-privacy-compact")
+}

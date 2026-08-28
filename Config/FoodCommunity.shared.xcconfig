@@ -1,0 +1,8 @@
+// Pulsar community food database. OpenNutrition import credentials remain server-side.
+// The Supabase anon key is a public client identifier; database authorization is enforced by RLS.
+// Never put a Supabase service-role key in this file or the iOS application.
+
+FOOD_COMMUNITY_SUPABASE_URL =
+FOOD_COMMUNITY_SUPABASE_ANON_KEY =
+
+#include? "FoodCommunity.local.xcconfig"

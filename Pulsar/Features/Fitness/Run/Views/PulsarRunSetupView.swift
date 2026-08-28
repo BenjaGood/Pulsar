@@ -44,9 +44,13 @@ struct PulsarRunSetupView: View {
         }
         .onAppear {
             coordinator.refreshAvailability()
+            OutdoorWorkoutAudioCueSettings.applyPersistedPreference(to: &options)
             if coordinator.isWatchAvailable {
                 options.prefersWatchRecorder = coordinator.preferredSource == .appleWatch
             }
+        }
+        .onChange(of: options.audioCuesEnabled) { _, newValue in
+            OutdoorWorkoutAudioCueSettings.audioCuesEnabled = newValue
         }
         .sheet(isPresented: $isShowingHistory) {
             PulsarRunHistoryView(coordinator: coordinator, workoutKind: workoutKind)
@@ -65,6 +69,7 @@ struct PulsarRunSetupView: View {
                 }
             )
         }
+        .pulsarFitnessMonochromeAppearance()
     }
 
     private var header: some View {
@@ -130,10 +135,10 @@ struct PulsarRunSetupView: View {
                     Spacer()
                     Text("Open")
                         .pulsarTextStyle(.captionEmphasis)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.active)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(.green.opacity(0.12), in: Capsule())
+                        .background(PulsarFitnessMonochromeDesign.active.opacity(0.12), in: Capsule())
                 }
 
                 Text("Free \(workoutKind.actionName) today. Route planning and saved routes are a good next layer once recording is battle-tested.")
@@ -172,14 +177,14 @@ struct PulsarRunSetupView: View {
             PulsarRunGlassCard {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .pulsarTextStyle(.label)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         } else {
             PulsarRunGlassCard {
                 Label("HealthKit and Location are used only to record this \(workoutKind.actionName), route, and summary.", systemImage: "checkmark.shield.fill")
                     .pulsarTextStyle(.label)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.active)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -196,7 +201,7 @@ struct PulsarRunSetupView: View {
                 Text(workoutKind.startTitle)
                     .pulsarTextStyle(.sectionHeader)
             }
-            .foregroundStyle(Color(red: 0.03, green: 0.14, blue: 0.08))
+            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 18)
             .background(
@@ -237,11 +242,11 @@ struct PulsarRunSetupView: View {
             VStack(spacing: 14) {
                 Text("\(value)")
                     .font(.system(size: 104, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     .contentTransition(.numericText())
                 Text("Ready")
                     .pulsarTextStyle(.sectionHeader)
-                    .foregroundStyle(.white.opacity(0.72))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
             }
         }
     }
@@ -253,7 +258,7 @@ struct PulsarRunSetupView: View {
 
         if options.prefersWatchRecorder {
             let availability = await coordinator.watchRecorderAvailability(for: workoutKind)
-            guard availability.canStartOnWatch else {
+            guard availability.canAttemptWatchAppLaunch else {
                 watchFallbackPrompt = availability.fallbackPrompt(workoutName: workoutKind.displayName)
                 return
             }
@@ -304,9 +309,9 @@ struct PulsarRunSetupView: View {
 
     private var sourceTint: Color {
         if options.prefersWatchRecorder {
-            return coordinator.isWatchAvailable ? workoutKind.accentColor : .orange
+            return coordinator.isWatchAvailable ? workoutKind.accentColor : PulsarFitnessMonochromeDesign.primaryText
         }
-        return .cyan
+        return PulsarFitnessMonochromeDesign.primaryText
     }
 
     private var sourceTitle: String {
@@ -336,43 +341,18 @@ struct PulsarRunSetupView: View {
 
 struct PulsarRunGlassCard<Content: View>: View {
     @ViewBuilder var content: Content
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         content
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                LinearGradient(
-                    colors: colorScheme == .dark
-                        ? [Color.white.opacity(0.11), Color.white.opacity(0.045), Color.green.opacity(0.06)]
-                        : [Color.white.opacity(0.88), Color(red: 0.95, green: 0.98, blue: 1.00).opacity(0.76), Color.green.opacity(0.05)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                in: RoundedRectangle(cornerRadius: 26, style: .continuous)
-            )
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .stroke(.white.opacity(colorScheme == .dark ? 0.16 : 0.78), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.22 : 0.09), radius: 16, y: 9)
+            .pulsarFitnessMonochromeSurface(cornerRadius: 26, shadowOpacity: 0.055)
     }
 }
 
 private struct PulsarRunSetupBackground: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        LinearGradient(
-            colors: colorScheme == .dark
-                ? [Color(red: 0.04, green: 0.07, blue: 0.07), Color(red: 0.03, green: 0.05, blue: 0.09), Color.black]
-                : [Color(.systemBackground), Color(red: 0.91, green: 0.98, blue: 0.95), Color(red: 0.95, green: 0.97, blue: 1.0)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .ignoresSafeArea()
+        PulsarFitnessMonochromeBackground()
     }
 }
 
@@ -387,40 +367,10 @@ struct PulsarRunPressStyle: ButtonStyle {
 
 extension PulsarOutdoorWorkoutKind {
     var accentColor: Color {
-        switch self {
-        case .running: Color.green
-        case .indoorRunning: Color(red: 1.00, green: 0.46, blue: 0.34)
-        case .walking: Color(red: 0.44, green: 0.72, blue: 1.00)
-        case .hiking: Color(red: 0.34, green: 0.82, blue: 0.58)
-        case .cycling: Color(red: 0.25, green: 0.78, blue: 0.86)
-        case .hiit: Color(red: 1.00, green: 0.61, blue: 0.25)
-        case .strength: Color(red: 0.72, green: 0.66, blue: 1.00)
-        case .yoga, .stretching, .cooldown: Color(red: 0.72, green: 0.82, blue: 0.46)
-        case .pilates, .core, .mobility: Color(red: 0.44, green: 0.72, blue: 1.00)
-        case .swimming: Color(red: 0.34, green: 0.68, blue: 1.00)
-        case .rowing, .elliptical, .stairClimber: Color(red: 0.25, green: 0.78, blue: 0.86)
-        case .dance: Color(red: 1.00, green: 0.44, blue: 0.68)
-        case .boxing: Color(red: 1.00, green: 0.46, blue: 0.34)
-        case .other: Color(red: 0.68, green: 0.74, blue: 0.84)
-        }
+        PulsarFitnessMonochromeDesign.primaryText
     }
 
     var glowColor: Color {
-        switch self {
-        case .running: Color(red: 0.75, green: 1.0, blue: 0.55)
-        case .indoorRunning: Color(red: 1.00, green: 0.72, blue: 0.42)
-        case .walking: Color(red: 0.78, green: 0.92, blue: 1.0)
-        case .hiking: Color(red: 0.80, green: 1.0, blue: 0.70)
-        case .cycling: Color(red: 0.60, green: 0.95, blue: 1.0)
-        case .hiit: Color(red: 1.0, green: 0.82, blue: 0.56)
-        case .strength: Color(red: 0.86, green: 0.82, blue: 1.0)
-        case .yoga, .stretching, .cooldown: Color(red: 0.86, green: 0.94, blue: 0.62)
-        case .pilates, .core, .mobility: Color(red: 0.78, green: 0.92, blue: 1.0)
-        case .swimming: Color(red: 0.66, green: 0.86, blue: 1.0)
-        case .rowing, .elliptical, .stairClimber: Color(red: 0.60, green: 0.95, blue: 1.0)
-        case .dance: Color(red: 1.0, green: 0.72, blue: 0.86)
-        case .boxing: Color(red: 1.0, green: 0.70, blue: 0.58)
-        case .other: Color(red: 0.84, green: 0.88, blue: 0.96)
-        }
+        PulsarFitnessMonochromeDesign.secondaryText
     }
 }

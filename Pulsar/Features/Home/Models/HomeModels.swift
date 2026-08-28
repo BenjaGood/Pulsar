@@ -5,7 +5,7 @@
 
 import Foundation
 
-enum ConfidenceGrade: String, CaseIterable, Identifiable, Codable, Equatable, Hashable {
+nonisolated enum ConfidenceGrade: String, CaseIterable, Identifiable, Codable, Equatable, Hashable, Sendable {
     case high = "High"
     case moderate = "Moderate"
     case low = "Low"
@@ -799,6 +799,7 @@ struct RecoverySummary: Codable, Equatable {
 }
 
 struct HeartRateSample: Codable, Equatable {
+    var id: UUID? = nil
     var start: Date
     var end: Date
     var bpm: Double
@@ -1059,7 +1060,7 @@ struct StressDriver: Identifiable, Codable, Equatable {
     }
 }
 
-enum StressContext: String, Codable, Equatable, Hashable {
+nonisolated enum StressContext: String, Codable, Equatable, Hashable, Sendable {
     case sleep
     case workout
     case rest
@@ -1070,7 +1071,7 @@ enum StressContext: String, Codable, Equatable, Hashable {
     case unknown
 }
 
-struct StressSample: Identifiable, Codable, Equatable, Hashable {
+nonisolated struct StressSample: Identifiable, Codable, Equatable, Hashable, Sendable {
     var id: Date { timestamp }
     var timestamp: Date
     var score: Double
@@ -1134,7 +1135,7 @@ struct StressSummary: Codable, Equatable {
         score.map(Double.init)
     }
 
-    static let estimateSubtext = "Estimated from recent HR, HRV, movement, workouts, and personal baseline"
+    static let estimateSubtext = "Estimated from heart, breathing, sleep, movement, workout load, and personal baselines"
 
     init(
         date: Date?,

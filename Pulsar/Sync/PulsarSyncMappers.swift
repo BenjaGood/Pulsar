@@ -12,7 +12,7 @@ extension ConfidenceGrade {
 }
 
 extension PulsarSyncConfidence {
-    var appConfidence: ConfidenceGrade {
+    nonisolated var appConfidence: ConfidenceGrade {
         switch self {
         case .high: .high
         case .moderate: .moderate
@@ -626,7 +626,7 @@ private extension HealthMetricKind {
 }
 
 extension PulsarHealthMetricSyncKind {
-    var appKind: HealthMetricKind {
+    nonisolated var appKind: HealthMetricKind {
         switch self {
         case .respiratoryRate:
             .respiratoryRate
@@ -660,7 +660,7 @@ private extension HealthMetricStatus {
 }
 
 extension PulsarHealthMetricSyncStatus {
-    var appStatus: HealthMetricStatus {
+    nonisolated var appStatus: HealthMetricStatus {
         switch self {
         case .normal:
             .normal

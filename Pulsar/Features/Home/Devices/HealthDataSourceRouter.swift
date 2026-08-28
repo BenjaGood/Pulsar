@@ -13,6 +13,9 @@ enum SourceSelectionPolicy: Equatable {
 enum PulsarSourceRouterLogger {
     static func log(_ message: String) {
         #if DEBUG
+        if PulsarWorkoutHandshakeLogGate.suppressNonWorkoutDiagnostics {
+            return
+        }
         print("[PulsarSourceRouter] \(message)")
         #endif
     }

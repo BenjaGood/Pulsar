@@ -119,6 +119,75 @@ final class MindfulnessEngineTests: XCTestCase {
         XCTAssertEqual(snapshot.days.compactMap(\.entry).count, 2)
     }
 
+    func testGuidedQuestionOrderAndFivePointMappingPreserveSleep() {
+        XCTAssertEqual(
+            MindfulnessQuestion.allCases,
+            [.energy, .stress, .gratitude, .anxiety, .social, .productivity]
+        )
+
+        var draft = PulsarDailyJournalDraft()
+        draft.sleepPerception = 0.73
+
+        MindfulnessQuestion.energy.store(rating: 1, in: &draft)
+        MindfulnessQuestion.stress.store(rating: 3, in: &draft)
+        MindfulnessQuestion.productivity.store(rating: 5, in: &draft)
+
+        XCTAssertEqual(draft.energy, 0, accuracy: 0.001)
+        XCTAssertEqual(draft.stress, 0.5, accuracy: 0.001)
+        XCTAssertEqual(draft.productivity, 1, accuracy: 0.001)
+        XCTAssertEqual(draft.sleepPerception, 0.73, accuracy: 0.001)
+    }
+
+    func testEmotionSelectionMapsToExistingDraftFields() {
+        var draft = PulsarDailyJournalDraft()
+
+        MindfulnessEmotion.happy.apply(to: &draft)
+        XCTAssertEqual(draft.valence, 0.82, accuracy: 0.001)
+        XCTAssertEqual(draft.emotionLabels, [.content])
+        XCTAssertEqual(MindfulnessEmotion.selected(in: draft), .happy)
+
+        MindfulnessEmotion.neutral.apply(to: &draft)
+        XCTAssertEqual(draft.valence, 0, accuracy: 0.001)
+        XCTAssertTrue(draft.emotionLabels.isEmpty)
+        XCTAssertEqual(MindfulnessEmotion.selected(in: draft), .neutral)
+    }
+
+    func testHistoryEmotionSelectionUsesPersistedMood() {
+        let entry = PulsarDailyJournalEntry(
+            valence: 0.5,
+            energy: 0.5,
+            stress: 0.5,
+            gratitude: 0.5,
+            anxiety: 0.5,
+            socialConnection: 0.5,
+            productivity: 0.5,
+            sleepPerception: 0.5,
+            emotionLabels: [.calm]
+        )
+
+        XCTAssertEqual(MindfulnessEmotion.selected(in: entry), .calm)
+    }
+
+    func testHistoryQuestionRatingsUseFivePointScale() {
+        let entry = PulsarDailyJournalEntry(
+            valence: 0.5,
+            energy: 0,
+            stress: 0.25,
+            gratitude: 0.5,
+            anxiety: 0.75,
+            socialConnection: 1,
+            productivity: 0.5,
+            sleepPerception: 0.5
+        )
+
+        XCTAssertEqual(MindfulnessQuestion.energy.rating(in: entry), 1)
+        XCTAssertEqual(MindfulnessQuestion.stress.rating(in: entry), 2)
+        XCTAssertEqual(MindfulnessQuestion.gratitude.rating(in: entry), 3)
+        XCTAssertEqual(MindfulnessQuestion.anxiety.rating(in: entry), 4)
+        XCTAssertEqual(MindfulnessQuestion.social.rating(in: entry), 5)
+        XCTAssertEqual(MindfulnessQuestion.productivity.rating(in: entry), 3)
+    }
+
     @MainActor
     func testMindfulnessStorePersistsCheckIns() {
         let today = date(year: 2026, month: 5, day: 23, hour: 21)

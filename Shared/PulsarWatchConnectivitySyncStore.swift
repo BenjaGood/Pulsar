@@ -1,16 +1,18 @@
 import Combine
 import Foundation
+import HealthKit
+import OSLog
 import WatchConnectivity
 #if os(watchOS)
 import WatchKit
 #endif
 
-struct AppleWatchBatterySnapshot: Codable, Equatable {
+struct AppleWatchBatterySnapshot: nonisolated Codable, Equatable, Sendable {
     var batteryPercentage: Int
     var timestamp: Date
 }
 
-struct AppleWatchHeartbeatSnapshot: Codable, Equatable {
+struct AppleWatchHeartbeatSnapshot: nonisolated Codable, Equatable, Sendable {
     var appInstalled: Bool
     var watchAppVersion: String?
     var timestamp: Date
@@ -36,25 +38,41 @@ struct PulsarWatchRecorderAvailabilitySnapshot: Equatable {
     }
 
     var isWatchAppInstalled: Bool {
-        rawIsWatchAppInstalled || rawIsReachable || (isPaired && (hasRecentWatchHeartbeat || hasEverReceivedWatchPayload))
+        rawIsWatchAppInstalled
     }
 
     var isReachable: Bool {
-        rawIsReachable || hasRecentWatchHeartbeat
+        rawIsReachable
+    }
+
+    /// HealthKit can wake the Watch app independently of an interactive
+    /// WatchConnectivity session. Use this for the Watch-first launch decision.
+    var canAttemptWatchAppLaunch: Bool {
+        isSupported &&
+            activationStateRawValue == WCSessionActivationState.activated.rawValue &&
+            isPaired &&
+            isWatchAppInstalled
+    }
+
+    /// `isReachable` is useful for choosing a real-time transport, but must
+    /// never prevent a HealthKit Watch-app launch attempt.
+    var isWatchInteractivelyReachable: Bool {
+        isReachable
+    }
+
+    /// Diagnostic-only signal; must not promote current installation/reachability.
+    var hasDiagnosticRecentWatchHeartbeat: Bool {
+        hasRecentWatchHeartbeat
     }
 
     var derivedReachabilityDescription: String {
         if rawIsReachable { return "rawReachable" }
-        if hasRecentWatchHeartbeat { return "recentHeartbeat" }
+        if hasRecentWatchHeartbeat { return "recentHeartbeatDiagnosticOnly" }
         return "notReachable"
     }
 
     var canStartOnWatch: Bool {
-        isSupported &&
-            activationStateRawValue == WCSessionActivationState.activated.rawValue &&
-            isPaired &&
-            isWatchAppInstalled &&
-            isReachable
+        canAttemptWatchAppLaunch && isWatchInteractivelyReachable
     }
 
     var fallbackReason: PulsarWatchRecorderFallbackReason? {
@@ -64,7 +82,6 @@ struct PulsarWatchRecorderAvailabilitySnapshot: Equatable {
         guard isWatchAppInstalled else {
             return hasEverReceivedWatchPayload ? .notReachable : .watchAppNotInstalled
         }
-        guard isReachable else { return .notReachable }
         return nil
     }
 
@@ -118,6 +135,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     @Published private(set) var lastActiveWorkoutUpdateEvent: ActiveWorkoutUpdateEvent?
     @Published private(set) var activeGymState: ActiveGymWorkoutState?
     @Published private(set) var lastFinishedGymState: ActiveGymWorkoutState?
+    @Published private(set) var lastConfirmedGymFinish: GymWorkoutFinishConfirmation?
     @Published private(set) var savedGymRoutines: [WatchGymRoutinePlan]
     @Published private(set) var savedGymRoutinesRevision: Int
     @Published private(set) var lastWatchRecorderAvailability: PulsarWatchRecorderAvailabilitySnapshot?
@@ -126,7 +144,15 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     @Published private(set) var latestWatchHeartbeat: AppleWatchHeartbeatSnapshot?
     @Published private(set) var sourceCacheRevision: Int = 0
 
+    /// Unverified Watch launch state retained only long enough to correlate an
+    /// existing HealthKit recovery. It is never published and cannot authorize
+    /// creation of a new `HKWorkoutSession`.
+    private(set) var gymRestorationCandidate: ActiveGymWorkoutState?
+    private(set) var restoredActiveWorkoutCandidate: PulsarActiveWorkoutSyncState?
+
     private let defaults: UserDefaults
+    private let payloadFileCache: PulsarSyncPayloadFileCache
+    private let codecActor = PulsarWatchConnectivityCodecActor.shared
     private let cacheKey = "pulsar.sync.cachedDailyMetricsPayload.v1"
     private let dailyCacheKey = "pulsar.sync.cachedDailyMetricPayloadsByDateKey.v1"
     private let sleepCacheKey = "pulsar.sync.cachedSleepPayloadsByDateKey.v1"
@@ -142,8 +168,13 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     private let lastWatchSeenAtCacheKey = "pulsar.sync.lastWatchSeenAt.v1"
     private let hasEverReceivedWatchPayloadCacheKey = "pulsar.sync.hasEverReceivedWatchPayload.v1"
     private let watchHeartbeatCacheKey = "pulsar.sync.watchHeartbeat.v1"
-    private static let activeWorkoutTombstoneInterval: TimeInterval = PulsarWorkoutSessionValidity.liveHeartbeatGraceInterval
+    private static let activeWorkoutTombstoneRetentionLimit = 512
     private static let watchSeenPublishInterval: TimeInterval = 30
+    #if os(watchOS)
+    nonisolated static let dailyCacheRetentionLimit = 14
+    #else
+    nonisolated static let dailyCacheRetentionLimit = 120
+    #endif
     private let session: WCSession?
     private var dailyPayloadsByDateKey: [String: PulsarDailyMetricsSyncPayload]
     private var sleepPayloadsByDateKey: [String: PulsarDailyMetricsSyncPayload]
@@ -154,16 +185,33 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     private var currentActiveWorkoutSessionID: UUID?
     private var currentActiveWorkoutCanShowConnectionLostAlert = false
     private var gymActionHandler: ((ActiveGymWorkoutAction) -> Void)?
+    private var gymStartAcknowledgementHandler: ((GymWorkoutStartAcknowledgement, String) -> Void)?
+    private var gymRoutineSnapshotHandler: ((GymRoutineSnapshotEnvelope, String) -> Void)?
     private var runTransportEnvelopeHandler: ((PulsarRunTransportEnvelope, String) -> Void)?
     private var lastActivationErrorMessage: String?
-    private var lastActiveWorkoutLiveTransferAt = Date.distantPast
     private var lastActiveWorkoutLiveApplicationContextAt = Date.distantPast
-    private var lastActiveGymLiveTransferAt = Date.distantPast
     private var lastActiveGymLiveApplicationContextAt = Date.distantPast
+    private var pendingActiveGymPersistence: ActiveGymWorkoutState?
+    private var activeGymPersistenceTask: Task<Void, Never>?
+    private var activeGymPersistenceGeneration = 0
+    private var lastPersistedGymFingerprint: String?
+    private var lastTransmittedGymFingerprint: String?
+    private var activeWorkoutPersistenceGeneration = 0
     private var recentTerminalActiveWorkoutState: PulsarActiveWorkoutSyncState?
     private var recentTerminalGymState: ActiveGymWorkoutState?
+    private var committedTerminalGymSessionID: UUID?
+    private var pendingGymFinishHealthKitSessionStateRawValue: Int?
+    private var terminalGymPersistenceTask: Task<Void, Never>?
+    private(set) var lastGymTerminalCommit: PulsarGymTerminalCommitRecord?
+    private(set) var acceptedGymTerminalCount = 0
+    private(set) var rejectedGymTerminalCount = 0
     private var receivedWorkoutSyncMessageIDs = Set<String>()
     private var handledGymActionIDs = Set<UUID>()
+    private var payloadFilePersistenceRevision: UInt64 = 0
+    private var deferredNonWorkoutReceiveTask: Task<Void, Never>?
+    private var pendingDeferredNonWorkoutPayloads: [(payload: PulsarWatchConnectivityDecodedPayload, reason: String)] = []
+    private var lastQueuedSavedGymRoutinesRevision: Int?
+    private var lastQueuedSavedGymRoutinesData: Data?
     #if os(iOS)
     private let gymLiveActivityManager = GymLiveActivityManager()
     #endif
@@ -190,6 +238,40 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         }
     }
 
+    nonisolated static func retainedDailyPayloads(
+        _ cache: [String: PulsarDailyMetricsSyncPayload],
+        limit: Int = dailyCacheRetentionLimit
+    ) -> [String: PulsarDailyMetricsSyncPayload] {
+        guard limit > 0, cache.count > limit else { return limit > 0 ? cache : [:] }
+        return Dictionary(
+            uniqueKeysWithValues: cache
+                .sorted { lhs, rhs in
+                    if lhs.value.date == rhs.value.date { return lhs.key > rhs.key }
+                    return lhs.value.date > rhs.value.date
+                }
+                .prefix(limit)
+                .map { ($0.key, $0.value) }
+        )
+    }
+
+    nonisolated static func retainedSourcePayloads(
+        _ cache: [String: [PulsarSyncSourceDevice: PulsarDailyMetricsSyncPayload]],
+        limit: Int = dailyCacheRetentionLimit
+    ) -> [String: [PulsarSyncSourceDevice: PulsarDailyMetricsSyncPayload]] {
+        guard limit > 0, cache.count > limit else { return limit > 0 ? cache : [:] }
+        return Dictionary(
+            uniqueKeysWithValues: cache
+                .sorted { lhs, rhs in
+                    let lhsDate = lhs.value.values.map(\.date).max() ?? .distantPast
+                    let rhsDate = rhs.value.values.map(\.date).max() ?? .distantPast
+                    if lhsDate == rhsDate { return lhs.key > rhs.key }
+                    return lhsDate > rhsDate
+                }
+                .prefix(limit)
+                .map { ($0.key, $0.value) }
+        )
+    }
+
     private nonisolated static func decodeSourcePayloadCache(
         _ data: Data?,
         fallbackPayloads: [String: PulsarDailyMetricsSyncPayload],
@@ -210,12 +292,66 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
 
     private override init() {
         self.defaults = .standard
+        let payloadFileCache = PulsarSyncPayloadFileCache.shared
+        self.payloadFileCache = payloadFileCache
         self.session = WCSession.isSupported() ? WCSession.default : nil
+        let latestPayloadData = payloadFileCache.migrateLegacyData(
+            from: defaults,
+            key: cacheKey,
+            to: .latestPayload,
+            validating: { data in
+                PulsarSyncPayloadCodec.decode(data: data)?.isValidPayload == true
+            }
+        )
+        let dailyPayloadData = payloadFileCache.migrateLegacyData(
+            from: defaults,
+            key: dailyCacheKey,
+            to: .dailyPayloads,
+            validating: { data in
+                (try? JSONDecoder().decode([String: PulsarDailyMetricsSyncPayload].self, from: data)) != nil
+            }
+        )
+        let sleepPayloadData = payloadFileCache.migrateLegacyData(
+            from: defaults,
+            key: sleepCacheKey,
+            to: .sleepPayloads,
+            validating: { data in
+                (try? JSONDecoder().decode([String: PulsarDailyMetricsSyncPayload].self, from: data)) != nil
+            }
+        )
+        let sourceDailyPayloadData = payloadFileCache.migrateLegacyData(
+            from: defaults,
+            key: sourceDailyCacheKey,
+            to: .sourceDailyPayloads,
+            validating: { data in
+                (try? JSONDecoder().decode(
+                    [String: [PulsarSyncSourceDevice: PulsarDailyMetricsSyncPayload]].self,
+                    from: data
+                )) != nil
+            }
+        )
+        let sourceSleepPayloadData = payloadFileCache.migrateLegacyData(
+            from: defaults,
+            key: sourceSleepCacheKey,
+            to: .sourceSleepPayloads,
+            validating: { data in
+                (try? JSONDecoder().decode(
+                    [String: [PulsarSyncSourceDevice: PulsarDailyMetricsSyncPayload]].self,
+                    from: data
+                )) != nil
+            }
+        )
+        let savedGymRoutinesData = payloadFileCache.migrateLegacyData(
+            from: defaults,
+            key: savedGymRoutinesCacheKey,
+            to: .savedGymRoutines,
+            validating: { SavedGymRoutinesSyncCodec.decode($0) != nil }
+        )
         let restoredTerminatedActiveWorkoutSessions = Self.prunedActiveWorkoutTombstones(
             Self.decodeActiveWorkoutTombstones(defaults.data(forKey: activeWorkoutTombstoneCacheKey))
         )
         self.locallyTerminatedActiveWorkoutSessions = restoredTerminatedActiveWorkoutSessions
-        if let data = defaults.data(forKey: dailyCacheKey),
+        if let data = dailyPayloadData,
            let payloads = try? JSONDecoder().decode([String: PulsarDailyMetricsSyncPayload].self, from: data) {
             self.dailyPayloadsByDateKey = payloads.reduce(into: [:]) { result, entry in
                 let sanitized = entry.value.sanitizedForDeclaredSource()
@@ -227,7 +363,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         } else {
             self.dailyPayloadsByDateKey = [:]
         }
-        if let data = defaults.data(forKey: sleepCacheKey),
+        if let data = sleepPayloadData,
            let payloads = try? JSONDecoder().decode([String: PulsarDailyMetricsSyncPayload].self, from: data) {
             self.sleepPayloadsByDateKey = payloads.reduce(into: [:]) { result, entry in
                 let sanitized = entry.value.sanitizedForDeclaredSource()
@@ -238,16 +374,16 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             self.sleepPayloadsByDateKey = [:]
         }
         self.sourceDailyPayloadsByDateKey = Self.decodeSourcePayloadCache(
-            defaults.data(forKey: sourceDailyCacheKey),
+            sourceDailyPayloadData,
             fallbackPayloads: self.dailyPayloadsByDateKey,
             isUsable: { $0.hasCompleteDailyScores || $0.hasValidStrain || $0.hasValidRecovery || $0.hasValidStress || $0.hasValidHealthMonitor }
         )
         self.sourceSleepPayloadsByDateKey = Self.decodeSourcePayloadCache(
-            defaults.data(forKey: sourceSleepCacheKey),
+            sourceSleepPayloadData,
             fallbackPayloads: self.sleepPayloadsByDateKey,
             isUsable: { $0.sleep?.isValid == true }
         )
-        if let data = defaults.data(forKey: cacheKey),
+        if let data = latestPayloadData,
            let payload = PulsarSyncPayloadCodec.decode(data: data),
            payload.isValidPayload {
             let sanitized = payload.sanitizedForDeclaredSource()
@@ -287,7 +423,6 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             restoredLastWatchSeenAt != nil ||
             restoredAppleWatchBattery != nil ||
             restoredWatchHeartbeat != nil
-        var restoredActiveWorkoutStateForLaunch: PulsarActiveWorkoutSyncState?
         if let data = defaults.data(forKey: activeWorkoutCacheKey),
            let state = Self.decodeActiveWorkoutState(data) {
             let isTombstoned = Self.isActiveWorkoutSessionTombstoned(
@@ -295,18 +430,22 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
                 tombstones: restoredTerminatedActiveWorkoutSessions
             )
             if Self.shouldRestoreCachedActiveWorkoutState(state), !isTombstoned {
-                self.activeWorkoutState = state
-                restoredActiveWorkoutStateForLaunch = state
+                self.activeWorkoutState = nil
+                self.restoredActiveWorkoutCandidate = state
+                defaults.removeObject(forKey: activeWorkoutCacheKey)
+                PulsarWorkoutStartupTrace.lifecycle(
+                    "[WorkoutRestore] workoutID=\(state.sessionId.uuidString) phase=\(state.phase.rawValue) source=UserDefaults decision=candidate"
+                )
             } else {
                 self.activeWorkoutState = nil
-                restoredActiveWorkoutStateForLaunch = nil
+                self.restoredActiveWorkoutCandidate = nil
                 defaults.removeObject(forKey: activeWorkoutCacheKey)
                 PulsarSyncDebugLogger.log("active workout restore rejected: \(Self.cachedActiveWorkoutRestoreRejectionReason(state, isTombstoned: isTombstoned)) session=\(state.sessionId.uuidString)")
                 PulsarSyncDebugLogger.log("active workout state cleared on launch session=\(state.sessionId.uuidString)")
             }
         } else {
             self.activeWorkoutState = nil
-            restoredActiveWorkoutStateForLaunch = nil
+            self.restoredActiveWorkoutCandidate = nil
             if defaults.data(forKey: activeWorkoutCacheKey) != nil {
                 PulsarSyncDebugLogger.log("active workout restore rejected: decode failed")
                 PulsarSyncDebugLogger.log("active workout state cleared on launch session=unknown")
@@ -319,22 +458,35 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
                 state.sessionId,
                 tombstones: restoredTerminatedActiveWorkoutSessions
             )
-            if Self.shouldRestoreCachedActiveGymState(state),
-               !isTombstoned {
-                self.activeGymState = state
+            if PulsarWatchSynchronizedGymReconciliation.shouldRestoreCachedActiveGym(
+                state,
+                platform: Self.synchronizedGymPlatform,
+                isTombstoned: isTombstoned
+            ) {
+                // Kept for source compatibility if platform policy changes,
+                // but persisted presentation state is never published here.
+                self.activeGymState = nil
+                self.gymRestorationCandidate = state
+                defaults.removeObject(forKey: activeGymCacheKey)
             } else {
                 self.activeGymState = nil
+                let retainsRecoveryCandidate =
+                    !isTombstoned &&
+                    !state.isFinished &&
+                    state.isValidActiveWorkoutPresentationCandidate()
+                self.gymRestorationCandidate = retainsRecoveryCandidate ? state : nil
                 defaults.removeObject(forKey: activeGymCacheKey)
-                if restoredActiveWorkoutStateForLaunch?.sessionId == state.sessionId {
-                    restoredActiveWorkoutStateForLaunch = nil
-                    self.activeWorkoutState = nil
-                    defaults.removeObject(forKey: activeWorkoutCacheKey)
+                PulsarWorkoutStartupTrace.lifecycle(
+                    "[GymRestore] workoutID=\(state.sessionId.uuidString) phase=\(state.isFinished ? "finished" : "active") revision=\(state.lifecycleGeneration ?? 0) source=UserDefaults decision=\(retainsRecoveryCandidate ? "candidate" : "stale")"
+                )
+                if !retainsRecoveryCandidate {
+                    PulsarSyncDebugLogger.log("active workout restore rejected: \(Self.cachedActiveGymRestoreRejectionReason(state, isTombstoned: isTombstoned)) session=\(state.sessionId.uuidString)")
+                    PulsarSyncDebugLogger.log("active workout state cleared on launch session=\(state.sessionId.uuidString)")
                 }
-                PulsarSyncDebugLogger.log("active workout restore rejected: \(Self.cachedActiveGymRestoreRejectionReason(state, isTombstoned: isTombstoned)) session=\(state.sessionId.uuidString)")
-                PulsarSyncDebugLogger.log("active workout state cleared on launch session=\(state.sessionId.uuidString)")
             }
         } else {
             self.activeGymState = nil
+            self.gymRestorationCandidate = nil
             if defaults.data(forKey: activeGymCacheKey) != nil {
                 PulsarSyncDebugLogger.log("active workout restore rejected: active gym decode failed")
                 PulsarSyncDebugLogger.log("active workout state cleared on launch session=unknown")
@@ -342,7 +494,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             defaults.removeObject(forKey: activeGymCacheKey)
         }
         let restoredSavedGymRoutinesRevision = max(0, defaults.integer(forKey: savedGymRoutinesRevisionCacheKey))
-        if let data = defaults.data(forKey: savedGymRoutinesCacheKey),
+        if let data = savedGymRoutinesData,
            let payload = SavedGymRoutinesSyncCodec.decode(data) {
             self.savedGymRoutines = payload.routines.sorted { $0.updatedAt > $1.updatedAt }
             self.savedGymRoutinesRevision = max(restoredSavedGymRoutinesRevision, payload.revision)
@@ -351,15 +503,22 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             self.savedGymRoutinesRevision = restoredSavedGymRoutinesRevision
         }
         super.init()
+        #if os(iOS)
+        // Candidates loaded from disk have no runtime authority on iPhone.
+        // Quarantine them only long enough to diagnose the restore, then discard
+        // before any observer can treat them as a live workout.
+        discardRestoredWorkoutCandidates(reason: "startupPersistedStateHasNoRuntimeAuthority")
+        #endif
+        pruneDailyCaches()
         if let latestPayload {
             persist(latestPayload)
         } else {
-            defaults.removeObject(forKey: cacheKey)
+            removePayloadFileCacheEntry(.latestPayload)
         }
         persistDailyPayloadCache()
         persistSleepPayloadCache()
-        persistSourcePayloadCache(sourceDailyPayloadsByDateKey, defaultsKey: sourceDailyCacheKey)
-        persistSourcePayloadCache(sourceSleepPayloadsByDateKey, defaultsKey: sourceSleepCacheKey)
+        persistSourcePayloadCache(sourceDailyPayloadsByDateKey, entry: .sourceDailyPayloads)
+        persistSourcePayloadCache(sourceSleepPayloadsByDateKey, entry: .sourceSleepPayloads)
         activateSessionIfNeeded()
     }
 
@@ -374,7 +533,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         let sanitized = latestPayload.sanitizedForDeclaredSource()
         guard sanitized.isValidPayload else {
             self.latestPayload = nil
-            defaults.removeObject(forKey: cacheKey)
+            removePayloadFileCacheEntry(.latestPayload)
             return nil
         }
         if sanitized != latestPayload {
@@ -458,7 +617,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             } else {
                 sourceDailyPayloadsByDateKey[dateKey] = sanitized
             }
-            persistSourcePayloadCache(sourceDailyPayloadsByDateKey, defaultsKey: sourceDailyCacheKey)
+            persistSourcePayloadCache(sourceDailyPayloadsByDateKey, entry: .sourceDailyPayloads)
         }
         return sanitized
     }
@@ -476,7 +635,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             } else {
                 sourceSleepPayloadsByDateKey[sleepDateKey] = sanitized
             }
-            persistSourcePayloadCache(sourceSleepPayloadsByDateKey, defaultsKey: sourceSleepCacheKey)
+            persistSourcePayloadCache(sourceSleepPayloadsByDateKey, entry: .sourceSleepPayloads)
         }
         return sanitized
     }
@@ -493,6 +652,11 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
 
     #if os(watchOS)
     func sendWatchHeartbeat(reason: String = "watchHeartbeat") {
+        let hasLiveWorkout = (activeGymState?.isFinished == false) || (activeWorkoutState?.phase.isLive == true)
+        if hasLiveWorkout {
+            PulsarSyncDebugLogger.log("Watch heartbeat skipped because live workout already proves liveness reason=\(reason)")
+            return
+        }
         let device = WKInterfaceDevice.current()
         device.isBatteryMonitoringEnabled = true
         let batteryLevel = device.batteryLevel
@@ -601,7 +765,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         return snapshot
     }
 
-    func waitForReachableWatchRecorder(
+    func waitForWatchAppLaunchAvailability(
         reason: String,
         timeoutSeconds: TimeInterval = 2.0,
         pollIntervalSeconds: TimeInterval = 0.25
@@ -614,10 +778,10 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             return latest
         }
 
-        while !latest.canStartOnWatch && Date() < deadline {
+        while !latest.canAttemptWatchAppLaunch && Date() < deadline {
             let remaining = deadline.timeIntervalSinceNow
             let sleepSeconds = min(max(0.05, pollIntervalSeconds), max(0.05, remaining))
-            try? await Task.sleep(nanoseconds: UInt64(sleepSeconds * 1_000_000_000))
+            try? await Task.sleep(for: .seconds(sleepSeconds))
             latest = watchRecorderAvailabilitySnapshot(reason: "\(reason).retry")
             guard latest.fallbackReason != .unsupported,
                   latest.fallbackReason != .noPairedWatch,
@@ -626,8 +790,21 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             }
         }
 
-        PulsarSyncDebugLogger.log("Watch recorder preflight completed reason=\(reason) canStart=\(latest.canStartOnWatch) activation=\(latest.activationStateDescription) paired=\(latest.isPaired) rawInstalled=\(latest.rawIsWatchAppInstalled) rawReachable=\(latest.rawIsReachable) lastWatchSeenAt=\(latest.lastWatchSeenAt?.description ?? "none") derivedInstalled=\(latest.isWatchAppInstalled) derivedReachable=\(latest.derivedReachabilityDescription) fallback=\(latest.fallbackReason?.logValue ?? "none")")
+        PulsarSyncDebugLogger.log("Watch recorder preflight completed reason=\(reason) canAttemptLaunch=\(latest.canAttemptWatchAppLaunch) interactiveReachable=\(latest.isWatchInteractivelyReachable) activation=\(latest.activationStateDescription) paired=\(latest.isPaired) rawInstalled=\(latest.rawIsWatchAppInstalled) rawReachable=\(latest.rawIsReachable) lastWatchSeenAt=\(latest.lastWatchSeenAt?.description ?? "none") fallback=\(latest.fallbackReason?.logValue ?? "none")")
         return latest
+    }
+
+    /// Backwards-compatible spelling for call sites outside the workout flows.
+    func waitForReachableWatchRecorder(
+        reason: String,
+        timeoutSeconds: TimeInterval = 2.0,
+        pollIntervalSeconds: TimeInterval = 0.25
+    ) async -> PulsarWatchRecorderAvailabilitySnapshot {
+        await waitForWatchAppLaunchAvailability(
+            reason: reason,
+            timeoutSeconds: timeoutSeconds,
+            pollIntervalSeconds: pollIntervalSeconds
+        )
     }
 
     func hydrateReceivedApplicationContext(reason: String) {
@@ -635,35 +812,199 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         guard let session,
               session.activationState == .activated,
               !session.receivedApplicationContext.isEmpty else { return }
-        receive(dictionary: session.receivedApplicationContext, reason: reason)
+        let snapshot = PulsarWatchConnectivityIncomingSnapshot(
+            dictionary: session.receivedApplicationContext
+        )
+        Task { [weak self] in
+            await self?.decodeAndReceive(snapshot, reason: "activationHydration.\(reason)")
+        }
     }
 
     @discardableResult
     func requestSavedGymRoutinesRefresh(reason: String) -> Bool {
         sendGymAction(.requestSavedRoutines())
+    }
+
+    func registerGymStartAcknowledgementHandler(_ handler: @escaping (GymWorkoutStartAcknowledgement, String) -> Void) {
+        gymStartAcknowledgementHandler = handler
+    }
+
+    func registerGymRoutineSnapshotHandler(_ handler: @escaping (GymRoutineSnapshotEnvelope, String) -> Void) {
+        gymRoutineSnapshotHandler = handler
+    }
+
+    @discardableResult
+    func sendGymStartPrelaunchHint(_ request: GymWorkoutStartRequest, reason: String) -> Bool {
+        activateSessionIfNeeded()
+        guard let session = counterpartSession(for: "Gym prelaunch hint") else { return false }
+        var message = request.compactPrelaunchHint
+        message[Self.gymCrossDeviceMessageTypeKey] = Self.gymStartPrelaunchHintMessageType
+        logOutstandingUserInfoTransfers(context: "prelaunchHint.\(reason)")
+        if session.isReachable {
+            let messageID = UUID()
+            PulsarWatchConnectivitySendTrace.logSend(
+                messageType: Self.gymStartPrelaunchHintMessageType,
+                messageID: messageID,
+                workoutID: request.candidateSessionID,
+                requestID: request.requestID,
+                source: reason,
+                attempt: 1,
+                reachable: true
+            )
+            session.sendMessage(message, replyHandler: nil) { error in
+                PulsarWatchConnectivitySendTrace.logFailure(
+                    messageType: Self.gymStartPrelaunchHintMessageType,
+                    messageID: messageID,
+                    workoutID: request.candidateSessionID,
+                    requestID: request.requestID,
+                    source: reason,
+                    attempt: 1,
+                    error: error
+                )
+                PulsarSyncDebugLogger.log("Gym prelaunch hint send failed request=\(request.requestID.uuidString) error=\(error.localizedDescription)")
+            }
+            PulsarWorkoutLifecycleLogger.log(
+                .wcSend,
+                sessionID: request.candidateSessionID,
+                requestID: request.requestID,
+                source: reason,
+                messageType: Self.gymStartPrelaunchHintMessageType,
+                transport: "sendMessage"
+            )
+        } else {
+            session.transferUserInfo(message)
+            PulsarWorkoutLifecycleLogger.log(
+                .watchPrelaunchDurablyQueued,
+                sessionID: request.candidateSessionID,
+                requestID: request.requestID,
+                source: reason,
+                messageType: Self.gymStartPrelaunchHintMessageType,
+                transport: "transferUserInfo"
+            )
+            PulsarSyncDebugLogger.log("Gym prelaunch hint queued durably while watch is not reachable request=\(request.requestID.uuidString)")
+        }
         return true
     }
 
     @discardableResult
-    func broadcastActiveStateAndAwaitDelivery(
-        _ state: PulsarActiveWorkoutSyncState,
-        reason: String,
-        timeoutSeconds: TimeInterval = 0.35
-    ) async -> Bool {
-        sendActiveWorkoutStateToCounterpart(state, reason: reason)
-        await waitBrieflyForWorkoutStateDelivery(timeoutSeconds: timeoutSeconds)
+    func sendGymStartAcknowledgement(_ acknowledgement: GymWorkoutStartAcknowledgement, reason: String) -> Bool {
+        activateSessionIfNeeded()
+        guard let session = counterpartSession(for: "Gym start acknowledgement"),
+              let data = GymCrossDeviceCodec.encodeAcknowledgement(acknowledgement) else { return false }
+        let message: [String: Any] = [
+            Self.gymCrossDeviceMessageTypeKey: Self.gymStartAcknowledgementMessageType,
+            GymCrossDevicePayloadKey.acknowledgement: data
+        ]
+        logOutstandingUserInfoTransfers(context: "gymStartAck.\(reason)")
+        if session.isReachable {
+            let messageID = UUID()
+            PulsarWatchConnectivitySendTrace.logSend(
+                messageType: Self.gymStartAcknowledgementMessageType,
+                messageID: messageID,
+                workoutID: acknowledgement.authoritativeSessionID,
+                requestID: acknowledgement.requestID,
+                source: reason,
+                attempt: 1,
+                reachable: true
+            )
+            session.sendMessage(message, replyHandler: nil) { error in
+                PulsarWatchConnectivitySendTrace.logFailure(
+                    messageType: Self.gymStartAcknowledgementMessageType,
+                    messageID: messageID,
+                    workoutID: acknowledgement.authoritativeSessionID,
+                    requestID: acknowledgement.requestID,
+                    source: reason,
+                    attempt: 1,
+                    error: error
+                )
+                PulsarSyncDebugLogger.log("Gym start acknowledgement sendMessage failed request=\(acknowledgement.requestID.uuidString) error=\(error.localizedDescription)")
+            }
+            PulsarWorkoutLifecycleLogger.log(
+                .wcSend,
+                sessionID: acknowledgement.authoritativeSessionID,
+                requestID: acknowledgement.requestID,
+                source: reason,
+                messageType: Self.gymStartAcknowledgementMessageType,
+                transport: "sendMessage"
+            )
+        } else {
+            session.transferUserInfo(message)
+            PulsarWorkoutLifecycleLogger.log(
+                .watchPrelaunchDurablyQueued,
+                sessionID: acknowledgement.authoritativeSessionID,
+                requestID: acknowledgement.requestID,
+                source: reason,
+                messageType: Self.gymStartAcknowledgementMessageType,
+                transport: "transferUserInfo"
+            )
+        }
         return true
     }
 
     @discardableResult
-    func broadcastActiveStateAndAwaitDelivery(
-        _ state: ActiveGymWorkoutState,
-        reason: String,
-        timeoutSeconds: TimeInterval = 0.35
-    ) async -> Bool {
-        sendGymStateToCounterpart(state, reason: reason)
-        await waitBrieflyForWorkoutStateDelivery(timeoutSeconds: timeoutSeconds)
+    func transferGymRoutineSnapshot(_ envelope: GymRoutineSnapshotEnvelope, reason: String) -> Bool {
+        activateSessionIfNeeded()
+        guard let session = counterpartSession(for: "Gym routine snapshot"),
+              let data = GymCrossDeviceCodec.encodeRoutineSnapshot(envelope) else { return false }
+        PulsarSyncDebugLogger.log(
+            "[PulsarRoutineSync] source=encodedRoutineSnapshot routineID=\(envelope.routineID.uuidString) name=\(envelope.routinePlan.name) exerciseCount=\(envelope.routinePlan.exercises.count) totalSetCount=\(envelope.routinePlan.totalSetCount) revision=\(envelope.revision) bytes=\(data.count)"
+        )
+        let payload: [String: Any] = [
+            Self.gymCrossDeviceMessageTypeKey: Self.gymRoutineSnapshotMessageType,
+            GymCrossDevicePayloadKey.routineSnapshot: data
+        ]
+        if session.isReachable {
+            session.sendMessage(payload, replyHandler: nil) { error in
+                PulsarSyncDebugLogger.log(
+                    "Gym routine snapshot realtime send failed request=\(envelope.requestID.uuidString) error=\(error.localizedDescription)"
+                )
+            }
+            PulsarWorkoutLifecycleLogger.log(
+                .wcSend,
+                sessionID: envelope.sessionID,
+                requestID: envelope.requestID,
+                source: reason,
+                messageType: Self.gymRoutineSnapshotMessageType,
+                transport: "sendMessage"
+            )
+        }
+        let outstandingPayloads = session.outstandingUserInfoTransfers.compactMap { transfer in
+            transfer.userInfo[GymCrossDevicePayloadKey.routineSnapshot] as? Data
+        }
+        if !Self.shouldQueueGymRoutineSnapshotPayload(
+            requestID: envelope.requestID,
+            checksum: envelope.checksum,
+            outstandingPayloads: outstandingPayloads
+        ) {
+            PulsarSyncDebugLogger.log(
+                "Gym start metadata durable queue skipped duplicate request=\(envelope.requestID.uuidString) checksum=\(envelope.checksum)"
+            )
+        } else {
+            session.transferUserInfo(payload)
+            logOutstandingUserInfoTransfers(context: "routineSnapshot.\(reason)")
+            PulsarWorkoutLifecycleLogger.log(
+                .wcSend,
+                sessionID: envelope.sessionID,
+                requestID: envelope.requestID,
+                source: reason,
+                messageType: Self.gymRoutineSnapshotMessageType,
+                transport: "transferUserInfo"
+            )
+        }
         return true
+    }
+
+    static func shouldQueueGymRoutineSnapshotPayload(
+        requestID: UUID,
+        checksum: String,
+        outstandingPayloads: [Data]
+    ) -> Bool {
+        !outstandingPayloads.contains { data in
+            guard let outstanding = GymCrossDeviceCodec.decodeRoutineSnapshot(data) else {
+                return false
+            }
+            return outstanding.requestID == requestID && outstanding.checksum == checksum
+        }
     }
 
     func setCurrentActiveWorkoutSessionID(_ sessionID: UUID?, reason: String) {
@@ -710,6 +1051,10 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             recentTerminalActiveWorkoutState = nil
             didClear = true
         }
+        if lastConfirmedGymFinish?.sessionID == sessionID {
+            lastConfirmedGymFinish = nil
+            didClear = true
+        }
         if activeGymState?.sessionId == sessionID, activeGymState?.isFinished == true {
             activeGymState = nil
             defaults.removeObject(forKey: activeGymCacheKey)
@@ -723,6 +1068,155 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         guard didClear else { return }
         PulsarSyncDebugLogger.log("Finished gym presentation state cleared reason=\(reason) session=\(sessionID.uuidString)")
         publishCurrentApplicationContext(reason: "\(reason).finishedGymPresentationCleared")
+    }
+
+    func hasConfirmedGymFinish(sessionID: UUID) -> Bool {
+        lastConfirmedGymFinish?.sessionID == sessionID
+    }
+
+    /// Publishes mirrored HealthKit terminal evidence before the runtime mirror
+    /// is released. A stopped/ended mirrored session is successful completion,
+    /// not a missing active connection.
+    func confirmGymFinishFromMirroredHealthKit(
+        sessionID: UUID,
+        healthKitSessionStateRawValue: Int,
+        confirmedAt: Date,
+        source: String
+    ) {
+        if hasCommittedTerminalGymSession(sessionID) {
+            enrichConfirmedGymFinishHealthKitState(
+                sessionID: sessionID,
+                healthKitSessionStateRawValue: healthKitSessionStateRawValue
+            )
+            PulsarWorkoutStartupTrace.diag(
+                "[WorkoutLifecycle] terminalAccepted source=\(source) phase=ended->ended workoutID=\(sessionID.uuidString) accepted=false reason=duplicateMirroredHealthKit"
+            )
+            return
+        }
+
+        pendingGymFinishHealthKitSessionStateRawValue = healthKitSessionStateRawValue
+        defer { pendingGymFinishHealthKitSessionStateRawValue = nil }
+
+        if var finished = activeGymState, finished.sessionId == sessionID {
+            finished.isFinished = true
+            finished.isLaunchPlaceholder = false
+            finished.updatedAt = max(finished.updatedAt, confirmedAt)
+            let didApply = apply(
+                activeGymState: finished,
+                broadcast: false,
+                reason: source,
+                isIncomingFromCounterpart: false
+            )
+            #if os(iOS)
+            if didApply {
+                schedulePostTerminalGymPersistence(finished)
+            }
+            #endif
+        } else if lastFinishedGymState?.sessionId == sessionID {
+            PulsarWorkoutStartupTrace.diag(
+                "[WorkoutLifecycle] terminalAccepted source=\(source) phase=ended->ended workoutID=\(sessionID.uuidString) accepted=false reason=alreadyFinishedWithoutLiveState"
+            )
+        } else {
+            lastConfirmedGymFinish = GymWorkoutFinishConfirmation(
+                sessionID: sessionID,
+                confirmedAt: confirmedAt,
+                healthKitWorkoutUUID: nil,
+                source: source,
+                healthKitSessionStateRawValue: healthKitSessionStateRawValue
+            )
+            committedTerminalGymSessionID = sessionID
+            #if os(iOS)
+            PulsarWorkoutStartCoordinator.shared.markSessionEnded(
+                sessionID: sessionID,
+                reason: "confirmedMirroredHealthKitTerminal.\(source)"
+            )
+            #endif
+        }
+
+        enrichConfirmedGymFinishHealthKitState(
+            sessionID: sessionID,
+            healthKitSessionStateRawValue: healthKitSessionStateRawValue
+        )
+        PulsarWorkoutStartupTrace.lifecycle(
+            "[GymFinish] workoutID=\(sessionID.uuidString) HKState=\(healthKitSessionStateRawValue) terminalKnown=true mirrorReleased=false finishResult=success source=\(source)"
+        )
+    }
+
+    private func enrichConfirmedGymFinishHealthKitState(
+        sessionID: UUID,
+        healthKitSessionStateRawValue: Int
+    ) {
+        guard var confirmation = lastConfirmedGymFinish,
+              confirmation.sessionID == sessionID,
+              confirmation.healthKitSessionStateRawValue != healthKitSessionStateRawValue else {
+            return
+        }
+        confirmation.healthKitSessionStateRawValue = healthKitSessionStateRawValue
+        lastConfirmedGymFinish = confirmation
+    }
+
+    func hasCommittedTerminalGymSession(_ sessionID: UUID) -> Bool {
+        committedTerminalGymSessionID == sessionID ||
+            lastConfirmedGymFinish?.sessionID == sessionID ||
+            lastFinishedGymState?.sessionId == sessionID
+    }
+
+    func flushTerminalGymPersistenceForTesting() async {
+        await terminalGymPersistenceTask?.value
+    }
+
+    func prepareForNewGymStart(sessionID: UUID, reason: String) {
+        var staleSessionIDs = [UUID]()
+        if let previousSessionID = lastFinishedGymState?.sessionId,
+           previousSessionID != sessionID {
+            staleSessionIDs.append(previousSessionID)
+        }
+        if let previousSessionID = recentTerminalGymState?.sessionId,
+           previousSessionID != sessionID {
+            staleSessionIDs.append(previousSessionID)
+        }
+        if let previousSessionID = lastConfirmedGymFinish?.sessionID,
+           previousSessionID != sessionID {
+            staleSessionIDs.append(previousSessionID)
+        }
+        if case .gym? = recentTerminalActiveWorkoutState?.kind,
+           let previousSessionID = recentTerminalActiveWorkoutState?.sessionId,
+           previousSessionID != sessionID {
+            staleSessionIDs.append(previousSessionID)
+        }
+        if let previousSessionID = committedTerminalGymSessionID,
+           previousSessionID != sessionID {
+            staleSessionIDs.append(previousSessionID)
+        }
+
+        guard !staleSessionIDs.isEmpty else { return }
+        lastFinishedGymState = nil
+        recentTerminalGymState = nil
+        lastConfirmedGymFinish = nil
+        committedTerminalGymSessionID = nil
+        if case .gym? = recentTerminalActiveWorkoutState?.kind {
+            recentTerminalActiveWorkoutState = nil
+        }
+        PulsarWorkoutLifecycleLogger.log(
+            .staleFinishedIgnored,
+            sessionID: sessionID,
+            source: reason,
+            detail: "clearedSessionIDs=\(Set(staleSessionIDs).map(\.uuidString).sorted().joined(separator: ","))"
+        )
+        publishCurrentApplicationContext(reason: "\(reason).newGymStartClearedFinishedState")
+    }
+
+    /// Test hook: application context must not re-embed finished workouts when live state is nil.
+    func applicationContextOmitsTerminalStandInsWhenLiveStateNilForTesting() -> Bool {
+        let context = makeApplicationContext(
+            metricPayload: nil,
+            sleepPreferences: nil,
+            activeWorkoutState: nil,
+            activeGymState: nil,
+            savedGymRoutines: []
+        )
+        return context[Self.activeGymStatePayloadKey] == nil &&
+            context[Self.activeWorkoutStatePayloadKey] == nil
     }
 
     func isActiveWorkoutSessionTombstoned(_ sessionID: UUID) -> Bool {
@@ -740,21 +1234,54 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
 
     @discardableResult
     func storeActiveGymState(_ state: ActiveGymWorkoutState, broadcast: Bool, reason: String) -> Bool {
-        apply(activeGymState: state, broadcast: broadcast, reason: reason)
+        let signpostState = PulsarPerformanceSignposts.gym.beginInterval(
+            "publish_state",
+            "reason=\(reason, privacy: .public)"
+        )
+        defer {
+            PulsarPerformanceSignposts.gym.endInterval("publish_state", signpostState)
+        }
+        return apply(activeGymState: state, broadcast: broadcast, reason: reason, isIncomingFromCounterpart: false)
     }
 
     func pruneStaleActiveWorkoutState(reason: String) {
         if let activeWorkoutState,
            let staleReason = activeWorkoutState.staleRouteReason() {
-            PulsarSyncDebugLogger.log("active workout restore rejected: \(staleReason) source=\(reason) session=\(activeWorkoutState.sessionId.uuidString)")
-            clearActiveWorkoutState(reason: "\(reason).\(staleReason)", broadcastEndedState: false)
+            if Self.shouldProtectSessionFromPrune(sessionID: activeWorkoutState.sessionId) {
+                PulsarSyncDebugLogger.log(
+                    "Prune skipped for in-flight workout start session=\(activeWorkoutState.sessionId.uuidString) source=\(reason) staleReason=\(staleReason)"
+                )
+            } else {
+                PulsarSyncDebugLogger.log("active workout restore rejected: \(staleReason) source=\(reason) session=\(activeWorkoutState.sessionId.uuidString)")
+                clearActiveWorkoutState(reason: "\(reason).\(staleReason)", broadcastEndedState: false)
+            }
         }
 
         if let activeGymState,
            let staleReason = activeGymState.staleRouteReason() {
-            PulsarSyncDebugLogger.log("active workout restore rejected: \(staleReason) source=\(reason) session=\(activeGymState.sessionId.uuidString)")
-            clearActiveGymState(reason: "\(reason).\(staleReason)", broadcastEndedState: false)
+            if Self.shouldProtectSessionFromPrune(sessionID: activeGymState.sessionId) {
+                PulsarSyncDebugLogger.log(
+                    "Prune skipped for in-flight gym start session=\(activeGymState.sessionId.uuidString) source=\(reason) staleReason=\(staleReason)"
+                )
+            } else {
+                PulsarSyncDebugLogger.log("active workout restore rejected: \(staleReason) source=\(reason) session=\(activeGymState.sessionId.uuidString)")
+                clearActiveGymState(reason: "\(reason).\(staleReason)", broadcastEndedState: false)
+            }
         }
+    }
+
+    private static func shouldProtectSessionFromPrune(sessionID: UUID) -> Bool {
+        #if os(iOS)
+        let coordinator = PulsarWorkoutStartCoordinator.shared
+        guard coordinator.phase.isInProgress,
+              let transaction = coordinator.currentTransaction else {
+            return false
+        }
+        return transaction.sessionID == sessionID ||
+            transaction.authoritativeSessionID == sessionID
+        #else
+        return false
+        #endif
     }
 
     func isRoutableActiveWorkoutState(_ state: PulsarActiveWorkoutSyncState) -> Bool {
@@ -763,6 +1290,43 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
 
     func isRoutableActiveGymState(_ state: ActiveGymWorkoutState) -> Bool {
         state.isValidActiveWorkoutPresentationCandidate()
+    }
+
+    func consumeGymRestorationCandidate(matching sessionStartDate: Date?) -> ActiveGymWorkoutState? {
+        guard let candidate = gymRestorationCandidate else { return nil }
+        gymRestorationCandidate = nil
+        guard PulsarWatchSynchronizedGymReconciliation.isHealthKitRecoveryCandidate(
+            candidate,
+            sessionStartDate: sessionStartDate,
+            platform: Self.synchronizedGymPlatform,
+            isTombstoned: isActiveWorkoutSessionTombstoned(candidate.sessionId)
+        ) else {
+            PulsarWorkoutStartupTrace.lifecycle(
+                "[GymRestore] workoutID=\(candidate.sessionId.uuidString) phase=active revision=\(candidate.lifecycleGeneration ?? 0) source=healthKitRecovery decision=stale"
+            )
+            return nil
+        }
+        return candidate
+    }
+
+    /// Drops launch metadata without ever publishing it as active. A fresh WC
+    /// delegate delivery may still reintroduce the same session if it passes
+    /// runtime-authority validation.
+    func discardRestoredWorkoutCandidates(reason: String) {
+        let workoutID = restoredActiveWorkoutCandidate?.sessionId
+        let gymID = gymRestorationCandidate?.sessionId
+        restoredActiveWorkoutCandidate = nil
+        #if os(iOS)
+        gymRestorationCandidate = nil
+        #endif
+        defaults.removeObject(forKey: activeWorkoutCacheKey)
+        #if os(iOS)
+        defaults.removeObject(forKey: activeGymCacheKey)
+        #endif
+        guard workoutID != nil || gymID != nil else { return }
+        PulsarWorkoutStartupTrace.lifecycle(
+            "[WorkoutRestore] candidate discarded before presentation reason=\(reason) workoutID=\(workoutID?.uuidString ?? "none") gymID=\(gymID?.uuidString ?? "none")"
+        )
     }
 
     func clearActiveWorkoutState(reason: String, broadcastEndedState: Bool = false) {
@@ -792,6 +1356,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             storeActiveGymState(ended, broadcast: true, reason: "\(reason).finishedBroadcast")
         }
 
+        cancelPendingActiveGymPersistence()
         activeGymState = nil
         defaults.removeObject(forKey: activeGymCacheKey)
         if let previous {
@@ -802,49 +1367,100 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             }
         }
         PulsarSyncDebugLogger.log("Active Gym state cleared reason=\(reason) session=\(previous?.sessionId.uuidString ?? "none")")
+        if let previous {
+            #if os(iOS)
+            let transaction = PulsarWorkoutStartCoordinator.shared.currentTransaction
+            let hasLocalLaunchContext = transaction?.sessionID == previous.sessionId ||
+                transaction?.authoritativeSessionID == previous.sessionId
+            #else
+            let hasLocalLaunchContext = false
+            #endif
+            PulsarWorkoutStartupTrace.lifecycle(
+                "[GymTerminalCleanup] source=\(reason) expectedWorkoutID=\(previous.sessionId.uuidString) actualCurrentWorkoutID=\(previous.sessionId.uuidString) requestID=\(previous.requestID?.uuidString ?? "none") generation=\(previous.lifecycleGeneration ?? 0) localLaunchContextExists=\(hasLocalLaunchContext) canonicalActiveGymStateExists=true routineID=\(previous.routineId.uuidString) exerciseCount=\(previous.exercises.count) decision=allowed reason=explicitCleanup clearedLocal=true clearedPersistent=true publishedTerminal=\(broadcastEndedState)"
+            )
+        }
         publishCurrentApplicationContext(reason: "\(reason).activeGymCleared")
     }
 
-    func sendGymAction(_ action: ActiveGymWorkoutAction, retryAttempt: Int = 0) {
-        guard let session = counterpartSession(for: "Active Gym action") else { return }
+    @discardableResult
+    func sendGymAction(_ action: ActiveGymWorkoutAction, retryAttempt: Int = 0) -> Bool {
+        let hasLiveWorkout = (activeGymState?.isFinished == false) || (activeWorkoutState?.phase.isLive == true)
+        if action.kind == .requestSavedRoutines, hasLiveWorkout {
+            PulsarSyncDebugLogger.log("Saved routine refresh skipped because a live workout already proves Watch liveness")
+            return false
+        }
+        if action.kind == .metricsUpdated {
+            PulsarSyncDebugLogger.log("Gym metricsUpdated action dropped; latest gym state uses applicationContext")
+            return false
+        }
+        guard let session = counterpartSession(
+            for: "Active Gym action",
+            verifiedWorkoutSessionID: action.sessionId
+        ) else { return false }
         var action = action
         if action.actionId == nil {
             action.actionId = UUID()
         }
-        guard let data = ActiveGymWorkoutCodec.encodeAction(action) else { return }
-        var payload: [String: Any] = [Self.activeGymActionPayloadKey: data]
-        let messageID = action.actionId ?? UUID()
-        payload = workoutSyncEnvelope(
-            payload,
-            messageID: messageID,
-            category: "activeGymAction",
-            sessionID: action.sessionId,
-            phase: action.kind.rawValue,
-            reason: "sendGymAction.\(action.kind.rawValue)",
-            retryAttempt: retryAttempt
-        )
-        if session.isReachable {
-            session.sendMessage(payload) { reply in
-                Self.logWorkoutSyncAcknowledgement(reply, context: "Active Gym action", fallbackSessionID: action.sessionId)
-            } errorHandler: { error in
-                PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Active Gym action sendMessage failed kind=\(action.kind.rawValue) session=\(action.sessionId?.uuidString ?? "none") attempt=\(retryAttempt) error=\(error.localizedDescription)")
-                Task { @MainActor [weak self] in
-                    self?.scheduleGymActionRetryIfNeeded(action, retryAttempt: retryAttempt, errorDescription: error.localizedDescription)
+        Task { @MainActor [weak self, codecActor] in
+            guard let data = await codecActor.encodeActiveGymAction(action),
+                  let self,
+                  self.counterpartSession(
+                    for: "Active Gym action encoded send",
+                    verifiedWorkoutSessionID: action.sessionId
+                  ) === session else { return }
+            var payload: [String: Any] = [Self.activeGymActionPayloadKey: data]
+            let messageID = action.actionId ?? UUID()
+            payload = self.workoutSyncEnvelope(
+                payload,
+                messageID: messageID,
+                category: "activeGymAction",
+                sessionID: action.sessionId,
+                phase: action.kind.rawValue,
+                reason: "sendGymAction.\(action.kind.rawValue)",
+                retryAttempt: retryAttempt
+            )
+            if session.isReachable {
+                PulsarWatchConnectivitySendTrace.logSend(
+                    messageType: "activeGymAction",
+                    messageID: messageID,
+                    workoutID: action.sessionId,
+                    requestID: action.actionId,
+                    source: "sendGymAction.\(action.kind.rawValue)",
+                    attempt: retryAttempt + 1,
+                    reachable: true
+                )
+                session.sendMessage(payload) { reply in
+                    Self.logWorkoutSyncAcknowledgement(reply, context: "Active Gym action", fallbackSessionID: action.sessionId)
+                } errorHandler: { error in
+                    PulsarWatchConnectivitySendTrace.logFailure(
+                        messageType: "activeGymAction",
+                        messageID: messageID,
+                        workoutID: action.sessionId,
+                        requestID: action.actionId,
+                        source: "sendGymAction.\(action.kind.rawValue)",
+                        attempt: retryAttempt + 1,
+                        error: error
+                    )
+                    PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Active Gym action sendMessage failed kind=\(action.kind.rawValue) session=\(action.sessionId?.uuidString ?? "none") attempt=\(retryAttempt) error=\(error.localizedDescription)")
+                    Task { @MainActor [weak self] in
+                        self?.scheduleGymActionRetryIfNeeded(action, retryAttempt: retryAttempt, errorDescription: error.localizedDescription)
+                    }
                 }
+            } else if !action.shouldQueueOverWatchConnectivity {
+                PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Active Gym realtime action dropped because counterpart is not reachable kind=\(action.kind.rawValue) session=\(action.sessionId?.uuidString ?? "none")")
+                return
+            } else {
+                PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Active Gym action reachable=false fallback=transferUserInfo kind=\(action.kind.rawValue) session=\(action.sessionId?.uuidString ?? "none") attempt=\(retryAttempt)")
+                self.scheduleGymActionRetryIfNeeded(action, retryAttempt: retryAttempt, errorDescription: "counterpart not reachable")
             }
-        } else if !action.shouldQueueOverWatchConnectivity {
-            PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Active Gym realtime action dropped because counterpart is not reachable kind=\(action.kind.rawValue) session=\(action.sessionId?.uuidString ?? "none")")
-            return
-        } else {
-            PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Active Gym action reachable=false fallback=transferUserInfo kind=\(action.kind.rawValue) session=\(action.sessionId?.uuidString ?? "none") attempt=\(retryAttempt)")
-            scheduleGymActionRetryIfNeeded(action, retryAttempt: retryAttempt, errorDescription: "counterpart not reachable")
+            guard action.shouldQueueOverWatchConnectivity else {
+                PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Active Gym realtime action sent kind=\(action.kind.rawValue) session=\(action.sessionId?.uuidString ?? "none")")
+                return
+            }
+            session.transferUserInfo(payload)
+            PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Active Gym action queued kind=\(action.kind.rawValue) session=\(action.sessionId?.uuidString ?? "none") attempt=\(retryAttempt)")
         }
-        guard action.shouldQueueOverWatchConnectivity else {
-            PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Active Gym realtime action sent kind=\(action.kind.rawValue) session=\(action.sessionId?.uuidString ?? "none")")
-            return
-        }
-        session.transferUserInfo(payload)
-        PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Active Gym action queued kind=\(action.kind.rawValue) session=\(action.sessionId?.uuidString ?? "none") attempt=\(retryAttempt)")
+        return true
     }
 
     func setRunTransportEnvelopeHandler(_ handler: ((PulsarRunTransportEnvelope, String) -> Void)?) {
@@ -858,36 +1474,40 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         queueIfUnreachable: Bool = false
     ) {
         guard let session = counterpartSession(for: "Run transport envelope") else { return }
-        guard let data = PulsarRunTransportCodec.encode(envelope) else { return }
         let metadata = Self.runTransportEnvelopeMetadata(envelope)
-        var payload: [String: Any] = [Self.runTransportEnvelopePayloadKey: data]
-        payload = workoutSyncEnvelope(
-            payload,
-            messageID: metadata.messageID,
-            category: metadata.category,
-            sessionID: metadata.sessionID,
-            phase: metadata.phase,
-            reason: reason,
-            retryAttempt: retryAttempt
-        )
+        Task { @MainActor [weak self, codecActor] in
+            guard let data = await codecActor.encodeRunTransportEnvelope(envelope),
+                  let self,
+                  self.counterpartSession(for: "Run transport encoded send") === session else { return }
+            var payload: [String: Any] = [Self.runTransportEnvelopePayloadKey: data]
+            payload = self.workoutSyncEnvelope(
+                payload,
+                messageID: metadata.messageID,
+                category: metadata.category,
+                sessionID: metadata.sessionID,
+                phase: metadata.phase,
+                reason: reason,
+                retryAttempt: retryAttempt
+            )
 
-        if session.isReachable {
-            session.sendMessage(payload) { reply in
-                Self.logWorkoutSyncAcknowledgement(reply, context: "Run transport envelope", fallbackSessionID: metadata.sessionID)
-            } errorHandler: { error in
-                PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Run transport sendMessage failed category=\(metadata.category) session=\(metadata.sessionID?.uuidString ?? "none") phase=\(metadata.phase ?? "none") reason=\(reason) attempt=\(retryAttempt) error=\(error.localizedDescription)")
+            if session.isReachable {
+                session.sendMessage(payload) { reply in
+                    Self.logWorkoutSyncAcknowledgement(reply, context: "Run transport envelope", fallbackSessionID: metadata.sessionID)
+                } errorHandler: { error in
+                    PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Run transport sendMessage failed category=\(metadata.category) session=\(metadata.sessionID?.uuidString ?? "none") phase=\(metadata.phase ?? "none") reason=\(reason) attempt=\(retryAttempt) error=\(error.localizedDescription)")
+                }
+                PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Run transport sendMessage sent category=\(metadata.category) session=\(metadata.sessionID?.uuidString ?? "none") phase=\(metadata.phase ?? "none") reason=\(reason) reachable=true attempt=\(retryAttempt)")
+            } else if !queueIfUnreachable {
+                PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Run transport dropped because counterpart is not reachable category=\(metadata.category) session=\(metadata.sessionID?.uuidString ?? "none") phase=\(metadata.phase ?? "none") reason=\(reason)")
+                return
+            } else {
+                PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Run transport reachable=false fallback=transferUserInfo category=\(metadata.category) session=\(metadata.sessionID?.uuidString ?? "none") phase=\(metadata.phase ?? "none") reason=\(reason) attempt=\(retryAttempt)")
             }
-            PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Run transport sendMessage sent category=\(metadata.category) session=\(metadata.sessionID?.uuidString ?? "none") phase=\(metadata.phase ?? "none") reason=\(reason) reachable=true attempt=\(retryAttempt)")
-        } else if !queueIfUnreachable {
-            PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Run transport dropped because counterpart is not reachable category=\(metadata.category) session=\(metadata.sessionID?.uuidString ?? "none") phase=\(metadata.phase ?? "none") reason=\(reason)")
-            return
-        } else {
-            PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Run transport reachable=false fallback=transferUserInfo category=\(metadata.category) session=\(metadata.sessionID?.uuidString ?? "none") phase=\(metadata.phase ?? "none") reason=\(reason) attempt=\(retryAttempt)")
-        }
 
-        guard queueIfUnreachable else { return }
-        session.transferUserInfo(payload)
-        PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Run transport queued category=\(metadata.category) session=\(metadata.sessionID?.uuidString ?? "none") phase=\(metadata.phase ?? "none") reason=\(reason) attempt=\(retryAttempt)")
+            guard queueIfUnreachable else { return }
+            session.transferUserInfo(payload)
+            PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Run transport queued category=\(metadata.category) session=\(metadata.sessionID?.uuidString ?? "none") phase=\(metadata.phase ?? "none") reason=\(reason) attempt=\(retryAttempt)")
+        }
     }
 
     @discardableResult
@@ -898,7 +1518,20 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         broadcast: Bool,
         reason: String
     ) -> Bool {
-        let sortedRoutines = routines.sorted { $0.updatedAt > $1.updatedAt }
+        let signpostState = PulsarPerformanceSignposts.watchConnectivity.beginInterval(
+            "apply",
+            "kind=savedGymRoutines reason=\(reason, privacy: .public) broadcast=\(broadcast)"
+        )
+        defer {
+            PulsarPerformanceSignposts.watchConnectivity.endInterval("apply", signpostState)
+        }
+        let deletedRoutineIDSet = Set(deletedRoutineIds)
+        let mergedRoutines = SavedGymRoutineDefinitionMerge.preservingCompleteDefinitions(
+            incoming: routines,
+            current: savedGymRoutines,
+            deletedRoutineIDs: deletedRoutineIDSet
+        )
+        let sortedRoutines = mergedRoutines.sorted { $0.updatedAt > $1.updatedAt }
         let resolvedRevision = incomingRevision.map { max(0, $0) } ?? (savedGymRoutinesRevision + 1)
 
         if let incomingRevision {
@@ -910,9 +1543,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
                 return false
             }
         } else if sortedRoutines == savedGymRoutines {
-            if broadcast {
-                sendSavedGymRoutinesToCounterpart(sortedRoutines)
-            }
+            PulsarSyncDebugLogger.log("Skipped saved Gym routines via \(reason) because definitions were unchanged revision=\(savedGymRoutinesRevision)")
             return false
         }
 
@@ -926,9 +1557,17 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             )
         )
         PulsarSyncDebugLogger.log("Saved Gym routines updated via \(reason) count=\(sortedRoutines.count) revision=\(savedGymRoutinesRevision) deleted=\(deletedRoutineIds.count)")
+        #if os(watchOS)
+        let routineLogSource = "WatchRoutineStore"
+        #else
+        let routineLogSource = "iPhoneSyncCache"
+        #endif
+        for routine in sortedRoutines {
+            PulsarSyncDebugLogger.log("[PulsarRoutineSync] source=\(routineLogSource) reason=\(reason) routineID=\(routine.routineId.uuidString) name=\(routine.name) exerciseCount=\(routine.exercises.count) totalSetCount=\(routine.totalSetCount) revision=\(savedGymRoutinesRevision)")
+        }
 
         if broadcast {
-            sendSavedGymRoutinesToCounterpart(sortedRoutines)
+            sendSavedGymRoutinesToCounterpart(sortedRoutines, reason: reason)
         }
         return true
     }
@@ -975,7 +1614,75 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         PulsarSyncDebugLogger.log("WatchConnectivity session activating state=\(Self.describeActivationState(session.activationState))")
     }
 
-    private func counterpartSession(for reason: String) -> WCSession? {
+    private func logOutstandingUserInfoTransfers(context: String) {
+        guard let session else { return }
+        let transfers = session.outstandingUserInfoTransfers
+        let types = transfers.map { transfer -> String in
+            Self.userInfoTransferDescriptor(transfer.userInfo)
+        }
+        PulsarWorkoutStartupTrace.lifecycle(
+            "WC outstandingUserInfoTransfers count=\(transfers.count) context=\(context) entries=\(types.joined(separator: ";"))"
+        )
+    }
+
+    nonisolated static func userInfoTransferDescriptor(_ info: [String: Any]) -> String {
+        let type: String
+        if let explicit = info["pulsar.gymCrossDevice.messageType.v1"] as? String {
+            type = explicit
+        } else if let category = info["pulsar.workoutSync.category.v1"] as? String {
+            type = "workout.\(category)"
+        } else if info["pulsar.run.transportEnvelope.v1"] != nil {
+            type = "runTransport"
+        } else if info["pulsar.activeGymWorkout.action.v1"] != nil {
+            type = "gymAction"
+        } else if info["pulsar.activeGymWorkout.state.v1"] != nil {
+            type = "activeGymState"
+        } else if info["pulsar.activeWorkout.state.v1"] != nil {
+            type = "activeWorkoutState"
+        } else if info["pulsar.savedGymRoutines.payload.v1"] != nil {
+            type = "savedGymRoutines"
+        } else if info["pulsar.dailyMetricsPayload"] != nil {
+            type = "dailyMetrics"
+        } else if info["pulsar.sleepPreferences.payload.v1"] != nil {
+            type = "sleepPreferences"
+        } else if info["pulsar.appleWatchBattery.payload.v1"] != nil || info["type"] as? String == "appleWatchBattery" {
+            type = "watchBattery"
+        } else if info["pulsar.watchHeartbeat.payload.v1"] != nil {
+            type = "watchHeartbeat"
+        } else {
+            type = "unknown(keys=\(info.keys.sorted().joined(separator: ",")))"
+        }
+        let requestID = info["requestID"] as? String ?? "none"
+        let workoutID = (info["candidateSessionID"] as? String)
+            ?? (info["pulsar.workoutSync.sessionId.v1"] as? String)
+            ?? "none"
+        let bytes = info.values.reduce(into: 0) { total, value in
+            total += (value as? Data)?.count ?? 0
+        }
+        return "\(type)/workoutID=\(workoutID)/requestID=\(requestID)/dataBytes=\(bytes)"
+    }
+
+    static func shouldQueueSavedGymRoutinesPayload(
+        data: Data,
+        revision: Int,
+        lastQueuedData: Data?,
+        lastQueuedRevision: Int?,
+        hasOutstandingMatchingPayload: Bool,
+        respondingToVerifiedInboundRequest: Bool
+    ) -> Bool {
+        guard !hasOutstandingMatchingPayload else { return false }
+        if respondingToVerifiedInboundRequest {
+            return true
+        }
+        guard lastQueuedRevision == revision, let lastQueuedData else { return true }
+        return !SavedGymRoutinesSyncCodec.semanticallyEquivalent(lastQueuedData, data)
+    }
+
+    private func counterpartSession(
+        for reason: String,
+        verifiedWorkoutSessionID: UUID? = nil,
+        respondingToVerifiedInboundRequest: Bool = false
+    ) -> WCSession? {
         guard let session else { return nil }
         guard session.activationState == .activated else {
             PulsarSyncDebugLogger.log("Skipped \(reason) transfer because WatchConnectivity is not activated state=\(session.activationState.rawValue)")
@@ -987,34 +1694,190 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             return nil
         }
         let availability = watchRecorderAvailabilitySnapshot(reason: "\(reason).counterpart")
-        let canSendToCounterpart = availability.rawIsWatchAppInstalled ||
-            availability.rawIsReachable ||
-            availability.hasRecentWatchHeartbeat
-        guard canSendToCounterpart else {
-            PulsarSyncDebugLogger.log("Skipped \(reason) transfer because the Watch app is not currently installed or reachable rawInstalled=\(availability.rawIsWatchAppInstalled) rawReachable=\(availability.rawIsReachable) lastWatchSeenAt=\(availability.lastWatchSeenAt?.description ?? "none") everWatchPayload=\(availability.hasEverReceivedWatchPayload)")
+        let hasVerifiedWorkoutAuthority = verifiedWorkoutSessionID.map(hasVerifiedRuntimeWorkoutAuthority) == true
+        guard Self.canUseiPhoneWatchCounterpart(
+            isActivated: session.activationState == .activated,
+            isPaired: session.isPaired,
+            isWatchAppInstalled: availability.rawIsWatchAppInstalled
+        ) || hasVerifiedWorkoutAuthority || respondingToVerifiedInboundRequest else {
+            PulsarSyncDebugLogger.log("Skipped \(reason) transfer because the Watch app is not installed rawReachable=\(availability.rawIsReachable) lastWatchSeenAt=\(availability.lastWatchSeenAt?.description ?? "none") everWatchPayload=\(availability.hasEverReceivedWatchPayload)")
             return nil
+        }
+        if (hasVerifiedWorkoutAuthority || respondingToVerifiedInboundRequest),
+           !availability.rawIsWatchAppInstalled {
+            PulsarSyncDebugLogger.log("Allowed \(reason) transfer because verified runtime Watch authority supersedes stale rawIsWatchAppInstalled=false session=\(verifiedWorkoutSessionID?.uuidString ?? "none") inboundRequest=\(respondingToVerifiedInboundRequest)")
         }
         #endif
         return session
     }
 
-    private func deferredRoutineCatalogSession(for reason: String) -> WCSession? {
-        guard let session else { return nil }
-        guard session.activationState == .activated else {
-            PulsarSyncDebugLogger.log("Skipped \(reason) transfer because WatchConnectivity is not activated state=\(session.activationState.rawValue)")
+    private func hasVerifiedRuntimeWorkoutAuthority(sessionID: UUID) -> Bool {
+        #if os(iOS)
+        if let transaction = PulsarWorkoutStartCoordinator.shared.currentTransaction,
+           (transaction.sessionID == sessionID || transaction.authoritativeSessionID == sessionID),
+           transaction.didReachActive {
+            return true
+        }
+        if let state = activeGymState,
+           state.sessionId == sessionID,
+           !state.isPrelaunchPlaceholder,
+           state.startedFrom?.isAppleWatchRecorder == true,
+           state.isFreshRestoreConfirmation() {
+            return true
+        }
+        return false
+        #else
+        return false
+        #endif
+    }
+
+    private func deferredRoutineCatalogSession(
+        for reason: String,
+        respondingToVerifiedInboundRequest: Bool = false
+    ) -> WCSession? {
+        counterpartSession(
+            for: reason,
+            respondingToVerifiedInboundRequest: respondingToVerifiedInboundRequest
+        )
+    }
+
+    private nonisolated static func isRuntimeCounterpartDelivery(reason: String) -> Bool {
+        reason.hasPrefix("receivedApplicationContext") ||
+            reason.hasPrefix("receivedUserInfo") ||
+            reason.hasPrefix("receivedMessage")
+    }
+
+    nonisolated static func canUseiPhoneWatchCounterpart(
+        isActivated: Bool,
+        isPaired: Bool,
+        isWatchAppInstalled: Bool
+    ) -> Bool {
+        isActivated && isPaired && isWatchAppInstalled
+    }
+
+    nonisolated static func shouldAcceptFreshCounterpartWorkout(
+        _ state: PulsarActiveWorkoutSyncState,
+        reason: String,
+        now: Date = Date()
+    ) -> Bool {
+        guard isRuntimeCounterpartDelivery(reason: reason),
+              state.lastUpdatedFrom == .appleWatch else { return false }
+        return state.isFreshRestoreConfirmation(now: now)
+    }
+
+    nonisolated static func shouldAcceptFreshCounterpartGym(
+        _ state: ActiveGymWorkoutState,
+        reason: String,
+        now: Date = Date()
+    ) -> Bool {
+        guard isRuntimeCounterpartDelivery(reason: reason),
+              state.startedFrom?.isAppleWatchRecorder == true else { return false }
+        return state.isFreshRestoreConfirmation(now: now)
+    }
+
+    private func shouldRejectUncorrelatedCounterpartWorkout(
+        _ state: PulsarActiveWorkoutSyncState,
+        reason: String
+    ) -> Bool {
+        #if os(iOS)
+        let coordinator = PulsarWorkoutStartCoordinator.shared
+        guard coordinator.phase.isInProgress,
+              let transaction = coordinator.currentTransaction,
+              case .watchGym = transaction.kind else {
+            return false
+        }
+        let canonicalSessionID = transaction.authoritativeSessionID ?? transaction.sessionID
+        guard state.sessionId != canonicalSessionID else { return false }
+        let mirror = GymMirroredSessionBridge.shared.snapshot
+        let hasCanonicalMirror = mirror.hasAttachedLiveMirror && mirror.sessionID == canonicalSessionID
+        guard hasCanonicalMirror || state.startedFrom == .iPhoneRequestedWatchStart else {
+            return false
+        }
+        PulsarWorkoutStartupTrace.lifecycle(
+            "[WorkoutReconcile] incomingWorkoutID=\(state.sessionId.uuidString) canonicalWorkoutID=\(canonicalSessionID.uuidString) incomingRequestID=none canonicalRequestID=\(transaction.requestID?.uuidString ?? "none") source=\(reason) decision=rejectAdvisory reason=uncorrelatedGenericWatchState"
+        )
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    #if os(iOS)
+    private func currentGymAuthorityDecision(
+        for incoming: ActiveGymWorkoutState
+    ) -> (canonicalSessionID: UUID, canonicalRequestID: UUID?, decision: PulsarIncomingGymAuthorityDecision)? {
+        let coordinator = PulsarWorkoutStartCoordinator.shared
+        guard coordinator.phase.isInProgress,
+              let transaction = coordinator.currentTransaction,
+              case .watchGym = transaction.kind else {
             return nil
+        }
+        let canonicalSessionID = transaction.authoritativeSessionID ?? transaction.sessionID
+        let mirror = GymMirroredSessionBridge.shared.snapshot
+        let hasCanonicalMirror = mirror.hasAttachedLiveMirror && mirror.sessionID == canonicalSessionID
+        return (
+            canonicalSessionID,
+            transaction.requestID,
+            PulsarWatchSynchronizedGymReconciliation.incomingAuthorityDecision(
+                incoming: incoming,
+                canonicalSessionID: canonicalSessionID,
+                canonicalRequestID: transaction.requestID,
+                hasAuthoritativeMirror: hasCanonicalMirror
+            )
+        )
+    }
+
+    private func logRejectedGymAuthority(
+        incoming: ActiveGymWorkoutState,
+        canonicalSessionID: UUID,
+        canonicalRequestID: UUID?,
+        reason: String,
+        decisionReason: String
+    ) {
+        PulsarWorkoutStartupTrace.lifecycle(
+            "[WorkoutReconcile] incomingWorkoutID=\(incoming.sessionId.uuidString) canonicalWorkoutID=\(canonicalSessionID.uuidString) incomingRequestID=\(incoming.requestID?.uuidString ?? "none") canonicalRequestID=\(canonicalRequestID?.uuidString ?? "none") source=\(reason) decision=rejectAdvisory reason=\(decisionReason)"
+        )
+    }
+    #endif
+
+    private func shouldRejectUncorrelatedCounterpartGym(
+        _ state: ActiveGymWorkoutState,
+        reason: String
+    ) -> Bool {
+        #if os(iOS)
+        guard let authority = currentGymAuthorityDecision(for: state),
+              case .rejectAdvisory(let decisionReason) = authority.decision else {
+            return false
+        }
+        logRejectedGymAuthority(
+            incoming: state,
+            canonicalSessionID: authority.canonicalSessionID,
+            canonicalRequestID: authority.canonicalRequestID,
+            reason: reason,
+            decisionReason: decisionReason
+        )
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    private func hasRuntimeWorkoutAuthority(sessionID: UUID) -> Bool {
+        if currentActiveWorkoutSessionID == sessionID ||
+            activeWorkoutState?.sessionId == sessionID ||
+            activeGymState?.sessionId == sessionID {
+            return true
         }
         #if os(iOS)
-        guard session.isPaired else {
-            PulsarSyncDebugLogger.log("Skipped \(reason) transfer because no Apple Watch is paired")
-            return nil
-        }
+        let transaction = PulsarWorkoutStartCoordinator.shared.currentTransaction
+        return transaction?.sessionID == sessionID || transaction?.authoritativeSessionID == sessionID
+        #else
+        return false
         #endif
-        return session
     }
 
     private func logWatchRecorderAvailability(_ snapshot: PulsarWatchRecorderAvailabilitySnapshot, reason: String) {
-        PulsarSyncDebugLogger.log("Watch recorder availability reason=\(reason) activation=\(snapshot.activationStateDescription)(\(snapshot.activationStateRawValue)) paired=\(snapshot.isPaired) rawInstalled=\(snapshot.rawIsWatchAppInstalled) rawReachable=\(snapshot.rawIsReachable) lastWatchSeenAt=\(snapshot.lastWatchSeenAt?.description ?? "none") everWatchPayload=\(snapshot.hasEverReceivedWatchPayload) derivedInstalled=\(snapshot.isWatchAppInstalled) derivedReachable=\(snapshot.derivedReachabilityDescription) canStart=\(snapshot.canStartOnWatch) error=\(snapshot.activationErrorMessage ?? "none") fallback=\(snapshot.fallbackReason?.logValue ?? "none")")
+        PulsarSyncDebugLogger.log("Watch recorder availability reason=\(reason) activation=\(snapshot.activationStateDescription)(\(snapshot.activationStateRawValue)) paired=\(snapshot.isPaired) rawInstalled=\(snapshot.rawIsWatchAppInstalled) rawReachable=\(snapshot.rawIsReachable) lastWatchSeenAt=\(snapshot.lastWatchSeenAt?.description ?? "none") everWatchPayload=\(snapshot.hasEverReceivedWatchPayload) canAttemptLaunch=\(snapshot.canAttemptWatchAppLaunch) interactiveReachable=\(snapshot.isWatchInteractivelyReachable) error=\(snapshot.activationErrorMessage ?? "none") fallback=\(snapshot.fallbackReason?.logValue ?? "none")")
     }
 
     private func workoutSyncEnvelope(
@@ -1075,6 +1938,30 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         return acknowledgement
     }
 
+    private static func workoutSyncAcknowledgement(
+        for snapshot: PulsarWatchConnectivityIncomingSnapshot,
+        reason: String
+    ) -> [String: Any] {
+        var acknowledgement: [String: Any] = [
+            workoutSyncAcknowledgementAcceptedKey: true,
+            workoutSyncAcknowledgementReasonKey: reason,
+            workoutSyncSentAtKey: Date().timeIntervalSince1970
+        ]
+        if let messageID = snapshot.messageID {
+            acknowledgement[workoutSyncAcknowledgementMessageIDKey] = messageID
+        }
+        if let category = snapshot.category {
+            acknowledgement[workoutSyncCategoryKey] = category
+        }
+        if let sessionID = snapshot.sessionID {
+            acknowledgement[workoutSyncSessionIDKey] = sessionID
+        }
+        if let phase = snapshot.phase {
+            acknowledgement[workoutSyncPhaseKey] = phase
+        }
+        return acknowledgement
+    }
+
     private func scheduleGymActionRetryIfNeeded(
         _ action: ActiveGymWorkoutAction,
         retryAttempt: Int,
@@ -1082,13 +1969,22 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     ) {
         guard action.shouldQueueOverWatchConnectivity,
               action.kind == .finishWorkout,
-              retryAttempt < 2 else { return }
+              retryAttempt < 2 else {
+            if retryAttempt >= 2 {
+                PulsarWorkoutStartupTrace.lifecycle(
+                    "WC retry bounded kind=\(action.kind.rawValue) session=\(action.sessionId?.uuidString ?? "none") attempt=\(retryAttempt + 1) max=2"
+                )
+            }
+            return
+        }
         let nextAttempt = retryAttempt + 1
+        PulsarWorkoutStartupTrace.lifecycle(
+            "WC retry scheduled messageType=activeGymAction kind=\(action.kind.rawValue) session=\(action.sessionId?.uuidString ?? "none") nextAttempt=\(nextAttempt) max=2 reason=\(errorDescription)"
+        )
         PulsarSyncDebugLogger.log("[PulsarWorkoutSync] scheduling gym action retry kind=\(action.kind.rawValue) session=\(action.sessionId?.uuidString ?? "none") nextAttempt=\(nextAttempt) reason=\(errorDescription)")
         Task { [weak self] in
-            let delay = UInt64((Double(nextAttempt) * 1.5) * 1_000_000_000)
-            try? await Task.sleep(nanoseconds: delay)
-            await MainActor.run {
+            try? await Task.sleep(for: .milliseconds(nextAttempt * 1_500))
+            _ = await MainActor.run {
                 self?.sendGymAction(action, retryAttempt: nextAttempt)
             }
         }
@@ -1107,13 +2003,15 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         }
     }
 
-    private func waitBrieflyForWorkoutStateDelivery(timeoutSeconds: TimeInterval) async {
-        let delay = max(0.05, min(timeoutSeconds, 0.6))
-        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-    }
-
     @discardableResult
     private func apply(payload incoming: PulsarDailyMetricsSyncPayload, broadcast: Bool, reason: String) -> Bool {
+        let signpostState = PulsarPerformanceSignposts.watchConnectivity.beginInterval(
+            "apply",
+            "kind=daily reason=\(reason, privacy: .public) broadcast=\(broadcast)"
+        )
+        defer {
+            PulsarPerformanceSignposts.watchConnectivity.endInterval("apply", signpostState)
+        }
         let incoming = incoming.sanitizedForDeclaredSource()
         guard incoming.isValidPayload else {
             PulsarSyncDebugLogger.log("Skipped \(reason) payload because it was empty, invalid, or partial daily data session=\(incoming.syncSessionID?.uuidString ?? "none") source=\(incoming.sourceDevice.rawValue) dateKey=\(incoming.resolvedDateKey.isEmpty ? "missing" : incoming.resolvedDateKey)")
@@ -1183,6 +2081,13 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
 
     @discardableResult
     private func apply(sleepPreferences incoming: PulsarSleepPreferencesSyncPayload, broadcast: Bool, reason: String) -> Bool {
+        let signpostState = PulsarPerformanceSignposts.watchConnectivity.beginInterval(
+            "apply",
+            "kind=sleepPreferences reason=\(reason, privacy: .public) broadcast=\(broadcast)"
+        )
+        defer {
+            PulsarPerformanceSignposts.watchConnectivity.endInterval("apply", signpostState)
+        }
         guard incoming.isValid else {
             PulsarSyncDebugLogger.log("Skipped \(reason) sleep preferences because payload was invalid")
             return false
@@ -1211,13 +2116,22 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
 
     @discardableResult
     private func apply(appleWatchBattery incoming: AppleWatchBatterySnapshot, broadcast: Bool, reason: String) -> Bool {
+        let signpostState = PulsarPerformanceSignposts.watchConnectivity.beginInterval(
+            "apply",
+            "kind=watchBattery reason=\(reason, privacy: .public) broadcast=\(broadcast)"
+        )
+        defer {
+            PulsarPerformanceSignposts.watchConnectivity.endInterval("apply", signpostState)
+        }
         guard Self.isValidAppleWatchBattery(incoming) else {
             PulsarSyncDebugLogger.log("Skipped \(reason) Apple Watch battery because payload was invalid")
             return false
         }
 
         #if os(iOS)
-        recordAppleWatchSeen(reason: reason, timestamp: incoming.timestamp, payloadKind: "appleWatchBattery")
+        if Self.isRuntimeCounterpartDelivery(reason: reason) {
+            recordAppleWatchSeen(reason: reason, timestamp: incoming.timestamp, payloadKind: "appleWatchBattery")
+        }
         #endif
 
         if let latestAppleWatchBattery,
@@ -1244,7 +2158,25 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         reason: String,
         isIncomingFromCounterpart: Bool
     ) -> ActiveWorkoutUpdateDecision {
+        let signpostState = PulsarPerformanceSignposts.watchConnectivity.beginInterval(
+            "apply",
+            "kind=activeWorkout reason=\(reason, privacy: .public) broadcast=\(broadcast)"
+        )
+        defer {
+            PulsarPerformanceSignposts.watchConnectivity.endInterval("apply", signpostState)
+        }
         let incoming = canonicalizedActiveWorkoutState(incoming, reason: reason)
+        if incoming.isEnded, case .gym = incoming.kind, committedTerminalGymSessionID == incoming.sessionId {
+            let decision = ActiveWorkoutUpdateDecision.ignoredHistoricalOnly
+            lastActiveWorkoutUpdateDecision = decision
+            PulsarWorkoutStartupTrace.diag(
+                "[WorkoutLifecycle] terminalAccepted source=\(reason) phase=ended->ended workoutID=\(incoming.sessionId.uuidString) accepted=false reason=duplicateActiveWorkoutTerminal"
+            )
+            PulsarSyncDebugLogger.log(
+                "Terminal active workout state skipped via \(reason) session=\(incoming.sessionId.uuidString) type=\(incoming.kind.workoutTypeRawValue) phase=\(incoming.phase.rawValue) action=noop"
+            )
+            return decision
+        }
         let decision = makeActiveWorkoutUpdateDecision(
             for: incoming,
             reason: reason,
@@ -1256,6 +2188,21 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         if incoming.isEnded {
             guard decision.didApplySyncState else {
                 PulsarSyncDebugLogger.log("Terminal active workout state skipped via \(reason) session=\(incoming.sessionId.uuidString) type=\(incoming.kind.workoutTypeRawValue) phase=\(incoming.phase.rawValue) action=noop")
+                return decision
+            }
+            if case .gym = incoming.kind,
+               var finished = activeGymState,
+               finished.sessionId == incoming.sessionId {
+                finished.isFinished = true
+                finished.updatedAt = max(finished.updatedAt, incoming.updatedAt)
+                _ = commitTerminalGymFinish(
+                    finished,
+                    broadcast: false,
+                    reason: "\(reason).gymFromActiveWorkout"
+                )
+                if broadcast {
+                    sendActiveWorkoutStateToCounterpart(incoming, reason: reason)
+                }
                 return decision
             }
             rememberTerminatedActiveWorkoutSession(incoming.sessionId, reason: reason)
@@ -1270,17 +2217,20 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
                 PulsarSyncDebugLogger.log("Terminal active workout update cleared cached active state via \(reason) session=\(incoming.sessionId.uuidString) phase=\(incoming.phase.rawValue)")
                 clearedCachedState = true
             }
-            if case .gym = incoming.kind,
-               activeGymState?.sessionId == incoming.sessionId {
-                if var finished = activeGymState {
-                    finished.isFinished = true
-                    finished.updatedAt = max(finished.updatedAt, incoming.updatedAt)
-                    lastFinishedGymState = finished
-                }
-                activeGymState = nil
-                defaults.removeObject(forKey: activeGymCacheKey)
-                PulsarSyncDebugLogger.log("Terminal gym active workout update cleared cached Active Gym state via \(reason) session=\(incoming.sessionId.uuidString) phase=\(incoming.phase.rawValue)")
-                clearedCachedState = true
+            if case .gym = incoming.kind {
+                lastConfirmedGymFinish = GymWorkoutFinishConfirmation(
+                    sessionID: incoming.sessionId,
+                    confirmedAt: incoming.updatedAt,
+                    healthKitWorkoutUUID: incoming.healthKitWorkoutUUID,
+                    source: reason
+                )
+                committedTerminalGymSessionID = incoming.sessionId
+                #if os(iOS)
+                PulsarWorkoutStartCoordinator.shared.markSessionEnded(
+                    sessionID: incoming.sessionId,
+                    reason: "confirmedActiveWorkoutTerminal.\(reason)"
+                )
+                #endif
             }
             if clearedCachedState {
                 publishCurrentApplicationContext(reason: "\(reason).terminalActiveWorkoutCleared")
@@ -1312,49 +2262,207 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     }
 
     @discardableResult
-    private func apply(activeGymState incoming: ActiveGymWorkoutState, broadcast: Bool, reason: String) -> Bool {
-        guard shouldApply(activeGymState: incoming) else {
+    private func apply(activeGymState incoming: ActiveGymWorkoutState, broadcast: Bool, reason: String, isIncomingFromCounterpart: Bool = false) -> Bool {
+        let signpostState = PulsarPerformanceSignposts.watchConnectivity.beginInterval(
+            "apply",
+            "kind=activeGym reason=\(reason, privacy: .public) broadcast=\(broadcast)"
+        )
+        defer {
+            PulsarPerformanceSignposts.watchConnectivity.endInterval("apply", signpostState)
+        }
+        guard shouldApply(activeGymState: incoming, reason: reason, isIncomingFromCounterpart: isIncomingFromCounterpart) else {
+            #if os(iOS)
+            logGymRemoteConflictIfNeeded(incoming, applied: false, reason: reason)
+            #endif
             PulsarSyncDebugLogger.log("Active Gym state skipped via \(reason) session=\(incoming.sessionId.uuidString) type=\(incoming.workoutKind?.rawValue ?? "unknown") updatedAt=\(incoming.updatedAt) finished=\(incoming.isFinished)")
             return false
         }
 
+        #if os(iOS)
+        logGymRemoteConflictIfNeeded(incoming, applied: true, reason: reason)
+        #endif
+
         if incoming.isFinished {
-            let activeState = PulsarActiveWorkoutSyncState(gymState: incoming)
-            recentTerminalGymState = incoming
-            recentTerminalActiveWorkoutState = activeState
-            lastFinishedGymState = incoming
-            _ = apply(activeWorkoutState: activeState, broadcast: false, reason: "\(reason).gymBridge", isIncomingFromCounterpart: false)
-            if broadcast {
-                sendGymStateToCounterpart(incoming, reason: reason)
-            }
-            rememberTerminatedActiveWorkoutSession(incoming.sessionId, reason: reason)
-            if activeGymState?.sessionId == incoming.sessionId {
-                activeGymState = nil
-            }
-            defaults.removeObject(forKey: activeGymCacheKey)
-            if activeWorkoutState?.sessionId == incoming.sessionId {
-                activeWorkoutState = nil
-                defaults.removeObject(forKey: activeWorkoutCacheKey)
-            }
-            PulsarSyncDebugLogger.log("Active Gym terminal state cleared active cache via \(reason) session=\(incoming.sessionId.uuidString) type=\(incoming.workoutKind?.rawValue ?? "unknown")")
-            publishCurrentApplicationContext(reason: "\(reason).finishedGymCleared")
-            return true
+            return commitTerminalGymFinish(incoming, broadcast: broadcast, reason: reason)
         }
 
-        activeGymState = incoming
-        persistActiveGymState(incoming)
-        let activeState = PulsarActiveWorkoutSyncState(gymState: incoming)
+        let resolvedIncoming = incoming.preservingRoutineDefinition(from: activeGymState)
+        activeGymState = resolvedIncoming
+        PulsarWorkoutStartupTrace.count("[PublishRate] activeGymState")
+        if isIncomingFromCounterpart {
+            PulsarWorkoutStartupTrace.count("[WCRate] activeGymState.receive", bytes: 0)
+        }
+        scheduleActiveGymPersistence(resolvedIncoming, reason: reason)
+        let activeState = PulsarActiveWorkoutSyncState(gymState: resolvedIncoming)
         _ = apply(activeWorkoutState: activeState, broadcast: false, reason: "\(reason).gymBridge", isIncomingFromCounterpart: false)
-        PulsarSyncDebugLogger.log("Active Gym state updated via \(reason) session=\(incoming.sessionId.uuidString) type=\(incoming.workoutKind?.rawValue ?? "unknown") startedFrom=\(incoming.startedFrom?.rawValue ?? "unknown") progress=\(incoming.completedSets)/\(incoming.totalSets) finished=\(incoming.isFinished)")
+        PulsarSyncDebugLogger.log("Active Gym state updated via \(reason) session=\(resolvedIncoming.sessionId.uuidString) type=\(resolvedIncoming.workoutKind?.rawValue ?? "unknown") startedFrom=\(resolvedIncoming.startedFrom?.rawValue ?? "unknown") progress=\(resolvedIncoming.completedSets)/\(resolvedIncoming.totalSets) finished=\(resolvedIncoming.isFinished)")
+        #if os(iOS)
+        if isIncomingFromCounterpart {
+            PulsarWorkoutStartupTrace.diag(
+                "[GymState] received session=\(resolvedIncoming.sessionId.uuidString) finished=\(resolvedIncoming.isFinished) progress=\(resolvedIncoming.completedSets)/\(resolvedIncoming.totalSets) reason=\(reason) \(PulsarWorkoutStartupTrace.threadTag())"
+            )
+        }
+        #endif
 
         if broadcast {
-            sendGymStateToCounterpart(incoming, reason: reason)
+            sendGymStateToCounterpart(resolvedIncoming, reason: reason)
         }
         return true
     }
 
     @discardableResult
+    private func commitTerminalGymFinish(
+        _ incoming: ActiveGymWorkoutState,
+        broadcast: Bool,
+        reason: String
+    ) -> Bool {
+        let phaseBefore: String
+        #if os(iOS)
+        phaseBefore = PulsarWorkoutStartCoordinator.shared.phase.name
+        let endTransactionID = PulsarWorkoutStartCoordinator.shared.ensureEndTransactionID(
+            sessionID: incoming.sessionId
+        )
+        let requestID = PulsarWorkoutStartCoordinator.shared.currentTransaction?.requestID
+            ?? incoming.requestID
+        #else
+        phaseBefore = activeGymState == nil ? "idle" : "active"
+        let endTransactionID = incoming.requestID ?? incoming.sessionId
+        let requestID = incoming.requestID
+        #endif
+
+        if committedTerminalGymSessionID == incoming.sessionId {
+            recordGymTerminalCommit(
+                endTransactionID: endTransactionID,
+                workoutID: incoming.sessionId,
+                requestID: requestID,
+                source: reason,
+                phaseBefore: "ended",
+                phaseAfter: "ended",
+                accepted: false,
+                reason: "duplicateTerminal"
+            )
+            return false
+        }
+
+        cancelPendingActiveGymPersistence()
+        let activeState = PulsarActiveWorkoutSyncState(gymState: incoming)
+        if broadcast {
+            sendGymStateToCounterpart(incoming, reason: reason)
+        }
+
+        committedTerminalGymSessionID = incoming.sessionId
+        recentTerminalGymState = incoming
+        recentTerminalActiveWorkoutState = activeState
+        lastFinishedGymState = incoming
+        lastConfirmedGymFinish = GymWorkoutFinishConfirmation(
+            sessionID: incoming.sessionId,
+            confirmedAt: incoming.updatedAt,
+            healthKitWorkoutUUID: incoming.healthKitWorkoutUUID,
+            source: reason,
+            healthKitSessionStateRawValue: pendingGymFinishHealthKitSessionStateRawValue
+        )
+
+        PulsarWorkoutStartupTrace.lifecycle(
+            "[GymTerminalCleanup] begin workoutID=\(incoming.sessionId.uuidString) requestID=\(requestID?.uuidString ?? "none") source=\(reason)"
+        )
+
+        #if os(iOS)
+        PulsarWorkoutStartCoordinator.shared.markSessionEnded(
+            sessionID: incoming.sessionId,
+            reason: "confirmedGymTerminal.\(reason)"
+        )
+        #endif
+
+        rememberTerminatedActiveWorkoutSession(incoming.sessionId, reason: reason)
+        if activeGymState?.sessionId == incoming.sessionId {
+            activeGymState = nil
+        }
+        defaults.removeObject(forKey: activeGymCacheKey)
+        if activeWorkoutState?.sessionId == incoming.sessionId {
+            activeWorkoutState = nil
+            defaults.removeObject(forKey: activeWorkoutCacheKey)
+        }
+
+        PulsarSyncDebugLogger.log(
+            "Active Gym terminal state cleared active cache via \(reason) session=\(incoming.sessionId.uuidString) type=\(incoming.workoutKind?.rawValue ?? "unknown")"
+        )
+        PulsarWorkoutStartupTrace.lifecycle(
+            "[GymTerminalCleanup] end workoutID=\(incoming.sessionId.uuidString) clearedLocal=true clearedPersistent=true publishedTerminal=\(broadcast) source=\(reason)"
+        )
+        publishCurrentApplicationContext(reason: "\(reason).finishedGymCleared")
+
+        #if os(iOS)
+        let phaseAfter = PulsarWorkoutStartCoordinator.shared.phase.name
+        #else
+        let phaseAfter = "ended"
+        #endif
+        recordGymTerminalCommit(
+            endTransactionID: endTransactionID,
+            workoutID: incoming.sessionId,
+            requestID: requestID,
+            source: reason,
+            phaseBefore: phaseBefore,
+            phaseAfter: phaseAfter,
+            accepted: true,
+            reason: "canonicalTerminal"
+        )
+        return true
+    }
+
+    private func recordGymTerminalCommit(
+        endTransactionID: UUID,
+        workoutID: UUID,
+        requestID: UUID?,
+        source: String,
+        phaseBefore: String,
+        phaseAfter: String,
+        accepted: Bool,
+        reason: String
+    ) {
+        let record = PulsarGymTerminalCommitRecord(
+            endTransactionID: endTransactionID,
+            workoutID: workoutID,
+            requestID: requestID,
+            source: source,
+            phaseBefore: phaseBefore,
+            phaseAfter: phaseAfter,
+            accepted: accepted,
+            reason: reason
+        )
+        lastGymTerminalCommit = record
+        if accepted {
+            acceptedGymTerminalCount += 1
+        } else {
+            rejectedGymTerminalCount += 1
+        }
+        PulsarWorkoutStartupTrace.diag(
+            "[WorkoutLifecycle] terminalAccepted source=\(source) phase=\(phaseBefore)->\(phaseAfter) endTransactionID=\(endTransactionID.uuidString) workoutID=\(workoutID.uuidString) requestID=\(requestID?.uuidString ?? "none") accepted=\(accepted) reason=\(reason)"
+        )
+    }
+
+    #if os(iOS)
+    private func schedulePostTerminalGymPersistence(_ state: ActiveGymWorkoutState) {
+        terminalGymPersistenceTask?.cancel()
+        terminalGymPersistenceTask = Task { @MainActor [weak self] in
+            guard let self, !Task.isCancelled else { return }
+            let startedAt = Date()
+            self.syncLiveActivity(for: state)
+            PulsarWorkoutStartupTrace.diag(
+                "[MainActor] postTerminalGymPersistence elapsedMs=\(PulsarWorkoutStartupTrace.elapsedMs(since: startedAt)) workoutID=\(state.sessionId.uuidString) \(PulsarWorkoutStartupTrace.threadTag())"
+            )
+        }
+    }
+    #endif
+
+    @discardableResult
     private func apply(watchHeartbeat incoming: AppleWatchHeartbeatSnapshot, broadcast: Bool, reason: String) -> Bool {
+        let signpostState = PulsarPerformanceSignposts.watchConnectivity.beginInterval(
+            "apply",
+            "kind=watchHeartbeat reason=\(reason, privacy: .public) broadcast=\(broadcast)"
+        )
+        defer {
+            PulsarPerformanceSignposts.watchConnectivity.endInterval("apply", signpostState)
+        }
         guard incoming.appInstalled else {
             PulsarSyncDebugLogger.log("Skipped \(reason) Watch heartbeat because appInstalled=false")
             return false
@@ -1363,7 +2471,9 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         if let latestWatchHeartbeat,
            incoming.timestamp < latestWatchHeartbeat.timestamp {
             #if os(iOS)
-            recordAppleWatchSeen(reason: reason, payloadKind: "staleWatchHeartbeat")
+            if Self.isRuntimeCounterpartDelivery(reason: reason) {
+                recordAppleWatchSeen(reason: reason, payloadKind: "staleWatchHeartbeat")
+            }
             #endif
             PulsarSyncDebugLogger.log("Skipped \(reason) Watch heartbeat because cached heartbeat was newer incoming=\(incoming.timestamp) cached=\(latestWatchHeartbeat.timestamp)")
             return false
@@ -1372,7 +2482,9 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         latestWatchHeartbeat = incoming
         persistWatchHeartbeat(incoming)
         #if os(iOS)
-        recordAppleWatchSeen(reason: reason, timestamp: incoming.timestamp, payloadKind: "watchHeartbeat")
+        if Self.isRuntimeCounterpartDelivery(reason: reason) {
+            recordAppleWatchSeen(reason: reason, timestamp: incoming.timestamp, payloadKind: "watchHeartbeat")
+        }
         #endif
         PulsarSyncDebugLogger.log("Watch heartbeat received via \(reason) version=\(incoming.watchAppVersion ?? "unknown") timestamp=\(incoming.timestamp) battery=\(incoming.batteryPercentage.map(String.init) ?? "unknown")")
 
@@ -1394,19 +2506,62 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         return true
     }
 
+    private func nextPayloadFilePersistenceRevision() -> UInt64 {
+        payloadFilePersistenceRevision &+= 1
+        return payloadFilePersistenceRevision
+    }
+
+    private func removePayloadFileCacheEntry(_ entry: PulsarSyncPayloadFileCache.Entry) {
+        let revision = nextPayloadFilePersistenceRevision()
+        Task { [payloadFileCache] in
+            await payloadFileCache.remove(entry, revision: revision)
+        }
+    }
+
+    private func setDefaultsData(_ data: Data, forKey key: String) {
+        #if DEBUG
+        let warningThreshold = 100 * 1_024
+        if data.count > warningThreshold {
+            PulsarSyncDebugLogger.log(
+                "Oversized UserDefaults write key=\(key) bytes=\(data.count) threshold=\(warningThreshold)"
+            )
+            assertionFailure(
+                "UserDefaults Data write exceeded \(warningThreshold) bytes for key \(key)"
+            )
+        }
+        #endif
+        let writeStartedAt = Date()
+        defaults.set(data, forKey: key)
+        PulsarWorkoutStartupTrace.recordDefaultsWrite(
+            key: key,
+            bytes: data.count,
+            elapsedMs: PulsarWorkoutStartupTrace.elapsedMs(since: writeStartedAt)
+        )
+    }
+
     private func persist(_ payload: PulsarDailyMetricsSyncPayload) {
-        guard let data = PulsarSyncPayloadCodec.encode(payload) else { return }
-        defaults.set(data, forKey: cacheKey)
+        let revision = nextPayloadFilePersistenceRevision()
+        Task { [payloadFileCache] in
+            await payloadFileCache.save(payload, for: .latestPayload, revision: revision)
+        }
     }
 
     private func persistDailyPayloadCache() {
-        guard let data = try? JSONEncoder().encode(dailyPayloadsByDateKey) else { return }
-        defaults.set(data, forKey: dailyCacheKey)
+        dailyPayloadsByDateKey = Self.retainedDailyPayloads(dailyPayloadsByDateKey)
+        let payloads = dailyPayloadsByDateKey
+        let revision = nextPayloadFilePersistenceRevision()
+        Task { [payloadFileCache] in
+            await payloadFileCache.save(payloads, for: .dailyPayloads, revision: revision)
+        }
     }
 
     private func persistSleepPayloadCache() {
-        guard let data = try? JSONEncoder().encode(sleepPayloadsByDateKey) else { return }
-        defaults.set(data, forKey: sleepCacheKey)
+        sleepPayloadsByDateKey = Self.retainedDailyPayloads(sleepPayloadsByDateKey)
+        let payloads = sleepPayloadsByDateKey
+        let revision = nextPayloadFilePersistenceRevision()
+        Task { [payloadFileCache] in
+            await payloadFileCache.save(payloads, for: .sleepPayloads, revision: revision)
+        }
     }
 
     private func persistDailyPayloadIfNeeded(_ payload: PulsarDailyMetricsSyncPayload) {
@@ -1482,7 +2637,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
                 payload,
                 dateKey: payload.resolvedDateKey,
                 cache: &sourceDailyPayloadsByDateKey,
-                defaultsKey: sourceDailyCacheKey,
+                entry: .sourceDailyPayloads,
                 isUsable: { $0.hasCompleteDailyScores || $0.hasValidStrain || $0.hasValidRecovery || $0.hasValidStress || $0.hasValidHealthMonitor }
             ) || didUpdate
         }
@@ -1491,7 +2646,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
                 payload,
                 dateKey: sleep.sleepDateKey,
                 cache: &sourceSleepPayloadsByDateKey,
-                defaultsKey: sourceSleepCacheKey,
+                entry: .sourceSleepPayloads,
                 isUsable: { $0.sleep?.isValid == true }
             ) || didUpdate
         }
@@ -1503,7 +2658,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         _ payload: PulsarDailyMetricsSyncPayload,
         dateKey: String,
         cache: inout [String: [PulsarSyncSourceDevice: PulsarDailyMetricsSyncPayload]],
-        defaultsKey: String,
+        entry: PulsarSyncPayloadFileCache.Entry,
         isUsable: (PulsarDailyMetricsSyncPayload) -> Bool
     ) -> Bool {
         let payload = payload.sanitizedForDeclaredSource()
@@ -1516,48 +2671,143 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
                 bySource[source]?.syncedAt != merged.syncedAt else { return false }
         bySource[source] = merged
         cache[dateKey] = bySource
-        persistSourcePayloadCache(cache, defaultsKey: defaultsKey)
+        cache = Self.retainedSourcePayloads(cache)
+        persistSourcePayloadCache(cache, entry: entry)
         sourceCacheRevision &+= 1
         PulsarSyncDebugLogger.log("Source cache updated dateKey=\(dateKey) source=\(source.rawValue) session=\(payload.syncSessionID?.uuidString ?? "none")")
         return true
     }
 
+    private func pruneDailyCaches() {
+        dailyPayloadsByDateKey = Self.retainedDailyPayloads(dailyPayloadsByDateKey)
+        sleepPayloadsByDateKey = Self.retainedDailyPayloads(sleepPayloadsByDateKey)
+        sourceDailyPayloadsByDateKey = Self.retainedSourcePayloads(sourceDailyPayloadsByDateKey)
+        sourceSleepPayloadsByDateKey = Self.retainedSourcePayloads(sourceSleepPayloadsByDateKey)
+    }
+
     private func persistSourcePayloadCache(
         _ cache: [String: [PulsarSyncSourceDevice: PulsarDailyMetricsSyncPayload]],
-        defaultsKey: String
+        entry: PulsarSyncPayloadFileCache.Entry
     ) {
-        guard let data = try? JSONEncoder().encode(cache) else { return }
-        defaults.set(data, forKey: defaultsKey)
+        let revision = nextPayloadFilePersistenceRevision()
+        Task { [payloadFileCache] in
+            await payloadFileCache.save(cache, for: entry, revision: revision)
+        }
     }
 
     private func persistSleepPreferences(_ payload: PulsarSleepPreferencesSyncPayload) {
         guard let data = try? JSONEncoder().encode(payload) else { return }
-        defaults.set(data, forKey: sleepPreferencesCacheKey)
+        setDefaultsData(data, forKey: sleepPreferencesCacheKey)
     }
 
     private func persistAppleWatchBattery(_ snapshot: AppleWatchBatterySnapshot) {
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
-        defaults.set(data, forKey: appleWatchBatteryCacheKey)
+        setDefaultsData(data, forKey: appleWatchBatteryCacheKey)
     }
 
     private func persistWatchHeartbeat(_ snapshot: AppleWatchHeartbeatSnapshot) {
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
-        defaults.set(data, forKey: watchHeartbeatCacheKey)
+        setDefaultsData(data, forKey: watchHeartbeatCacheKey)
     }
 
     private func persistActiveWorkoutState(_ state: PulsarActiveWorkoutSyncState) {
-        guard let data = Self.encodeActiveWorkoutState(state) else { return }
-        defaults.set(data, forKey: activeWorkoutCacheKey)
+        activeWorkoutPersistenceGeneration += 1
+        let generation = activeWorkoutPersistenceGeneration
+        Task { [weak self, codecActor] in
+            guard let data = await codecActor.encodeActiveWorkoutState(state) else { return }
+            guard let self,
+                  generation == self.activeWorkoutPersistenceGeneration,
+                  self.activeWorkoutState?.sessionId == state.sessionId,
+                  self.activeWorkoutState?.updatedAt == state.updatedAt else { return }
+            self.setDefaultsData(data, forKey: self.activeWorkoutCacheKey)
+        }
     }
 
-    private func persistActiveGymState(_ state: ActiveGymWorkoutState) {
-        guard let data = ActiveGymWorkoutCodec.encodeState(state) else { return }
-        defaults.set(data, forKey: activeGymCacheKey)
+    private func scheduleActiveGymPersistence(_ state: ActiveGymWorkoutState, reason: String) {
+        pendingActiveGymPersistence = state
+        activeGymPersistenceGeneration += 1
+        let generation = activeGymPersistenceGeneration
+
+        guard ActiveGymSyncCadencePolicy.isVolatile(reason: reason, isFinished: state.isFinished) else {
+            activeGymPersistenceTask?.cancel()
+            activeGymPersistenceTask = nil
+            pendingActiveGymPersistence = nil
+            persistActiveGymState(state, generation: generation)
+            return
+        }
+
+        guard activeGymPersistenceTask == nil else { return }
+        activeGymPersistenceTask = Task { [weak self] in
+            try? await Task.sleep(for: ActiveGymSyncCadencePolicy.persistenceDebounceInterval)
+            guard !Task.isCancelled, let self else { return }
+            let pending = self.pendingActiveGymPersistence
+            let pendingGeneration = self.activeGymPersistenceGeneration
+            self.pendingActiveGymPersistence = nil
+            self.activeGymPersistenceTask = nil
+            guard let pending else { return }
+            self.persistActiveGymState(pending, generation: pendingGeneration)
+        }
+    }
+
+    private func persistActiveGymState(_ state: ActiveGymWorkoutState, generation: Int) {
+        let fingerprint = Self.gymStateFingerprint(state)
+        guard fingerprint != lastPersistedGymFingerprint else { return }
+        let codecActor = codecActor
+        Task.detached { [fingerprint] in
+            guard let data = await codecActor.encodeActiveGymState(state) else { return }
+            await MainActor.run {
+                PulsarWatchConnectivitySyncStore.shared.commitPersistedActiveGymState(
+                    data,
+                    state: state,
+                    generation: generation,
+                    fingerprint: fingerprint
+                )
+            }
+        }
+    }
+
+    private func commitPersistedActiveGymState(
+        _ data: Data,
+        state: ActiveGymWorkoutState,
+        generation: Int,
+        fingerprint: String
+    ) {
+        guard generation == activeGymPersistenceGeneration,
+              activeGymState?.sessionId == state.sessionId,
+              activeGymState?.isFinished == false else { return }
+        lastPersistedGymFingerprint = fingerprint
+        setDefaultsData(data, forKey: activeGymCacheKey)
+    }
+
+    private static func gymStateFingerprint(_ state: ActiveGymWorkoutState) -> String {
+        [
+            state.sessionId.uuidString,
+            String(state.updatedAt.timeIntervalSince1970),
+            String(state.elapsedSeconds),
+            String(state.completedSets),
+            String(state.currentExerciseIndex),
+            String(state.currentSetIndex),
+            String(Int(state.currentHeartRate ?? -1)),
+            String(state.restRemainingSeconds ?? -1),
+            state.isFinished ? "1" : "0"
+        ].joined(separator: "|")
+    }
+
+    private func cancelPendingActiveGymPersistence() {
+        activeGymPersistenceGeneration += 1
+        pendingActiveGymPersistence = nil
+        activeGymPersistenceTask?.cancel()
+        activeGymPersistenceTask = nil
+        lastPersistedGymFingerprint = nil
+        lastTransmittedGymFingerprint = nil
     }
 
     private func persistSavedGymRoutines(_ payload: SavedGymRoutinesSyncPayload) {
         guard let data = SavedGymRoutinesSyncCodec.encode(payload) else { return }
-        defaults.set(data, forKey: savedGymRoutinesCacheKey)
+        let revision = nextPayloadFilePersistenceRevision()
+        Task { [payloadFileCache] in
+            await payloadFileCache.saveEncodedData(data, for: .savedGymRoutines, revision: revision)
+        }
         defaults.set(payload.revision, forKey: savedGymRoutinesRevisionCacheKey)
     }
 
@@ -1565,7 +2815,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         guard let session = counterpartSession(for: "daily metrics") else { return }
         let metric = metricPayload ?? latestPayload
         let sleepPreferences = sleepPreferences ?? latestSleepPreferences
-        let applicationContext = makeApplicationContext(
+        let source = applicationContextSource(
             metricPayload: metric,
             sleepPreferences: sleepPreferences,
             activeWorkoutState: activeWorkoutState,
@@ -1573,129 +2823,301 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             savedGymRoutines: savedGymRoutines
         )
 
-        guard !applicationContext.isEmpty else { return }
+        Task { @MainActor [weak self, codecActor] in
+            let encoded = await codecActor.encodeApplicationContext(source)
+            guard let self,
+                  self.counterpartSession(for: "daily metrics encoded send") === session else { return }
+            let applicationContext = self.makeApplicationContext(encoded: encoded)
+            guard !applicationContext.isEmpty else { return }
 
-        do {
-            try session.updateApplicationContext(applicationContext)
-            PulsarSyncDebugLogger.log("WatchConnectivity applicationContext updated metricSession=\(metric?.syncSessionID?.uuidString ?? "none") alarmEnabled=\(sleepPreferences?.alarmEnabled == true)")
-        } catch {
-            PulsarSyncDebugLogger.log("Failed to update applicationContext: \(error.localizedDescription)")
+            if self.isApplicationContextSourceCurrent(source) {
+                do {
+                    try session.updateApplicationContext(applicationContext)
+                    PulsarSyncDebugLogger.log("WatchConnectivity applicationContext updated metricSession=\(metric?.syncSessionID?.uuidString ?? "none") alarmEnabled=\(sleepPreferences?.alarmEnabled == true)")
+                } catch {
+                    PulsarSyncDebugLogger.log("Failed to update applicationContext: \(error.localizedDescription)")
+                }
+            }
+
+            var durablePayload = applicationContext
+            durablePayload.removeValue(forKey: Self.activeWorkoutStatePayloadKey)
+            durablePayload.removeValue(forKey: Self.activeGymStatePayloadKey)
+            session.transferUserInfo(durablePayload)
+            PulsarSyncDebugLogger.log("WatchConnectivity payload queued for transfer metricSession=\(metric?.syncSessionID?.uuidString ?? "none") alarmEnabled=\(sleepPreferences?.alarmEnabled == true)")
         }
-
-        session.transferUserInfo(applicationContext)
-        PulsarSyncDebugLogger.log("WatchConnectivity payload queued for transfer metricSession=\(metric?.syncSessionID?.uuidString ?? "none") alarmEnabled=\(sleepPreferences?.alarmEnabled == true)")
     }
 
     private func publishCurrentApplicationContext(reason: String) {
         guard let session = counterpartSession(for: "cleared active workout context") else { return }
-        let applicationContext = makeApplicationContext(
+        let source = applicationContextSource(
             metricPayload: latestPayload,
             sleepPreferences: latestSleepPreferences,
             activeWorkoutState: activeWorkoutState,
             activeGymState: activeGymState,
             savedGymRoutines: savedGymRoutines
         )
-        do {
-            try session.updateApplicationContext(applicationContext)
-            PulsarSyncDebugLogger.log("Active workout applicationContext refreshed after clear reason=\(reason) activeSession=\(activeWorkoutState?.sessionId.uuidString ?? "none") activeGym=\(activeGymState?.sessionId.uuidString ?? "none")")
-        } catch {
-            PulsarSyncDebugLogger.log("Active workout applicationContext clear failed reason=\(reason) error=\(error.localizedDescription)")
+
+        Task { @MainActor [weak self, codecActor] in
+            let encoded = await codecActor.encodeApplicationContext(source)
+            guard let self,
+                  self.counterpartSession(for: "cleared active workout encoded send") === session,
+                  self.isApplicationContextSourceCurrent(source) else { return }
+            let applicationContext = self.makeApplicationContext(encoded: encoded)
+            do {
+                try session.updateApplicationContext(applicationContext)
+                PulsarSyncDebugLogger.log("Active workout applicationContext refreshed after clear reason=\(reason) activeSession=\(source.activeWorkout?.sessionId.uuidString ?? "none") activeGym=\(source.activeGym?.sessionId.uuidString ?? "none")")
+            } catch {
+                PulsarSyncDebugLogger.log("Active workout applicationContext clear failed reason=\(reason) error=\(error.localizedDescription)")
+            }
         }
     }
 
     private func sendGymStateToCounterpart(_ state: ActiveGymWorkoutState, reason: String) {
-        guard let session = counterpartSession(for: "Active Gym state"),
-              let data = ActiveGymWorkoutCodec.encodeState(state) else { return }
+        guard counterpartSession(for: "Active Gym state") != nil else { return }
+        let isVolatile = isVolatileActiveGymUpdate(reason: reason, state: state)
+        let now = Date()
+        let updatesApplicationContext = !isVolatile ||
+            now.timeIntervalSince(lastActiveGymLiveApplicationContextAt) >= ActiveGymSyncCadencePolicy.applicationContextLiveInterval
 
-        var realtimePayload: [String: Any] = [Self.activeGymStatePayloadKey: data]
-        if let activeData = Self.encodeActiveWorkoutState(PulsarActiveWorkoutSyncState(gymState: state)) {
-            realtimePayload[Self.activeWorkoutStatePayloadKey] = activeData
-        }
-        if session.isReachable {
-            session.sendMessage(realtimePayload, replyHandler: nil) { error in
-                PulsarSyncDebugLogger.log("Active Gym state sendMessage failed session=\(state.sessionId.uuidString) error=\(error.localizedDescription)")
-            }
-            PulsarSyncDebugLogger.log("Active Gym state sendMessage sent session=\(state.sessionId.uuidString) reachable=true")
-        } else {
-            PulsarSyncDebugLogger.log("Active Gym state sendMessage skipped session=\(state.sessionId.uuidString) reachable=false fallback=applicationContext")
-        }
-
-        let applicationContext = makeApplicationContext(
-            metricPayload: latestPayload,
-            sleepPreferences: latestSleepPreferences,
-            activeWorkoutState: activeWorkoutState,
-            activeGymState: state,
-            savedGymRoutines: savedGymRoutines
-        )
-        if isVolatileActiveGymUpdate(reason: reason, state: state) {
-            let now = Date()
-            if now.timeIntervalSince(lastActiveGymLiveApplicationContextAt) >= 2 {
-                lastActiveGymLiveApplicationContextAt = now
-                do {
-                    try session.updateApplicationContext(applicationContext)
-                    PulsarSyncDebugLogger.log("Active Gym live applicationContext updated session=\(state.sessionId.uuidString) reason=\(reason)")
-                } catch {
-                    PulsarSyncDebugLogger.log("Failed to update Active Gym live applicationContext: \(error.localizedDescription)")
-                }
-            }
-            guard now.timeIntervalSince(lastActiveGymLiveTransferAt) >= 10 else {
-                PulsarSyncDebugLogger.log("Active Gym live transfer throttled session=\(state.sessionId.uuidString) reason=\(reason)")
-                return
-            }
-            lastActiveGymLiveTransferAt = now
-            session.transferUserInfo(realtimePayload)
-            PulsarSyncDebugLogger.log("Active Gym live transferUserInfo queued session=\(state.sessionId.uuidString) reason=\(reason)")
+        guard updatesApplicationContext else {
+            PulsarSyncDebugLogger.log("Active Gym latest-state applicationContext throttled session=\(state.sessionId.uuidString) reason=\(reason)")
+            PulsarWorkoutStartupTrace.count("[WCRate] activeGymState.sendThrottled")
             return
         }
 
+        lastActiveGymLiveApplicationContextAt = now
+
+        let compactState = isVolatile ? state.compactedForLiveSync : state
+        let fingerprint = Self.gymStateFingerprint(compactState)
+        guard fingerprint != lastTransmittedGymFingerprint else {
+            PulsarWorkoutStartupTrace.count("[WCRate] activeGymState.sendDuplicate")
+            return
+        }
+        lastTransmittedGymFingerprint = fingerprint
+
+        let activeWorkout = PulsarActiveWorkoutSyncState(gymState: state)
+        let applicationContextSource = PulsarWatchConnectivityApplicationContextSource(
+            dailyMetrics: latestPayload,
+            sleepPreferences: latestSleepPreferences,
+            appleWatchBattery: latestAppleWatchBattery,
+            watchHeartbeat: latestWatchHeartbeat,
+            activeWorkout: activeWorkoutState,
+            activeGym: compactState,
+            savedGymRoutines: SavedGymRoutinesSyncPayload(
+                revision: savedGymRoutinesRevision,
+                routines: savedGymRoutines
+            )
+        )
+        let source = PulsarWatchConnectivityGymTransmissionSource(
+            state: compactState,
+            activeWorkout: activeWorkout,
+            sendsDelta: false,
+            applicationContext: applicationContextSource
+        )
+
+        let codecActor = codecActor
+        Task.detached {
+            let encoded = await codecActor.encodeGymTransmission(source)
+            await MainActor.run {
+                PulsarWatchConnectivitySyncStore.shared.commitEncodedGymTransmission(
+                    encoded,
+                    state: state,
+                    reason: reason
+                )
+            }
+        }
+    }
+
+    private func commitEncodedGymTransmission(
+        _ encoded: PulsarWatchConnectivityEncodedGymTransmission,
+        state: ActiveGymWorkoutState,
+        reason: String
+    ) {
+        guard let session = counterpartSession(for: "Active Gym encoded send") else { return }
+        let encodedBytes = (encoded.activeGymStateData?.count ?? 0)
+            + (encoded.activeGymDeltaData?.count ?? 0)
+            + (encoded.activeWorkoutData?.count ?? 0)
+        PulsarWorkoutStartupTrace.count("[WCRate] activeGymState.send", bytes: encodedBytes)
+        if !state.isFinished {
+            guard let current = activeGymState,
+                  current.sessionId == state.sessionId,
+                  current.updatedAt <= state.updatedAt else {
+                PulsarSyncDebugLogger.log("Active Gym stale encoded transmission dropped session=\(state.sessionId.uuidString) reason=\(reason)")
+                return
+            }
+        }
+        if state.isFinished {
+            var payload: [String: Any] = [:]
+            if let data = encoded.activeGymStateData {
+                payload[Self.activeGymStatePayloadKey] = data
+            }
+            if let data = encoded.activeWorkoutData {
+                payload[Self.activeWorkoutStatePayloadKey] = data
+            }
+            guard !payload.isEmpty else { return }
+            payload = workoutSyncEnvelope(
+                payload,
+                messageID: UUID(),
+                category: "activeGymTerminal",
+                sessionID: state.sessionId,
+                phase: "finished",
+                reason: reason,
+                retryAttempt: 0
+            )
+            session.transferUserInfo(payload)
+            PulsarSyncDebugLogger.log(
+                "Active Gym terminal queued session=\(state.sessionId.uuidString) reason=\(reason) transport=durable"
+            )
+            return
+        }
+        guard let encodedApplicationContext = encoded.applicationContext else { return }
+        let applicationContext = makeApplicationContext(encoded: encodedApplicationContext)
         do {
             try session.updateApplicationContext(applicationContext)
-            PulsarSyncDebugLogger.log("Active Gym state applicationContext updated session=\(state.sessionId.uuidString)")
+            PulsarSyncDebugLogger.log("Active Gym applicationContext updated session=\(state.sessionId.uuidString) compact=\(isVolatileActiveGymUpdate(reason: reason, state: state)) reason=\(reason) transport=latestState")
         } catch {
             PulsarSyncDebugLogger.log("Failed to update Active Gym applicationContext: \(error.localizedDescription)")
         }
-        session.transferUserInfo(realtimePayload)
-        PulsarSyncDebugLogger.log("Active Gym state transferUserInfo queued session=\(state.sessionId.uuidString)")
     }
 
     private func isVolatileActiveGymUpdate(reason: String, state: ActiveGymWorkoutState) -> Bool {
-        guard !state.isFinished else { return false }
-        return reason.localizedCaseInsensitiveContains("tick") ||
-            reason.localizedCaseInsensitiveContains("metrics")
+        ActiveGymSyncCadencePolicy.isVolatile(reason: reason, isFinished: state.isFinished)
     }
 
-    private func sendSavedGymRoutinesToCounterpart(_ routines: [WatchGymRoutinePlan]? = nil) {
-        let routines = routines ?? savedGymRoutines
-        guard let session = deferredRoutineCatalogSession(for: "saved Gym routines") else { return }
-        let payloadModel = SavedGymRoutinesSyncPayload(
-            revision: savedGymRoutinesRevision,
-            routines: routines
-        )
-        guard let data = SavedGymRoutinesSyncCodec.encode(payloadModel) else { return }
-
-        let payload = [Self.savedGymRoutinesPayloadKey: data]
-        if session.isReachable {
-            session.sendMessage(payload, replyHandler: nil) { error in
-                PulsarSyncDebugLogger.log("Saved Gym routines sendMessage failed error=\(error.localizedDescription)")
-            }
-        } else {
-            PulsarSyncDebugLogger.log("Saved Gym routines sendMessage skipped reachable=false fallback=applicationContext+transferUserInfo revision=\(payloadModel.revision)")
+    private func makeApplicationContext(
+        encoded: PulsarWatchConnectivityEncodedApplicationContext
+    ) -> [String: Any] {
+        var context: [String: Any] = [:]
+        if let data = encoded.dailyMetricsData {
+            context[PulsarSyncPayloadCodec.payloadKey] = data
         }
+        if let data = encoded.sleepPreferencesData {
+            context[Self.sleepPreferencesPayloadKey] = data
+        }
+        if let data = encoded.appleWatchBatteryData {
+            context[Self.appleWatchBatteryPayloadKey] = data
+        }
+        if let data = encoded.watchHeartbeatData {
+            context[Self.watchHeartbeatPayloadKey] = data
+        }
+        if let data = encoded.activeWorkoutData {
+            context[Self.activeWorkoutStatePayloadKey] = data
+        }
+        if let data = encoded.activeGymData {
+            context[Self.activeGymStatePayloadKey] = data
+        }
+        if let data = encoded.savedGymRoutinesData {
+            context[Self.savedGymRoutinesPayloadKey] = data
+        }
+        return context
+    }
 
-        let applicationContext = makeApplicationContext(
+    private func sendSavedGymRoutinesToCounterpart(
+        _ routines: [WatchGymRoutinePlan]? = nil,
+        respondingToVerifiedInboundRequest: Bool = false,
+        reason: String = "savedGymRoutinesSync"
+    ) {
+        let routines = routines ?? savedGymRoutines
+        guard let session = deferredRoutineCatalogSession(
+            for: "saved Gym routines",
+            respondingToVerifiedInboundRequest: respondingToVerifiedInboundRequest
+        ) else { return }
+        let source = applicationContextSource(
             metricPayload: latestPayload,
             sleepPreferences: latestSleepPreferences,
             activeWorkoutState: activeWorkoutState,
             activeGymState: activeGymState,
             savedGymRoutines: routines
         )
-        do {
-            try session.updateApplicationContext(applicationContext)
-            PulsarSyncDebugLogger.log("Saved Gym routines applicationContext updated count=\(routines.count) revision=\(payloadModel.revision)")
-        } catch {
-            PulsarSyncDebugLogger.log("Failed to update saved Gym routines applicationContext: \(error.localizedDescription)")
+
+        Task { @MainActor [weak self, codecActor] in
+            let encoded = await codecActor.encodeApplicationContext(source)
+            guard let self,
+                  self.counterpartSession(
+                    for: "saved Gym routines encoded send",
+                    respondingToVerifiedInboundRequest: respondingToVerifiedInboundRequest
+                  ) === session,
+                  source.savedGymRoutines.revision == self.savedGymRoutinesRevision,
+                  source.savedGymRoutines.routines == self.savedGymRoutines,
+                  let data = encoded.savedGymRoutinesData else { return }
+            let payload = [Self.savedGymRoutinesPayloadKey: data]
+            PulsarSyncDebugLogger.log(
+                "[GymRoutineSync] source=\(reason) revision=\(source.savedGymRoutines.revision) routineCount=\(routines.count) exerciseCount=\(routines.reduce(0) { $0 + $1.exercises.count }) setCount=\(routines.reduce(0) { $0 + $1.totalSetCount }) bytes=\(data.count)"
+            )
+            if session.isReachable {
+                session.sendMessage(payload, replyHandler: nil) { error in
+                    PulsarSyncDebugLogger.log("Saved Gym routines sendMessage failed error=\(error.localizedDescription)")
+                }
+            } else {
+                PulsarSyncDebugLogger.log("Saved Gym routines sendMessage skipped reachable=false fallback=applicationContext+transferUserInfo revision=\(source.savedGymRoutines.revision)")
+            }
+
+            if self.isApplicationContextSourceCurrent(source) {
+                let applicationContext = self.makeApplicationContext(encoded: encoded)
+                do {
+                    try session.updateApplicationContext(applicationContext)
+                    PulsarSyncDebugLogger.log("Saved Gym routines applicationContext updated count=\(routines.count) revision=\(source.savedGymRoutines.revision)")
+                } catch {
+                    PulsarSyncDebugLogger.log("Failed to update saved Gym routines applicationContext: \(error.localizedDescription)")
+                }
+            }
+            let alreadyOutstanding = session.outstandingUserInfoTransfers.contains { transfer in
+                guard let outstandingData = transfer.userInfo[Self.savedGymRoutinesPayloadKey] as? Data else {
+                    return false
+                }
+                return SavedGymRoutinesSyncCodec.semanticallyEquivalent(outstandingData, data)
+            }
+            let shouldQueue = Self.shouldQueueSavedGymRoutinesPayload(
+                data: data,
+                revision: source.savedGymRoutines.revision,
+                lastQueuedData: self.lastQueuedSavedGymRoutinesData,
+                lastQueuedRevision: self.lastQueuedSavedGymRoutinesRevision,
+                hasOutstandingMatchingPayload: alreadyOutstanding,
+                respondingToVerifiedInboundRequest: respondingToVerifiedInboundRequest
+            )
+            if !shouldQueue {
+                PulsarSyncDebugLogger.log(
+                    "[GymRoutineSync] source=\(reason) revision=\(source.savedGymRoutines.revision) durableQueue=skippedDuplicate bytes=\(data.count) outstanding=\(alreadyOutstanding)"
+                )
+            } else {
+                session.transferUserInfo(payload)
+                self.lastQueuedSavedGymRoutinesRevision = source.savedGymRoutines.revision
+                self.lastQueuedSavedGymRoutinesData = data
+            }
         }
-        session.transferUserInfo(applicationContext)
+    }
+
+    private func applicationContextSource(
+        metricPayload: PulsarDailyMetricsSyncPayload?,
+        sleepPreferences: PulsarSleepPreferencesSyncPayload?,
+        activeWorkoutState: PulsarActiveWorkoutSyncState?,
+        activeGymState: ActiveGymWorkoutState?,
+        savedGymRoutines: [WatchGymRoutinePlan],
+        watchHeartbeat: AppleWatchHeartbeatSnapshot? = nil
+    ) -> PulsarWatchConnectivityApplicationContextSource {
+        PulsarWatchConnectivityApplicationContextSource(
+            dailyMetrics: metricPayload,
+            sleepPreferences: sleepPreferences,
+            appleWatchBattery: latestAppleWatchBattery,
+            watchHeartbeat: watchHeartbeat ?? latestWatchHeartbeat,
+            activeWorkout: activeWorkoutState,
+            activeGym: activeGymState,
+            savedGymRoutines: SavedGymRoutinesSyncPayload(
+                revision: savedGymRoutinesRevision,
+                routines: savedGymRoutines
+            )
+        )
+    }
+
+    private func isApplicationContextSourceCurrent(
+        _ source: PulsarWatchConnectivityApplicationContextSource
+    ) -> Bool {
+        source.activeWorkout?.sessionId == activeWorkoutState?.sessionId &&
+            source.activeWorkout?.updatedAt == activeWorkoutState?.updatedAt &&
+            source.activeGym?.sessionId == activeGymState?.sessionId &&
+            source.activeGym?.updatedAt == activeGymState?.updatedAt &&
+            source.savedGymRoutines.revision == savedGymRoutinesRevision &&
+            source.savedGymRoutines.routines == savedGymRoutines
     }
 
     private func makeApplicationContext(
@@ -1706,8 +3128,11 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         savedGymRoutines: [WatchGymRoutinePlan]
     ) -> [String: Any] {
         var applicationContext: [String: Any] = [:]
-        let contextActiveWorkoutState = activeWorkoutState ?? freshTerminalActiveWorkoutState()
-        let contextActiveGymState = activeGymState ?? freshTerminalGymState()
+        // Only publish live session state. Finished/terminal snapshots stay local
+        // (lastFinishedGymState / recentTerminal*) and are delivered via explicit
+        // finish messages — never re-embedded as an active stand-in.
+        let contextActiveWorkoutState = activeWorkoutState
+        let contextActiveGymState = activeGymState
         if let metricPayload, let data = PulsarSyncPayloadCodec.encode(metricPayload) {
             applicationContext[PulsarSyncPayloadCodec.payloadKey] = data
         }
@@ -1741,24 +3166,6 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         return applicationContext
     }
 
-    private func freshTerminalActiveWorkoutState() -> PulsarActiveWorkoutSyncState? {
-        guard let state = recentTerminalActiveWorkoutState else { return nil }
-        guard !Self.isExpiredEndedActiveWorkout(state) else {
-            recentTerminalActiveWorkoutState = nil
-            return nil
-        }
-        return state
-    }
-
-    private func freshTerminalGymState() -> ActiveGymWorkoutState? {
-        guard let state = recentTerminalGymState else { return nil }
-        guard !Self.isExpiredFinishedGymState(state) else {
-            recentTerminalGymState = nil
-            return nil
-        }
-        return state
-    }
-
     private func sendAppleWatchBatteryToCounterpart(_ snapshot: AppleWatchBatterySnapshot) {
         guard let session = counterpartSession(for: "Apple Watch battery") else { return }
         let payload = Self.appleWatchBatteryMessage(from: snapshot)
@@ -1774,185 +3181,288 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     }
 
     private func sendWatchHeartbeatToCounterpart(_ heartbeat: AppleWatchHeartbeatSnapshot, reason: String) {
-        guard let session = counterpartSession(for: "Watch heartbeat"),
-              let data = try? JSONEncoder().encode(heartbeat) else { return }
-        let payload = [Self.watchHeartbeatPayloadKey: data]
-
-        if session.isReachable {
-            session.sendMessage(payload, replyHandler: nil) { error in
-                PulsarSyncDebugLogger.log("Watch heartbeat sendMessage failed reason=\(reason) error=\(error.localizedDescription)")
-            }
-            PulsarSyncDebugLogger.log("Watch heartbeat sendMessage sent reason=\(reason) reachable=true")
-        } else {
-            PulsarSyncDebugLogger.log("Watch heartbeat sendMessage skipped reason=\(reason) reachable=false fallback=applicationContext+transferUserInfo")
-        }
-
-        var applicationContext = makeApplicationContext(
+        guard let session = counterpartSession(for: "Watch heartbeat") else { return }
+        let source = applicationContextSource(
             metricPayload: latestPayload,
             sleepPreferences: latestSleepPreferences,
             activeWorkoutState: activeWorkoutState,
             activeGymState: activeGymState,
-            savedGymRoutines: savedGymRoutines
+            savedGymRoutines: savedGymRoutines,
+            watchHeartbeat: heartbeat
         )
-        applicationContext[Self.watchHeartbeatPayloadKey] = data
-        do {
-            try session.updateApplicationContext(applicationContext)
-            PulsarSyncDebugLogger.log("Watch heartbeat applicationContext updated reason=\(reason)")
-        } catch {
-            PulsarSyncDebugLogger.log("Watch heartbeat applicationContext failed reason=\(reason) error=\(error.localizedDescription)")
+
+        Task { @MainActor [weak self, codecActor] in
+            let encoded = await codecActor.encodeApplicationContext(source)
+            guard let self,
+                  self.counterpartSession(for: "Watch heartbeat encoded send") === session,
+                  let _ = encoded.watchHeartbeatData else { return }
+
+            if self.isApplicationContextSourceCurrent(source) {
+                let applicationContext = self.makeApplicationContext(encoded: encoded)
+                do {
+                    try session.updateApplicationContext(applicationContext)
+                    PulsarSyncDebugLogger.log("Watch heartbeat applicationContext updated reason=\(reason) transport=latestState")
+                } catch {
+                    PulsarSyncDebugLogger.log("Watch heartbeat applicationContext failed reason=\(reason) error=\(error.localizedDescription)")
+                }
+            }
         }
-        session.transferUserInfo(payload)
-        PulsarSyncDebugLogger.log("Watch heartbeat transferUserInfo queued reason=\(reason)")
     }
 
     private func sendActiveWorkoutStateToCounterpart(_ state: PulsarActiveWorkoutSyncState, reason: String) {
-        guard let session = counterpartSession(for: "Active workout state"),
-              let data = Self.encodeActiveWorkoutState(state) else { return }
-        var payload: [String: Any] = [Self.activeWorkoutStatePayloadKey: data]
-        let messageID = UUID()
-        payload = workoutSyncEnvelope(
-            payload,
-            messageID: messageID,
-            category: "activeWorkoutState",
-            sessionID: state.sessionId,
-            phase: state.phase.rawValue,
-            reason: reason,
-            retryAttempt: 0
-        )
+        guard let session = counterpartSession(for: "Active workout state") else { return }
         let isLiveMetricsUpdate = state.phase == .active || state.phase == .resumed || state.phase == .paused
+        let now = Date()
+        let updatesApplicationContext = !isLiveMetricsUpdate ||
+            now.timeIntervalSince(lastActiveWorkoutLiveApplicationContextAt) >= 2
 
-        if session.isReachable {
-            session.sendMessage(payload) { reply in
-                Self.logWorkoutSyncAcknowledgement(reply, context: "Active workout state", fallbackSessionID: state.sessionId)
-            } errorHandler: { error in
-                PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Active workout sendMessage failed session=\(state.sessionId.uuidString) type=\(state.kind.workoutTypeRawValue) phase=\(state.phase.rawValue) error=\(error.localizedDescription)")
-            }
-            PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Active workout sendMessage sent session=\(state.sessionId.uuidString) type=\(state.kind.workoutTypeRawValue) phase=\(state.phase.rawValue) reason=\(reason) reachable=true distanceMeters=\(state.distanceMeters ?? -1) elapsedSeconds=\(state.elapsedSeconds) movingSeconds=\(state.movingSeconds ?? -1) pace=\(state.currentPaceSecondsPerKilometer ?? -1) calories=\(state.activeEnergyKilocalories ?? -1) heartRate=\(state.currentHeartRate ?? -1) sampleTimestamp=\(state.runMetricsUpdatedAt?.description ?? "none")")
-        } else {
-            PulsarSyncDebugLogger.log("[PulsarWatchConnectivity] Active workout sendMessage skipped session=\(state.sessionId.uuidString) type=\(state.kind.workoutTypeRawValue) phase=\(state.phase.rawValue) reason=\(reason) reachable=false fallback=transferUserInfo")
+        if updatesApplicationContext {
+            lastActiveWorkoutLiveApplicationContextAt = now
         }
 
-        let applicationContext = makeApplicationContext(
-            metricPayload: latestPayload,
-            sleepPreferences: latestSleepPreferences,
-            activeWorkoutState: state,
-            activeGymState: activeGymState,
-            savedGymRoutines: savedGymRoutines
-        )
+        let contextSource: PulsarWatchConnectivityApplicationContextSource? = updatesApplicationContext
+            ? PulsarWatchConnectivityApplicationContextSource(
+                dailyMetrics: latestPayload,
+                sleepPreferences: latestSleepPreferences,
+                appleWatchBattery: latestAppleWatchBattery,
+                watchHeartbeat: latestWatchHeartbeat,
+                activeWorkout: state,
+                activeGym: activeGymState?.compactedForLiveSync,
+                savedGymRoutines: SavedGymRoutinesSyncPayload(
+                    revision: savedGymRoutinesRevision,
+                    routines: savedGymRoutines
+                )
+            )
+            : nil
 
-        if isLiveMetricsUpdate {
-            let now = Date()
-            if now.timeIntervalSince(lastActiveWorkoutLiveApplicationContextAt) >= 2 {
-                lastActiveWorkoutLiveApplicationContextAt = now
+        Task { @MainActor [weak self, codecActor] in
+            guard let data = await codecActor.encodeActiveWorkoutState(state),
+                  let self,
+                  self.counterpartSession(for: "Active workout encoded send") === session else { return }
+            if isLiveMetricsUpdate {
+                guard let current = self.activeWorkoutState,
+                      current.sessionId == state.sessionId,
+                      current.updatedAt <= state.updatedAt else {
+                    PulsarSyncDebugLogger.log("Active workout stale encoded transmission dropped session=\(state.sessionId.uuidString) reason=\(reason)")
+                    return
+                }
+            }
+            let encodedContext: PulsarWatchConnectivityEncodedApplicationContext?
+            if let contextSource {
+                encodedContext = await codecActor.encodeApplicationContext(contextSource)
+            } else {
+                encodedContext = nil
+            }
+            var payload: [String: Any] = [Self.activeWorkoutStatePayloadKey: data]
+            payload = self.workoutSyncEnvelope(
+                payload,
+                messageID: UUID(),
+                category: "activeWorkoutState",
+                sessionID: state.sessionId,
+                phase: state.phase.rawValue,
+                reason: reason,
+                retryAttempt: 0
+            )
+
+            if let context = encodedContext {
+                let applicationContext = self.makeApplicationContext(encoded: context)
                 do {
                     try session.updateApplicationContext(applicationContext)
-                    PulsarSyncDebugLogger.log("Active workout live applicationContext updated session=\(state.sessionId.uuidString) type=\(state.kind.workoutTypeRawValue) phase=\(state.phase.rawValue) reason=\(reason)")
+                    PulsarSyncDebugLogger.log("Active workout applicationContext updated session=\(state.sessionId.uuidString) type=\(state.kind.workoutTypeRawValue) phase=\(state.phase.rawValue) reason=\(reason) transport=latestState")
                 } catch {
                     PulsarSyncDebugLogger.log("Active workout live applicationContext failed session=\(state.sessionId.uuidString) error=\(error.localizedDescription)")
                 }
             }
-            guard now.timeIntervalSince(lastActiveWorkoutLiveTransferAt) >= 10 else {
-                PulsarSyncDebugLogger.log("Active workout live transfer throttled session=\(state.sessionId.uuidString) type=\(state.kind.workoutTypeRawValue) phase=\(state.phase.rawValue) reason=\(reason)")
-                return
+
+            if !isLiveMetricsUpdate {
+                session.transferUserInfo(payload)
+                PulsarSyncDebugLogger.log("Active workout state queued session=\(state.sessionId.uuidString) type=\(state.kind.workoutTypeRawValue) phase=\(state.phase.rawValue) reason=\(reason) transport=durable")
+            } else if !updatesApplicationContext {
+                PulsarSyncDebugLogger.log("Active workout latest-state transmission throttled session=\(state.sessionId.uuidString) phase=\(state.phase.rawValue) reason=\(reason)")
             }
-            lastActiveWorkoutLiveTransferAt = now
-            session.transferUserInfo(payload)
-            PulsarSyncDebugLogger.log("Active workout live transferUserInfo queued session=\(state.sessionId.uuidString) type=\(state.kind.workoutTypeRawValue) phase=\(state.phase.rawValue) reason=\(reason) distanceMeters=\(state.distanceMeters ?? -1) elapsedSeconds=\(state.elapsedSeconds) movingSeconds=\(state.movingSeconds ?? -1) sampleTimestamp=\(state.runMetricsUpdatedAt?.description ?? "none")")
-            return
         }
-
-        do {
-            try session.updateApplicationContext(applicationContext)
-            PulsarSyncDebugLogger.log("Active workout applicationContext updated session=\(state.sessionId.uuidString) type=\(state.kind.workoutTypeRawValue) phase=\(state.phase.rawValue)")
-        } catch {
-            PulsarSyncDebugLogger.log("Active workout applicationContext failed session=\(state.sessionId.uuidString) error=\(error.localizedDescription)")
-        }
-
-        session.transferUserInfo(payload)
-        PulsarSyncDebugLogger.log("Active workout transferUserInfo queued session=\(state.sessionId.uuidString) type=\(state.kind.workoutTypeRawValue) phase=\(state.phase.rawValue) reason=\(reason)")
     }
 
     @discardableResult
-    private func receive(dictionary: [String: Any], reason: String) -> [ActiveWorkoutUpdateDecision] {
+    private func decodeAndReceive(
+        _ snapshot: PulsarWatchConnectivityIncomingSnapshot,
+        reason: String
+    ) async -> [ActiveWorkoutUpdateDecision] {
+        let perfToken = PulsarPerformanceDiagnostics.begin(reason)
+        defer { PulsarPerformanceDiagnostics.end(perfToken) }
+        let decoded = await codecActor.decode(snapshot)
+        if reason.hasPrefix("activationHydration") {
+            if let state = decoded.activeWorkout, state.phase.isLive {
+                restoredActiveWorkoutCandidate = state
+            }
+            if let state = decoded.activeGym, !state.isFinished {
+                gymRestorationCandidate = state
+            }
+            let decisions = receive(
+                decoded: decoded.activationHydrationSafeOnly(),
+                reason: reason
+            )
+            #if os(iOS)
+            let availability = watchRecorderAvailabilitySnapshot(reason: "\(reason).candidateValidation")
+            discardRestoredWorkoutCandidates(
+                reason: availability.rawIsWatchAppInstalled
+                    ? "activationContextIsPersistedNotLive"
+                    : "watchAppUnavailable"
+            )
+            #else
+            restoredActiveWorkoutCandidate = nil
+            #endif
+            return decisions
+        }
+        if decoded.hasWorkoutCriticalPayload, decoded.hasNonWorkoutPayload {
+            let decisions = receive(
+                decoded: decoded.workoutCriticalOnly(),
+                reason: "\(reason).workoutPriority"
+            )
+            deferNonWorkoutReceive(
+                decoded.nonWorkoutOnly(),
+                reason: "\(reason).deferredNonWorkout"
+            )
+            return decisions
+        }
+        return receive(decoded: decoded, reason: reason)
+    }
+
+    private func deferNonWorkoutReceive(
+        _ payload: PulsarWatchConnectivityDecodedPayload,
+        reason: String
+    ) {
+        pendingDeferredNonWorkoutPayloads.append((payload, reason))
+        guard deferredNonWorkoutReceiveTask == nil else { return }
+        deferredNonWorkoutReceiveTask = Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self else { return }
+            while !self.pendingDeferredNonWorkoutPayloads.isEmpty {
+                let pending = self.pendingDeferredNonWorkoutPayloads
+                self.pendingDeferredNonWorkoutPayloads.removeAll(keepingCapacity: true)
+                for item in pending {
+                    _ = self.receive(decoded: item.payload, reason: item.reason)
+                }
+                await Task.yield()
+            }
+            self.deferredNonWorkoutReceiveTask = nil
+        }
+    }
+
+    @discardableResult
+    private func receive(
+        decoded: PulsarWatchConnectivityDecodedPayload,
+        reason: String
+    ) -> [ActiveWorkoutUpdateDecision] {
+        let snapshot = decoded.snapshot
         var didApplyAnyPayload = false
         var activeWorkoutDecisions: [ActiveWorkoutUpdateDecision] = []
 
         #if os(iOS)
-        recordAppleWatchSeen(reason: reason, payloadKind: "watchConnectivity")
+        if Self.isRuntimeCounterpartDelivery(reason: reason) {
+            recordAppleWatchSeen(reason: reason, payloadKind: "watchConnectivity")
+        }
         #endif
 
-        if let messageID = dictionary[Self.workoutSyncMessageIDKey] as? String {
+        if let messageID = snapshot.messageID {
             guard receivedWorkoutSyncMessageIDs.insert(messageID).inserted else {
-                PulsarSyncDebugLogger.log("[PulsarWorkoutSync] duplicate message ignored reason=\(reason) message=\(messageID) category=\(dictionary[Self.workoutSyncCategoryKey] as? String ?? "unknown") session=\(dictionary[Self.workoutSyncSessionIDKey] as? String ?? "none")")
+                PulsarSyncDebugLogger.log("[PulsarWorkoutSync] duplicate message ignored reason=\(reason) message=\(messageID) category=\(snapshot.category ?? "unknown") session=\(snapshot.sessionID ?? "none")")
                 return []
             }
             if receivedWorkoutSyncMessageIDs.count > 250 {
                 receivedWorkoutSyncMessageIDs = [messageID]
             }
-            PulsarSyncDebugLogger.log("[PulsarWorkoutSync] message received reason=\(reason) message=\(messageID) category=\(dictionary[Self.workoutSyncCategoryKey] as? String ?? "unknown") session=\(dictionary[Self.workoutSyncSessionIDKey] as? String ?? "none")")
+            PulsarSyncDebugLogger.log("[PulsarWorkoutSync] message received reason=\(reason) message=\(messageID) category=\(snapshot.category ?? "unknown") session=\(snapshot.sessionID ?? "none")")
         }
 
-        if let data = dictionary[Self.watchHeartbeatPayloadKey] as? Data,
-           let heartbeat = try? JSONDecoder().decode(AppleWatchHeartbeatSnapshot.self, from: data) {
+        if let heartbeat = decoded.heartbeat {
             didApplyAnyPayload = apply(watchHeartbeat: heartbeat, broadcast: false, reason: reason) || didApplyAnyPayload
-        } else if dictionary[Self.watchHeartbeatPayloadKey] != nil {
+        } else if snapshot.heartbeatData != nil {
             PulsarSyncDebugLogger.log("Skipped \(reason) Watch heartbeat because decoding failed")
         }
 
-        if let data = dictionary[PulsarSyncPayloadCodec.payloadKey] as? Data,
-           let payload = PulsarSyncPayloadCodec.decode(data: data) {
+        if let payload = decoded.dailyMetrics {
             didApplyAnyPayload = apply(payload: payload, broadcast: false, reason: reason) || didApplyAnyPayload
-        } else if dictionary[PulsarSyncPayloadCodec.payloadKey] != nil {
+        } else if snapshot.dailyMetricsData != nil {
             PulsarSyncDebugLogger.log("Skipped \(reason) metrics payload because decoding failed")
         }
 
-        if let data = dictionary[Self.sleepPreferencesPayloadKey] as? Data,
-           let payload = try? JSONDecoder().decode(PulsarSleepPreferencesSyncPayload.self, from: data) {
+        if let payload = decoded.sleepPreferences {
             didApplyAnyPayload = apply(sleepPreferences: payload, broadcast: false, reason: reason) || didApplyAnyPayload
-        } else if dictionary[Self.sleepPreferencesPayloadKey] != nil {
+        } else if snapshot.sleepPreferencesData != nil {
             PulsarSyncDebugLogger.log("Skipped \(reason) sleep preferences because decoding failed")
         }
 
-        if let data = dictionary[Self.appleWatchBatteryPayloadKey] as? Data,
-           let snapshot = try? JSONDecoder().decode(AppleWatchBatterySnapshot.self, from: data) {
-            didApplyAnyPayload = apply(appleWatchBattery: snapshot, broadcast: false, reason: reason) || didApplyAnyPayload
-        } else if let snapshot = Self.decodeAppleWatchBatteryMessage(dictionary) {
-            didApplyAnyPayload = apply(appleWatchBattery: snapshot, broadcast: false, reason: reason) || didApplyAnyPayload
-        } else if dictionary[Self.appleWatchBatteryPayloadKey] != nil ||
-                    dictionary[Self.appleWatchBatteryTypeKey] as? String == Self.appleWatchBatteryMessageType {
+        if let battery = decoded.appleWatchBattery, Self.isValidAppleWatchBattery(battery) {
+            didApplyAnyPayload = apply(appleWatchBattery: battery, broadcast: false, reason: reason) || didApplyAnyPayload
+        } else if snapshot.appleWatchBatteryData != nil || snapshot.batteryMessageType == Self.appleWatchBatteryMessageType {
             PulsarSyncDebugLogger.log("Skipped \(reason) Apple Watch battery because decoding failed")
         }
 
-        let containsActiveGymStatePayload = dictionary[Self.activeGymStatePayloadKey] != nil
-        if let data = dictionary[Self.activeWorkoutStatePayloadKey] as? Data,
-           let state = Self.decodeActiveWorkoutState(data) {
-            if containsActiveGymStatePayload {
+        if let state = decoded.activeWorkout {
+            let canApplyGymDelta = decoded.activeGymDelta?.sessionID == activeGymState?.sessionId
+            if snapshot.containsActiveGym || canApplyGymDelta {
                 PulsarSyncDebugLogger.log("Skipped \(reason) derived active workout state because Active Gym state is in the same payload")
+            } else if shouldRejectUncorrelatedCounterpartWorkout(state, reason: reason) {
+                PulsarSyncDebugLogger.log("Rejected uncorrelated counterpart workout before publication source=\(reason) session=\(state.sessionId.uuidString) phase=\(state.phase.rawValue)")
+            } else if state.phase.isLive,
+                      !hasRuntimeWorkoutAuthority(sessionID: state.sessionId),
+                      !Self.shouldAcceptFreshCounterpartWorkout(state, reason: reason) {
+                PulsarSyncDebugLogger.log("Rejected unverified counterpart workout before publication source=\(reason) session=\(state.sessionId.uuidString) phase=\(state.phase.rawValue)")
             } else {
                 let decision = apply(activeWorkoutState: state, broadcast: false, reason: reason, isIncomingFromCounterpart: true)
                 activeWorkoutDecisions.append(decision)
                 didApplyAnyPayload = decision.didApplySyncState || didApplyAnyPayload
             }
-        } else if dictionary[Self.activeWorkoutStatePayloadKey] != nil {
+        } else if snapshot.containsActiveWorkout {
             PulsarSyncDebugLogger.log("Skipped \(reason) active workout state because decoding failed")
         }
 
-        if let data = dictionary[Self.activeGymStatePayloadKey] as? Data,
-           let state = ActiveGymWorkoutCodec.decodeState(data) {
-            let didApplyGymState = apply(activeGymState: state, broadcast: false, reason: reason)
+        if let state = decoded.activeGym,
+           shouldRejectUncorrelatedCounterpartGym(state, reason: reason) {
+            PulsarSyncDebugLogger.log("Rejected uncorrelated counterpart gym before publication source=\(reason) session=\(state.sessionId.uuidString)")
+        } else if let state = decoded.activeGym,
+           !state.isFinished,
+           !hasRuntimeWorkoutAuthority(sessionID: state.sessionId),
+           !Self.shouldAcceptFreshCounterpartGym(state, reason: reason) {
+            PulsarSyncDebugLogger.log("Rejected unverified counterpart gym before publication source=\(reason) session=\(state.sessionId.uuidString)")
+        } else if let state = decoded.activeGym {
+            let didApplyGymState = apply(activeGymState: state, broadcast: false, reason: reason, isIncomingFromCounterpart: true)
             didApplyAnyPayload = didApplyGymState || didApplyAnyPayload
             PulsarSyncDebugLogger.log("Active Gym state received via \(reason) session=\(state.sessionId.uuidString) progress=\(state.completedSets)/\(state.totalSets) finished=\(state.isFinished)")
             #if os(iOS)
             if didApplyGymState {
-                syncLiveActivity(for: state)
+                if state.isFinished {
+                    schedulePostTerminalGymPersistence(state)
+                } else {
+                    syncLiveActivity(for: state)
+                }
             }
             #endif
-        } else if dictionary[Self.activeGymStatePayloadKey] != nil {
+        } else if snapshot.containsActiveGym {
             PulsarSyncDebugLogger.log("Skipped \(reason) Active Gym state because decoding failed")
         }
 
-        if let data = dictionary[Self.savedGymRoutinesPayloadKey] as? Data,
-           let payload = SavedGymRoutinesSyncCodec.decode(data) {
+        if let delta = decoded.activeGymDelta,
+           let currentState = activeGymState,
+           let state = delta.applying(to: currentState) {
+            let didApplyGymState = apply(activeGymState: state, broadcast: false, reason: reason, isIncomingFromCounterpart: true)
+            didApplyAnyPayload = didApplyGymState || didApplyAnyPayload
+            PulsarSyncDebugLogger.log("Active Gym live delta received via \(reason) session=\(state.sessionId.uuidString) progress=\(state.completedSets)/\(state.totalSets)")
+            #if os(iOS)
+            if didApplyGymState {
+                if state.isFinished {
+                    schedulePostTerminalGymPersistence(state)
+                } else {
+                    syncLiveActivity(for: state)
+                }
+            }
+            #endif
+        } else if snapshot.containsActiveGymDelta {
+            PulsarSyncDebugLogger.log("Skipped \(reason) Active Gym live delta because baseline state or decoding was unavailable")
+        }
+
+        if let payload = decoded.savedGymRoutines {
             didApplyAnyPayload = storeSavedGymRoutines(
                 payload.routines,
                 revision: payload.revision,
@@ -1960,21 +3470,32 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
                 broadcast: false,
                 reason: reason
             ) || didApplyAnyPayload
-        } else if dictionary[Self.savedGymRoutinesPayloadKey] != nil {
+        } else if snapshot.containsSavedGymRoutines {
             PulsarSyncDebugLogger.log("Skipped \(reason) saved Gym routines because decoding failed")
         }
 
-        if let data = dictionary[Self.runTransportEnvelopePayloadKey] as? Data,
-           let envelope = PulsarRunTransportCodec.decode(data) {
+        if let envelope = decoded.runTransportEnvelope {
             didApplyAnyPayload = true
             PulsarSyncDebugLogger.log("[PulsarWorkoutSync] Run transport envelope received via \(reason) category=\(Self.runTransportEnvelopeMetadata(envelope).category)")
             runTransportEnvelopeHandler?(envelope, reason)
-        } else if dictionary[Self.runTransportEnvelopePayloadKey] != nil {
+        } else if snapshot.containsRunTransportEnvelope {
             PulsarSyncDebugLogger.log("Skipped \(reason) run transport envelope because decoding failed")
         }
 
-        if let data = dictionary[Self.activeGymActionPayloadKey] as? Data,
-           let action = ActiveGymWorkoutCodec.decodeAction(data) {
+        if let messageType = snapshot.messageType {
+            switch messageType {
+            case Self.gymStartPrelaunchHintMessageType:
+                didApplyAnyPayload = handleGymStartPrelaunchHint(snapshot, reason: reason) || didApplyAnyPayload
+            case Self.gymStartAcknowledgementMessageType:
+                didApplyAnyPayload = handleGymStartAcknowledgement(decoded.gymStartAcknowledgement, reason: reason) || didApplyAnyPayload
+            case Self.gymRoutineSnapshotMessageType:
+                didApplyAnyPayload = handleGymRoutineSnapshot(decoded.gymRoutineSnapshot, reason: reason) || didApplyAnyPayload
+            default:
+                break
+            }
+        }
+
+        if let action = decoded.activeGymAction {
             didApplyAnyPayload = true
             PulsarSyncDebugLogger.log("Active Gym action received via \(reason) kind=\(action.kind.rawValue) session=\(action.sessionId?.uuidString ?? "none")")
             if let actionId = action.actionId {
@@ -1990,10 +3511,13 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
                 #if os(iOS)
                 refreshSavedGymRoutinesFromPhoneStore(reason: "watchRequestedSavedRoutines")
                 #endif
-                sendSavedGymRoutinesToCounterpart()
+                sendSavedGymRoutinesToCounterpart(
+                    respondingToVerifiedInboundRequest: true,
+                    reason: "watchRequestedSavedRoutines"
+                )
             }
             gymActionHandler?(action)
-        } else if dictionary[Self.activeGymActionPayloadKey] != nil {
+        } else if snapshot.containsGymAction {
             PulsarSyncDebugLogger.log("Skipped \(reason) Active Gym action because decoding failed")
         }
 
@@ -2056,6 +3580,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     private static let appleWatchBatteryTimestampKey = "timestamp"
     private static let activeWorkoutStatePayloadKey = "pulsar.activeWorkout.state.v1"
     private static let activeGymStatePayloadKey = "pulsar.activeGymWorkout.state.v1"
+    private static let activeGymLiveDeltaPayloadKey = "pulsar.activeGymWorkout.liveDelta.v2"
     private static let activeGymActionPayloadKey = "pulsar.activeGymWorkout.action.v1"
     private static let savedGymRoutinesPayloadKey = "pulsar.savedGymRoutines.payload.v1"
     private static let runTransportEnvelopePayloadKey = "pulsar.run.transportEnvelope.v1"
@@ -2068,6 +3593,144 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     private static let workoutSyncPhaseKey = "pulsar.workoutSync.phase.v1"
     private static let workoutSyncSentAtKey = "pulsar.workoutSync.sentAt.v1"
     private static let workoutSyncRetryAttemptKey = "pulsar.workoutSync.retryAttempt.v1"
+    private static let gymCrossDeviceMessageTypeKey = "pulsar.gymCrossDevice.messageType.v1"
+    private static let gymStartPrelaunchHintMessageType = "gymWorkoutStartPrelaunchHint"
+    private static let gymStartAcknowledgementMessageType = "gymWorkoutStartAcknowledgement"
+    private static let gymRoutineSnapshotMessageType = "gymRoutineSnapshotEnvelope"
+
+    @discardableResult
+    private func handleGymStartPrelaunchHint(
+        _ snapshot: PulsarWatchConnectivityIncomingSnapshot,
+        reason: String
+    ) -> Bool {
+        guard let requestIDString = snapshot.prelaunchRequestID,
+              let requestID = UUID(uuidString: requestIDString),
+              let candidateSessionIDString = snapshot.prelaunchCandidateSessionID,
+              let candidateSessionID = UUID(uuidString: candidateSessionIDString),
+              let routineIDString = snapshot.prelaunchRoutineID,
+              let routineID = UUID(uuidString: routineIDString),
+              let requestedAt = snapshot.prelaunchRequestedAt.map({ Date(timeIntervalSince1970: $0) }) else {
+            return false
+        }
+        let routineRevision = snapshot.prelaunchRoutineRevision ?? 0
+        let workoutKindRaw = snapshot.prelaunchWorkoutKind ?? PulsarGymWorkoutKind.routine.rawValue
+        let workoutKind = PulsarGymWorkoutKind(rawValue: workoutKindRaw) ?? .routine
+        let request = GymWorkoutStartRequest(
+            requestID: requestID,
+            candidateSessionID: candidateSessionID,
+            idempotencyKey: snapshot.prelaunchIdempotencyKey,
+            routineID: routineID,
+            routineRevision: routineRevision,
+            workoutKind: workoutKind,
+            activityTypeRawValue: UInt(HKWorkoutActivityType.traditionalStrengthTraining.rawValue),
+            locationTypeRawValue: HKWorkoutSessionLocationType.indoor.rawValue,
+            requestedAt: requestedAt,
+            requestedFrom: .iPhoneRequestedWatchStart,
+            requestState: .prelaunchHintSent
+        )
+        PulsarWorkoutLifecycleLogger.log(
+            .wcReceive,
+            sessionID: candidateSessionID,
+            requestID: requestID,
+            source: reason,
+            messageType: Self.gymStartPrelaunchHintMessageType,
+            transport: "watchConnectivity"
+        )
+        #if os(watchOS)
+        Task { @MainActor in
+            await WatchGymSessionManager.shared.handlePrelaunchHint(request)
+        }
+        #endif
+        return true
+    }
+
+    @discardableResult
+    private func handleGymStartAcknowledgement(
+        _ acknowledgement: GymWorkoutStartAcknowledgement?,
+        reason: String
+    ) -> Bool {
+        guard let acknowledgement else { return false }
+        PulsarWorkoutLifecycleLogger.log(
+            .wcReceive,
+            sessionID: acknowledgement.authoritativeSessionID,
+            requestID: acknowledgement.requestID,
+            source: reason,
+            messageType: Self.gymStartAcknowledgementMessageType,
+            transport: "watchConnectivity"
+        )
+        gymStartAcknowledgementHandler?(acknowledgement, reason)
+        return true
+    }
+
+    @discardableResult
+    private func handleGymRoutineSnapshot(
+        _ envelope: GymRoutineSnapshotEnvelope?,
+        reason: String
+    ) -> Bool {
+        guard let envelope, envelope.isChecksumValid else { return false }
+        let isTombstoned = isActiveWorkoutSessionTombstoned(envelope.sessionID)
+        guard Self.shouldAcceptEmbeddedGymRoutineSnapshot(
+            envelope,
+            now: Date(),
+            isTombstoned: isTombstoned
+        ) else {
+            PulsarSyncDebugLogger.log(
+                "Rejected Gym routine snapshot with stale or mismatched start authority session=\(envelope.sessionID.uuidString) request=\(envelope.requestID.uuidString) tombstoned=\(isTombstoned)"
+            )
+            return false
+        }
+        PulsarWorkoutLifecycleLogger.log(
+            .routineSnapshotReceived,
+            sessionID: envelope.sessionID,
+            requestID: envelope.requestID,
+            source: reason,
+            transport: "watchConnectivity"
+        )
+        gymRoutineSnapshotHandler?(envelope, reason)
+        #if os(watchOS)
+        Task { @MainActor in
+            if let startRequest = envelope.startRequest {
+                await WatchGymSessionManager.shared.handlePrelaunchHint(startRequest)
+            }
+            await WatchGymSessionManager.shared.hydrateRoutineSnapshot(envelope)
+        }
+        #endif
+        return true
+    }
+
+    nonisolated static func shouldAcceptEmbeddedGymRoutineSnapshot(
+        _ envelope: GymRoutineSnapshotEnvelope,
+        now: Date,
+        isTombstoned: Bool
+    ) -> Bool {
+        guard let request = envelope.startRequest else {
+            // Legacy envelopes are correlated against an already-admitted
+            // compact prelaunch request by WatchGymSessionManager.
+            return true
+        }
+        guard request.requestID == envelope.requestID,
+              request.candidateSessionID == envelope.sessionID,
+              request.routineID == envelope.routineID,
+              request.routineRevision == envelope.revision else {
+            return false
+        }
+        return GymWorkoutStartRequestAdmission.accepts(
+            requestedAt: request.requestedAt,
+            now: now,
+            isTombstoned: isTombstoned
+        )
+    }
+
+    nonisolated static func shouldReplacePendingGymRoutineSnapshot(
+        _ existing: GymRoutineSnapshotEnvelope?,
+        with incoming: GymRoutineSnapshotEnvelope
+    ) -> Bool {
+        guard let existing else { return true }
+        let hasSameIdentity = existing.sessionID == incoming.sessionID &&
+            existing.requestID == incoming.requestID &&
+            existing.routineID == incoming.routineID
+        return !hasSameIdentity || incoming.revision >= existing.revision
+    }
 
     private static func isValidAppleWatchBattery(_ snapshot: AppleWatchBatterySnapshot) -> Bool {
         (0...100).contains(snapshot.batteryPercentage)
@@ -2077,6 +3740,8 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         _ envelope: PulsarRunTransportEnvelope
     ) -> (messageID: UUID, category: String, sessionID: UUID?, phase: String?) {
         switch envelope {
+        case .startAcknowledgement(let acknowledgement):
+            return (acknowledgement.requestID, "runStartAcknowledgement", acknowledgement.authoritativeSessionID, "running")
         case .sessionCommand(let command):
             return (command.commandId, "runSessionCommand", command.sessionId, command.command.rawValue)
         case .commandAcknowledgement(let acknowledgement):
@@ -2116,11 +3781,21 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
     }
 
     private static func encodeActiveWorkoutState(_ state: PulsarActiveWorkoutSyncState) -> Data? {
-        try? activeWorkoutEncoder.encode(state)
+        PulsarPerformanceSignposts.measure(
+            PulsarPerformanceSignposts.watchConnectivity,
+            name: "encode"
+        ) {
+            try? activeWorkoutEncoder.encode(state)
+        }
     }
 
     private static func decodeActiveWorkoutState(_ data: Data) -> PulsarActiveWorkoutSyncState? {
-        try? activeWorkoutDecoder.decode(PulsarActiveWorkoutSyncState.self, from: data)
+        PulsarPerformanceSignposts.measure(
+            PulsarPerformanceSignposts.watchConnectivity,
+            name: "decode"
+        ) {
+            try? activeWorkoutDecoder.decode(PulsarActiveWorkoutSyncState.self, from: data)
+        }
     }
 
     private static func decodeActiveWorkoutTombstones(_ data: Data?) -> [UUID: Date] {
@@ -2141,18 +3816,22 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
 
     private static func prunedActiveWorkoutTombstones(
         _ tombstones: [UUID: Date],
-        now: Date = Date()
+        now _: Date = Date()
     ) -> [UUID: Date] {
-        tombstones.filter { now.timeIntervalSince($0.value) <= activeWorkoutTombstoneInterval }
+        Dictionary(
+            uniqueKeysWithValues: tombstones
+                .sorted { $0.value > $1.value }
+                .prefix(activeWorkoutTombstoneRetentionLimit)
+                .map { ($0.key, $0.value) }
+        )
     }
 
     private static func isActiveWorkoutSessionTombstoned(
         _ sessionID: UUID,
         tombstones: [UUID: Date],
-        now: Date = Date()
+        now _: Date = Date()
     ) -> Bool {
-        guard let tombstonedAt = tombstones[sessionID] else { return false }
-        return now.timeIntervalSince(tombstonedAt) <= activeWorkoutTombstoneInterval
+        tombstones[sessionID] != nil
     }
 
     private static var activeWorkoutEncoder: JSONEncoder {
@@ -2192,7 +3871,7 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             return
         }
         guard let data = Self.encodeActiveWorkoutTombstones(locallyTerminatedActiveWorkoutSessions) else { return }
-        defaults.set(data, forKey: activeWorkoutTombstoneCacheKey)
+        setDefaultsData(data, forKey: activeWorkoutTombstoneCacheKey)
     }
 
     private static func isExpiredEndedActiveWorkout(_ state: PulsarActiveWorkoutSyncState) -> Bool {
@@ -2210,9 +3889,20 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         return state.isValidActiveWorkoutPresentationCandidate()
     }
 
+    private static var synchronizedGymPlatform: PulsarSynchronizedGymPlatform {
+        #if os(watchOS)
+        .watch
+        #else
+        .iPhone
+        #endif
+    }
+
     private static func shouldRestoreCachedActiveGymState(_ state: ActiveGymWorkoutState) -> Bool {
-        guard !state.isFinished else { return false }
-        return state.isValidActiveWorkoutPresentationCandidate()
+        PulsarWatchSynchronizedGymReconciliation.shouldRestoreCachedActiveGym(
+            state,
+            platform: synchronizedGymPlatform,
+            isTombstoned: false
+        )
     }
 
     private static func cachedActiveWorkoutRestoreRejectionReason(
@@ -2309,6 +3999,14 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             if incoming.updatedAt >= current.updatedAt || incoming.phase.isLive {
                 return ActiveWorkoutUpdateDecision.appliedDecision(for: incoming)
             }
+            return .ignoredHistoricalOnly
+        }
+
+        // Never let an ended update for a different session replace a live one.
+        if incoming.isEnded, incoming.sessionId != current.sessionId {
+            PulsarSyncDebugLogger.log(
+                "Ignored ended active workout update for different live session live=\(current.sessionId.uuidString) incoming=\(incoming.sessionId.uuidString) source=\(reason) action=noop"
+            )
             return .ignoredHistoricalOnly
         }
 
@@ -2456,7 +4154,13 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
         }
     }
 
-    private func shouldApply(activeGymState incoming: ActiveGymWorkoutState) -> Bool {
+    private func shouldApply(activeGymState incoming: ActiveGymWorkoutState, reason: String, isIncomingFromCounterpart: Bool) -> Bool {
+        if incoming.isFinished, committedTerminalGymSessionID == incoming.sessionId {
+            PulsarSyncDebugLogger.log(
+                "Rejected duplicate terminal Active Gym update source=\(reason) session=\(incoming.sessionId.uuidString) action=noop"
+            )
+            return false
+        }
         guard !Self.isExpiredFinishedGymState(incoming) else { return false }
         pruneActiveWorkoutTombstones()
         if Self.isActiveWorkoutSessionTombstoned(
@@ -2466,8 +4170,33 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             PulsarSyncDebugLogger.log("Rejected tombstoned Active Gym update source=activeGymState session=\(incoming.sessionId.uuidString) action=noop")
             return false
         }
-        guard incoming.isFinished || incoming.isValidActiveWorkoutPresentationCandidate() else {
+        #if os(iOS)
+        if isIncomingFromCounterpart,
+           let authority = currentGymAuthorityDecision(for: incoming),
+           case .rejectAdvisory(let decisionReason) = authority.decision {
+            logRejectedGymAuthority(
+                incoming: incoming,
+                canonicalSessionID: authority.canonicalSessionID,
+                canonicalRequestID: authority.canonicalRequestID,
+                reason: reason,
+                decisionReason: decisionReason
+            )
+            return false
+        }
+        #endif
+        guard incoming.isFinished || incoming.isPrelaunchPlaceholder || incoming.isValidActiveWorkoutPresentationCandidate() else {
             PulsarSyncDebugLogger.log("active workout restore rejected: \(incoming.activeWorkoutPresentationRejectionReason() ?? incoming.staleRouteReason() ?? "invalid active gym state") session=\(incoming.sessionId.uuidString)")
+            return false
+        }
+        if !PulsarWatchSynchronizedGymReconciliation.shouldAdoptIncomingGymState(
+            incoming: incoming,
+            current: activeGymState,
+            platform: Self.synchronizedGymPlatform,
+            isIncomingFromCounterpart: isIncomingFromCounterpart
+        ) {
+            PulsarSyncDebugLogger.log(
+                "Watch rejected synchronized gym without primary session=\(incoming.sessionId.uuidString) source=\(reason) startedFrom=\(incoming.startedFrom?.rawValue ?? "unknown")"
+            )
             return false
         }
         guard let current = activeGymState else { return true }
@@ -2488,12 +4217,47 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
             return incoming.updatedAt >= current.updatedAt || incoming.isValidActiveWorkoutPresentationCandidate()
         }
 
+        // Never let a finished update for a different session replace a live one.
+        if incoming.isFinished, incoming.sessionId != current.sessionId {
+            PulsarSyncDebugLogger.log(
+                "Rejected finished Active Gym update for different live session live=\(current.sessionId.uuidString) incoming=\(incoming.sessionId.uuidString) action=noop"
+            )
+            return false
+        }
+
         if incoming.isFinished, incoming.startedAt < current.startedAt {
             return false
         }
 
         return incoming.startedAt >= current.startedAt || incoming.updatedAt >= current.updatedAt
     }
+
+    #if os(iOS)
+    private func logGymRemoteConflictIfNeeded(
+        _ incoming: ActiveGymWorkoutState,
+        applied: Bool,
+        reason: String
+    ) {
+        guard !incoming.isFinished else { return }
+        let expected = PulsarWorkoutStartCoordinator.shared.currentTransaction
+        let expectedID = expected?.sessionID ?? activeGymState?.sessionId
+        let expectedRequestID = expected?.requestID
+        guard let expectedID, expectedID != incoming.sessionId else { return }
+        guard stateStartedFromWatch(incoming) || reason.contains("received") else { return }
+        PulsarWorkoutStartupTrace.remoteConflict(
+            expectedWorkoutID: expectedID,
+            expectedRequestID: expectedRequestID,
+            watchWorkoutID: incoming.sessionId,
+            watchRequestID: incoming.requestID,
+            watchHKState: incoming.isFinished ? "finished" : "running",
+            action: applied ? "reconcile" : "ignored"
+        )
+    }
+
+    private func stateStartedFromWatch(_ state: ActiveGymWorkoutState) -> Bool {
+        state.startedFrom?.isAppleWatchRecorder == true
+    }
+    #endif
 
     #if os(iOS)
     private func syncLiveActivity(for state: ActiveGymWorkoutState) {
@@ -2507,17 +4271,21 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
 
     private func persistFinishedGymWorkoutIfNeeded(_ state: ActiveGymWorkoutState) {
         guard state.isFinished else { return }
-        let historyStore = PulsarGymWorkoutHistoryStore()
+        let historyStore = PulsarGymWorkoutHistoryStore.shared
         guard !historyStore.sessions.contains(where: { $0.id == state.sessionId && $0.finishedAt != nil }) else {
             PulsarSyncDebugLogger.log("Gym Activity Log skipped duplicate finished state session=\(state.sessionId.uuidString) type=\(state.workoutKind?.rawValue ?? "unknown")")
             return
         }
         PulsarSyncDebugLogger.log("Gym Activity Log persisting finished state session=\(state.sessionId.uuidString) type=\(state.workoutKind?.rawValue ?? "unknown") startedFrom=\(state.startedFrom?.rawValue ?? "unknown")")
-        historyStore.save(PulsarGymWorkoutSession(activeGymState: state))
+            let startedAt = Date()
+            historyStore.save(PulsarGymWorkoutSession(activeGymState: state))
+            PulsarWorkoutStartupTrace.diag(
+                "[MainActor] gymHistorySave elapsedMs=\(PulsarWorkoutStartupTrace.elapsedMs(since: startedAt)) workoutID=\(state.sessionId.uuidString) \(PulsarWorkoutStartupTrace.threadTag())"
+            )
     }
 
     private func refreshSavedGymRoutinesFromPhoneStore(reason: String) {
-        let routineStore = PulsarRoutineStore()
+        let routineStore = PulsarRoutineStore.shared
         routineStore.syncRoutinesToWatch(reason: reason, broadcast: false)
     }
     #endif
@@ -2526,11 +4294,14 @@ final class PulsarWatchConnectivitySyncStore: NSObject, ObservableObject {
 extension PulsarWatchConnectivitySyncStore: WCSessionDelegate {
     nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         PulsarSyncDebugLogger.log("WatchConnectivity activation state=\(activationState.rawValue) error=\(error?.localizedDescription ?? "none")")
+        let activationSnapshot = activationState == .activated && !session.receivedApplicationContext.isEmpty
+            ? PulsarWatchConnectivityIncomingSnapshot(dictionary: session.receivedApplicationContext)
+            : nil
         Task { @MainActor in
             self.lastActivationErrorMessage = error?.localizedDescription
             _ = self.watchRecorderAvailabilitySnapshot(reason: "activationDidComplete")
-            if activationState == .activated, !session.receivedApplicationContext.isEmpty {
-                self.receive(dictionary: session.receivedApplicationContext, reason: "activationHydration")
+            if let activationSnapshot {
+                await self.decodeAndReceive(activationSnapshot, reason: "activationHydration")
             }
         }
         #if os(watchOS)
@@ -2543,8 +4314,9 @@ extension PulsarWatchConnectivitySyncStore: WCSessionDelegate {
     }
 
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        let snapshot = PulsarWatchConnectivityIncomingSnapshot(dictionary: applicationContext)
         Task { @MainActor in
-            receive(dictionary: applicationContext, reason: "receivedApplicationContext")
+            await decodeAndReceive(snapshot, reason: "receivedApplicationContext")
         }
     }
 
@@ -2554,21 +4326,41 @@ extension PulsarWatchConnectivitySyncStore: WCSessionDelegate {
             return
         }
 
+        let snapshot = PulsarWatchConnectivityIncomingSnapshot(dictionary: userInfo)
         Task { @MainActor in
-            receive(dictionary: userInfo, reason: "receivedUserInfo")
+            await decodeAndReceive(snapshot, reason: "receivedUserInfo")
+        }
+    }
+
+    nonisolated func session(_ session: WCSession, didFinish userInfoTransfer: WCSessionUserInfoTransfer, error: Error?) {
+        let info = userInfoTransfer.userInfo
+        let descriptor = Self.userInfoTransferDescriptor(info)
+        let message: String
+        if let error {
+            let nsError = error as NSError
+            let missingFile = nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileReadNoSuchFileError
+            message = "WC transferUserInfo finished error descriptor=\(descriptor) missingFile=\(missingFile) domain=\(nsError.domain) code=\(nsError.code) error=\(error.localizedDescription)"
+        } else {
+            message = "WC transferUserInfo finished success descriptor=\(descriptor)"
+        }
+        Task { @MainActor in
+            PulsarWorkoutStartupTrace.lifecycle(message)
         }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        let snapshot = PulsarWatchConnectivityIncomingSnapshot(dictionary: message)
         Task { @MainActor in
-            receive(dictionary: message, reason: "receivedMessage")
+            await decodeAndReceive(snapshot, reason: "receivedMessage")
         }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+        let snapshot = PulsarWatchConnectivityIncomingSnapshot(dictionary: message)
+        let acknowledgement = snapshot.acknowledgement(reason: "receivedMessageWithReply")
+        replyHandler(acknowledgement)
         Task { @MainActor in
-            _ = receive(dictionary: message, reason: "receivedMessageWithReply")
-            replyHandler(workoutSyncAcknowledgement(for: message, reason: "receivedMessageWithReply"))
+            await decodeAndReceive(snapshot, reason: "receivedMessageWithReply")
         }
     }
 
@@ -2577,6 +4369,29 @@ extension PulsarWatchConnectivitySyncStore: WCSessionDelegate {
 
     nonisolated func sessionDidDeactivate(_ session: WCSession) {
         session.activate()
+    }
+
+    nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
+        Task { @MainActor in
+            _ = self.watchRecorderAvailabilitySnapshot(reason: "sessionReachabilityDidChange")
+            PulsarSyncDebugLogger.log("WatchConnectivity reachability changed reachable=\(session.isReachable)")
+        }
+    }
+
+    nonisolated func sessionWatchStateDidChange(_ session: WCSession) {
+        Task { @MainActor in
+            _ = self.watchRecorderAvailabilitySnapshot(reason: "sessionWatchStateDidChange")
+            PulsarSyncDebugLogger.log("WatchConnectivity watch state changed paired=\(session.isPaired) installed=\(session.isWatchAppInstalled)")
+        }
+    }
+    #endif
+
+    #if os(watchOS)
+    nonisolated func sessionCompanionAppInstalledDidChange(_ session: WCSession) {
+        Task { @MainActor in
+            _ = self.watchRecorderAvailabilitySnapshot(reason: "sessionCompanionAppInstalledDidChange")
+            PulsarSyncDebugLogger.log("WatchConnectivity companion installed changed installed=\(session.isCompanionAppInstalled)")
+        }
     }
     #endif
 }

@@ -464,7 +464,13 @@ struct PulsarRoutine: Identifiable, Codable, Hashable {
         emoji = Self.normalizedEmoji((try? container.decodeIfPresent(String.self, forKey: .emoji)) ?? "🏋️")
         createdAt = (try? container.decode(Date.self, forKey: .createdAt)) ?? Date()
         updatedAt = (try? container.decode(Date.self, forKey: .updatedAt)) ?? createdAt
-        exercises = (try? container.decode([PulsarRoutineExercise].self, forKey: .exercises)) ?? []
+        // Older routines may predate this key, but a present malformed nested
+        // value must fail decoding instead of silently becoming a name-only routine.
+        if container.contains(.exercises) {
+            exercises = try container.decode([PulsarRoutineExercise].self, forKey: .exercises)
+        } else {
+            exercises = []
+        }
         supersetGroups = Self.normalizedSupersetGroups(
             (try? container.decodeIfPresent([PulsarSupersetGroup].self, forKey: .supersetGroups)) ?? [],
             for: exercises
@@ -526,6 +532,7 @@ struct PulsarGymWorkoutSession: Identifiable, Codable, Hashable {
     var finishedAt: Date?
     var elapsedSeconds: Int
     var healthKitWorkoutUUID: UUID?
+    var crossDeviceRequestID: UUID? = nil
     var activeEnergyKilocalories: Double?
     var averageHeartRate: Double?
     var maxHeartRate: Double?
@@ -1163,11 +1170,11 @@ struct PulsarGymWorkoutSummary: Identifiable, Codable, Hashable {
 }
 
 private extension String {
-    var nilIfEmpty: String? {
+    nonisolated var nilIfEmpty: String? {
         isEmpty ? nil : self
     }
 
-    func gymInstructionsPreview(maxLength: Int = 220) -> String? {
+    nonisolated func gymInstructionsPreview(maxLength: Int = 220) -> String? {
         let normalized = components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
             .joined(separator: " ")

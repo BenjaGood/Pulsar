@@ -39,7 +39,7 @@ struct StrainAnalyzer {
         summary.timeline = timeline(from: input, allHeartSamples: allHeartSamples)
         summary.heartRatePoints = heartRatePoints(from: allHeartSamples, in: input.queryInterval)
         summary.workoutBands = workoutBands(from: input.strainInput.workouts, in: input.queryInterval)
-        summary.analyzedSampleCount = input.strainInput.workouts.count + input.dayHeartRateSamples.count + Int(input.strainInput.activity.steps > 0 ? 1 : 0) + Int(input.strainInput.activity.activeEnergyKilocalories > 0 ? 1 : 0)
+        summary.analyzedSampleCount = input.strainInput.workouts.count + allHeartSamples.count + Int(input.strainInput.activity.steps > 0 ? 1 : 0) + Int(input.strainInput.activity.activeEnergyKilocalories > 0 ? 1 : 0)
         summary.queryStart = input.queryInterval.start
         summary.queryEnd = input.queryInterval.end
         summary.lastUpdated = input.refreshedAt
@@ -76,7 +76,8 @@ struct StrainAnalyzer {
     private func uniqueHeartSamples(_ samples: [HeartRateSample]) -> [HeartRateSample] {
         var seen = Set<String>()
         return samples.filter { sample in
-            let key = "\(sample.start.timeIntervalSinceReferenceDate)-\(sample.end.timeIntervalSinceReferenceDate)-\(sample.bpm.rounded())-\(sample.provenance.displayName)"
+            let key = sample.id.map { "uuid:\($0.uuidString)" }
+                ?? "value:\(sample.start.timeIntervalSinceReferenceDate)-\(sample.end.timeIntervalSinceReferenceDate)-\(sample.bpm.rounded())-\(sample.provenance.id)"
             return seen.insert(key).inserted
         }
     }
@@ -143,6 +144,7 @@ struct StrainAnalyzer {
         workouts.map { workout in
             let heartRates = workout.heartRateSamples.map(\.bpm).filter { $0 > 0 }
             return StrainWorkoutSummary(
+                id: workout.id,
                 workoutType: workout.type,
                 startDate: workout.start,
                 endDate: workout.end,

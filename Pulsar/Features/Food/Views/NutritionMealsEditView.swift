@@ -9,46 +9,41 @@ struct NutritionMealsEditView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var store: PulsarNutritionStore
 
-    @State private var editMode: EditMode = .active
     @State private var editorMode: NutritionMealCategoryEditorMode?
     @State private var pendingDeleteCategory: PulsarMealCategory?
+    @State private var draggingCategoryID: UUID?
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    ForEach(store.state.mealCategories) { category in
-                        Button {
-                            editorMode = .edit(category)
-                        } label: {
-                            NutritionMealCategoryEditRow(
-                                category: category,
-                                entryCount: store.entriesForToday(inCategory: category.id).count
+            ZStack {
+                NutritionMealsSheetBackground()
+
+                ScrollView {
+                    PulsarGlassEffectGroup(spacing: NutritionMealsEditorDesign.sectionSpacing) {
+                        VStack(spacing: NutritionMealsEditorDesign.sectionSpacing) {
+                            NutritionMealsEditorHeader(onDone: dismiss.callAsFunction)
+
+                            NutritionMealsEditorCard(
+                                categories: store.state.mealCategories,
+                                entryCount: { category in
+                                    store.entriesForToday(inCategory: category.id).count
+                                },
+                                draggingCategoryID: $draggingCategoryID,
+                                onEdit: editCategory,
+                                onDelete: requestDelete,
+                                onAdd: addCategory,
+                                onMove: store.moveMealCategory
                             )
                         }
-                        .buttonStyle(.plain)
                     }
-                    .onMove(perform: store.moveMealCategory)
-                    .onDelete(perform: deleteCategories)
-
-                    Button {
-                        editorMode = .add
-                    } label: {
-                        Label("Add meal category", systemImage: "plus")
-                            .foregroundStyle(.green)
-                    }
+                    .padding(.horizontal, NutritionMealsEditorDesign.horizontalPadding)
+                    .padding(.top, NutritionMealsEditorDesign.topPadding)
+                    .padding(.bottom, 44)
                 }
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize)
             }
-            .environment(\.editMode, $editMode)
-            .scrollContentBackground(.hidden)
-            .background(NutritionBackground())
-            .navigationTitle("Meals")
-            .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(item: $editorMode) { mode in
                 NutritionMealCategoryEditorSheet(store: store, mode: mode)
                     .presentationDetents([.medium, .large])
@@ -62,24 +57,25 @@ struct NutritionMealsEditView: View {
                 if let category = pendingDeleteCategory {
                     ForEach(store.state.mealCategories.filter { $0.id != category.id }) { target in
                         Button(target.name) {
-                            store.deleteMealCategory(category, reassignTo: target.id)
-                            pendingDeleteCategory = nil
+                            reassignAndDelete(category, to: target)
                         }
                     }
                     Button("Delete foods", role: .destructive) {
-                        store.deleteMealCategoryAndEntries(category)
-                        pendingDeleteCategory = nil
+                        deleteCategoryAndEntries(category)
                     }
                 }
-                Button("Cancel", role: .cancel) {
-                    pendingDeleteCategory = nil
-                }
+                Button("Cancel", role: .cancel, action: cancelDelete)
             } message: {
                 if let category = pendingDeleteCategory {
                     Text("Choose where foods logged under \(category.name) should go.")
                 }
             }
         }
+        .pulsarFitnessMonochromeAppearance()
+        .presentationBackground(.clear)
+        .presentationCornerRadius(NutritionMealsEditorDesign.sheetCornerRadius)
+        .presentationContentInteraction(.scrolls)
+        .presentationDragIndicator(.visible)
     }
 
     private var deleteConfirmationBinding: Binding<Bool> {
@@ -93,40 +89,36 @@ struct NutritionMealsEditView: View {
         )
     }
 
-    private func deleteCategories(_ offsets: IndexSet) {
-        let categories = store.state.mealCategories
-        for offset in offsets {
-            guard categories.indices.contains(offset) else { continue }
-            let category = categories[offset]
-            guard store.state.mealCategories.count > 1 else { continue }
-            if !store.state.entries.contains(where: { $0.categoryID == category.id }) {
-                store.deleteMealCategory(category, reassignTo: nil)
-            } else {
-                pendingDeleteCategory = category
-            }
+    private func editCategory(_ category: PulsarMealCategory) {
+        editorMode = .edit(category)
+    }
+
+    private func addCategory() {
+        editorMode = .add
+    }
+
+    private func requestDelete(_ category: PulsarMealCategory) {
+        guard store.state.mealCategories.count > 1 else { return }
+
+        if store.state.entries.contains(where: { $0.categoryID == category.id }) {
+            pendingDeleteCategory = category
+        } else {
+            store.deleteMealCategory(category, reassignTo: nil)
         }
     }
-}
 
-private struct NutritionMealCategoryEditRow: View {
-    var category: PulsarMealCategory
-    var entryCount: Int
+    private func reassignAndDelete(_ category: PulsarMealCategory, to target: PulsarMealCategory) {
+        store.deleteMealCategory(category, reassignTo: target.id)
+        pendingDeleteCategory = nil
+    }
 
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: category.symbolName)
-                .foregroundStyle(category.tint)
-                .frame(width: 36, height: 36)
-                .background(category.tint.opacity(0.12), in: Circle())
+    private func deleteCategoryAndEntries(_ category: PulsarMealCategory) {
+        store.deleteMealCategoryAndEntries(category)
+        pendingDeleteCategory = nil
+    }
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(category.name)
-                    .pulsarTextStyle(.label)
-                Text("\(entryCount) today • \(category.baseMoment.title)")
-                    .pulsarTextStyle(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
+    private func cancelDelete() {
+        pendingDeleteCategory = nil
     }
 }
 
@@ -369,4 +361,8 @@ private enum NutritionMealCategoryPreset: String, CaseIterable, Identifiable {
         case .snacks: .snacks
         }
     }
+}
+
+#Preview("Edit Meals") {
+    NutritionMealsEditView(store: PulsarNutritionStore())
 }

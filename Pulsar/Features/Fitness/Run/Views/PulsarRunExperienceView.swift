@@ -45,6 +45,9 @@ struct PulsarRunExperienceView: View {
         .animation(.smooth(duration: 0.28), value: displayedSummary?.id)
         .onAppear {
             scheduleSummaryRevealIfNeeded()
+            if shouldShowLiveRun {
+                PulsarWorkoutStartupTrace.phone("live UI presented run type=\(workoutKind.rawValue)")
+            }
         }
         .onChange(of: coordinator.summary?.id) { _, _ in
             scheduleSummaryRevealIfNeeded()

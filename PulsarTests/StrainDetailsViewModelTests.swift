@@ -95,6 +95,67 @@ final class StrainDetailsViewModelTests: XCTestCase {
         XCTAssertEqual(first.timeline, second.timeline)
     }
 
+    func testHealthKitUUIDDeduplicatesOverlappingDayAndWorkoutHeartSamples() {
+        let start = date("2026-05-04 07:00")
+        let sampleID = UUID()
+        let sample = HeartRateSample(
+            id: sampleID,
+            start: start,
+            end: start.addingTimeInterval(30),
+            bpm: 132,
+            provenance: .sample
+        )
+        let workout = WorkoutLoadInput(
+            id: UUID(),
+            type: "Run",
+            start: start,
+            end: start.addingTimeInterval(60),
+            heartRateSamples: [sample],
+            activeEnergyKilocalories: nil,
+            distanceMeters: nil,
+            provenance: .sample
+        )
+        let activity = DailyActivityInput(
+            date: start,
+            steps: 0,
+            activeEnergyKilocalories: 0,
+            basalEnergyKilocalories: 0,
+            distanceMeters: 0,
+            exerciseMinutes: 0,
+            provenance: []
+        )
+        let input = DailyStrainInput(
+            date: start,
+            maxHeartRate: 190,
+            workouts: [workout],
+            activity: activity,
+            recentRawLoads: [],
+            sevenDayRawLoad: 0,
+            twentyEightDayRawLoad: 0
+        )
+
+        let summary = StrainAnalyzer().analyze(
+            StrainAnalysisInput(
+                strainInput: input,
+                biometrics: DailyBiometrics(
+                    date: start,
+                    hrvSDNNMilliseconds: nil,
+                    restingHeartRateBPM: 52,
+                    respiratoryRate: nil,
+                    sleepPerformance: nil,
+                    priorDayStrain: nil,
+                    provenance: [:]
+                ),
+                dayHeartRateSamples: [sample],
+                queryInterval: DateInterval(start: start, duration: 3_600),
+                refreshedAt: start
+            )
+        )
+
+        XCTAssertEqual(summary.heartRatePoints.count, 1)
+        XCTAssertEqual(summary.analyzedSampleCount, 2)
+    }
+
     func testHeartLoadChartUsesSortedHeartRatePointsAndWorkoutBands() {
         let viewModel = makeViewModel(summary: makeSummary())
         let chart = viewModel.heartLoadChart

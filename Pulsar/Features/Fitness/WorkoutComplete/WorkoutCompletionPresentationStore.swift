@@ -39,17 +39,25 @@ final class WorkoutCompletionPresentationStore: ObservableObject {
 
     private let defaults: UserDefaults
     private let consumedSessionIDsKey: String
+    private let summaryEligibleSessionIDsKey: String
     private var consumedSessionIDs: Set<UUID>
+    private var summaryEligibleSessionIDs: Set<UUID>
 
     init(
         defaults: UserDefaults = .standard,
-        consumedSessionIDsKey: String = "pulsar.workoutCompletion.consumedSessionIDs.v1"
+        consumedSessionIDsKey: String = "pulsar.workoutCompletion.consumedSessionIDs.v1",
+        summaryEligibleSessionIDsKey: String = "pulsar.workoutCompletion.summaryEligibleSessionIDs.v1"
     ) {
         self.defaults = defaults
         self.consumedSessionIDsKey = consumedSessionIDsKey
+        self.summaryEligibleSessionIDsKey = summaryEligibleSessionIDsKey
         self.consumedSessionIDs = Self.restoreConsumedSessionIDs(
             from: defaults,
             key: consumedSessionIDsKey
+        )
+        self.summaryEligibleSessionIDs = Self.restoreConsumedSessionIDs(
+            from: defaults,
+            key: summaryEligibleSessionIDsKey
         )
     }
 
@@ -57,26 +65,55 @@ final class WorkoutCompletionPresentationStore: ObservableObject {
         !consumedSessionIDs.contains(sessionID)
     }
 
+    func markEligibleForSummary(sessionID: UUID) {
+        guard summaryEligibleSessionIDs.insert(sessionID).inserted else { return }
+        persistSessionIDs(summaryEligibleSessionIDs, key: summaryEligibleSessionIDsKey)
+    }
+
+    func isEligibleForSummary(sessionID: UUID) -> Bool {
+        summaryEligibleSessionIDs.contains(sessionID)
+    }
+
     func markPending(_ presentation: WorkoutCompletionPresentation) {
         guard shouldAutoPresent(sessionID: presentation.sessionID) else {
             pendingPresentation = nil
             return
         }
+        guard isEligibleForSummary(sessionID: presentation.sessionID) ||
+                PulsarWorkoutStartCoordinator.shared.canPresentSummary(sessionID: presentation.sessionID) else {
+            pendingPresentation = nil
+            PulsarWorkoutLifecycleLogger.log(
+                .summaryPresentationBlocked,
+                sessionID: presentation.sessionID,
+                source: "WorkoutCompletionPresentationStore.markPending",
+                detail: "reason=notEligibleForSummary"
+            )
+            return
+        }
         pendingPresentation = presentation
+    }
+
+    func canPresentSummary(sessionID: UUID) -> Bool {
+        shouldAutoPresent(sessionID: sessionID) &&
+            (isEligibleForSummary(sessionID: sessionID) ||
+                PulsarWorkoutStartCoordinator.shared.canPresentSummary(sessionID: sessionID))
     }
 
     func consume(sessionID: UUID, reason: String) {
         consumedSessionIDs.insert(sessionID)
-        persistConsumedSessionIDs()
+        summaryEligibleSessionIDs.remove(sessionID)
+        persistSessionIDs(consumedSessionIDs, key: consumedSessionIDsKey)
+        persistSessionIDs(summaryEligibleSessionIDs, key: summaryEligibleSessionIDsKey)
         if pendingPresentation?.sessionID == sessionID {
             pendingPresentation = nil
         }
+        PulsarWorkoutStartCoordinator.shared.acknowledgeTerminal(sessionID: sessionID, reason: reason)
         PulsarStateDebugLogger.log("[PulsarSummary] Consumed workout completion session=\(sessionID.uuidString) reason=\(reason)")
     }
 
-    private func persistConsumedSessionIDs() {
-        let encoded = consumedSessionIDs.map(\.uuidString).sorted()
-        defaults.set(encoded, forKey: consumedSessionIDsKey)
+    private func persistSessionIDs(_ sessionIDs: Set<UUID>, key: String) {
+        let encoded = sessionIDs.map(\.uuidString).sorted()
+        defaults.set(encoded, forKey: key)
     }
 
     private static func restoreConsumedSessionIDs(

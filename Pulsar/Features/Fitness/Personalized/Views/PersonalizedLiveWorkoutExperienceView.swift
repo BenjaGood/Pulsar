@@ -54,7 +54,8 @@ struct PersonalizedLiveWorkoutExperienceView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.988)))
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(PulsarFitnessMonochromeBackground())
+        .pulsarFitnessMonochromeAppearance()
         .animation(.smooth(duration: 0.36), value: isShowingLiveWorkout)
         .animation(.smooth(duration: 0.28), value: completionSummary?.id)
         .onDisappear {

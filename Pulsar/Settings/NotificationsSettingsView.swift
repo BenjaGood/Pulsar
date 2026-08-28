@@ -17,7 +17,7 @@ struct NotificationsSettingsView: View {
                     symbol: "bell.badge.fill",
                     title: "Intelligent Notifications",
                     message: "Pulsar can send concise wellness summaries after meaningful health events. These are not medical alerts or diagnoses.",
-                    tint: .red
+                    tint: .black
                 )
 
                 permissionCard
@@ -30,7 +30,7 @@ struct NotificationsSettingsView: View {
                         title: "Intelligent Notifications",
                         subtitle: "Master switch for proactive Pulsar insights",
                         symbol: "sparkles",
-                        tint: .red,
+                        tint: .black,
                         isOn: Binding(
                             get: { store.preferences.intelligentNotificationsEnabled },
                             set: { enabled in
@@ -43,7 +43,7 @@ struct NotificationsSettingsView: View {
                         title: "Post-Workout Summary",
                         subtitle: "Workout complete summaries with strain and recovery context",
                         symbol: "figure.strengthtraining.traditional",
-                        tint: .orange,
+                        tint: .black,
                         isOn: preferenceBinding(\.postWorkoutSummaryEnabled)
                     )
                     .disabled(!store.preferences.intelligentNotificationsEnabled)
@@ -52,7 +52,7 @@ struct NotificationsSettingsView: View {
                         title: "High-Stress Alerts",
                         subtitle: "Cooldown-protected alerts when physiological load appears elevated",
                         symbol: "waveform.path.ecg",
-                        tint: .pink,
+                        tint: .black,
                         isOn: preferenceBinding(\.highStressAlertsEnabled)
                     )
                     .disabled(!store.preferences.intelligentNotificationsEnabled)
@@ -61,7 +61,7 @@ struct NotificationsSettingsView: View {
                         title: "Wind-Down Reminders",
                         subtitle: "A short pre-sleep readiness summary before bedtime",
                         symbol: "moon.zzz.fill",
-                        tint: .indigo,
+                        tint: .black,
                         isOn: preferenceBinding(\.windDownRemindersEnabled)
                     )
                     .disabled(!store.preferences.intelligentNotificationsEnabled)
@@ -70,7 +70,7 @@ struct NotificationsSettingsView: View {
                         title: "Daily Rewind",
                         subtitle: "A calm 8 PM reflection prompt for Mindfulness",
                         symbol: "arrow.counterclockwise.circle.fill",
-                        tint: .teal,
+                        tint: .black,
                         isOn: preferenceBinding(\.dailyRewindRemindersEnabled)
                     )
                     .disabled(!store.preferences.intelligentNotificationsEnabled)
@@ -79,33 +79,22 @@ struct NotificationsSettingsView: View {
                         title: "Sleep Summary",
                         subtitle: "A morning sleep summary when enough sleep data is available",
                         symbol: "bed.double.fill",
-                        tint: .blue,
+                        tint: .black,
                         isOn: preferenceBinding(\.sleepSummaryEnabled)
                     )
                     .disabled(!store.preferences.intelligentNotificationsEnabled)
-                }
-
-                SettingsSectionCard(title: "Quiet Hours") {
-                    SettingsValueRow(
-                        title: "Respect Focus / Do Not Disturb",
-                        value: "System Managed",
-                        subtitle: "Pulsar lets iOS handle Focus and notification delivery rules."
-                    )
-                    SettingsDivider()
-                    SettingsValueRow(
-                        title: "Quiet Hours",
-                        value: "Coming Soon",
-                        subtitle: "A dedicated in-app quiet-hours window is planned."
-                    )
                 }
             }
             .padding(.horizontal, 18)
             .padding(.top, 12)
             .padding(.bottom, 30)
         }
-        .background(PulsarSectionBackground())
+        .background(PulsarSettingsBackground())
         .navigationTitle("Notifications")
         .navigationBarTitleDisplayMode(.large)
+        .tint(SettingsMonochromeDesign.primary)
+        .toggleStyle(SettingsMonochromeToggleStyle())
+        .preferredColorScheme(.light)
         .task { await store.refreshAuthorizationStatus() }
     }
 
@@ -132,6 +121,7 @@ struct NotificationsSettingsView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+                    .tint(SettingsMonochromeDesign.primary)
                 } else if store.authorizationStatus == .denied {
                     Button("Open Settings", action: openSystemSettings)
                         .buttonStyle(.bordered)
@@ -140,7 +130,7 @@ struct NotificationsSettingsView: View {
             }
         }
         .padding(16)
-        .pulsarLiquidGlass(cornerRadius: 24)
+        .pulsarSettingsCardSurface(cornerRadius: 24)
     }
 
     private var permissionSymbol: String {
@@ -159,13 +149,13 @@ struct NotificationsSettingsView: View {
     private var permissionTint: Color {
         switch store.authorizationStatus {
         case .authorized, .provisional, .ephemeral:
-            .green
+            SettingsMonochromeDesign.primary
         case .denied:
-            .orange
+            SettingsMonochromeDesign.secondary
         case .notDetermined:
-            .red
+            SettingsMonochromeDesign.secondary
         @unknown default:
-            .gray
+            SettingsMonochromeDesign.tertiary
         }
     }
 
@@ -220,6 +210,8 @@ private struct ToggleSettingsRow: View {
             Spacer(minLength: 12)
             Toggle(title, isOn: $isOn)
                 .labelsHidden()
+                .accessibilityLabel(title)
+                .accessibilityValue(isOn ? "On" : "Off")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

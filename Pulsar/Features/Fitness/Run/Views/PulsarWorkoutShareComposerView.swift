@@ -88,6 +88,7 @@ struct PulsarWorkoutShareComposerView: View {
                 }
             }
         }
+        .pulsarFitnessMonochromeAppearance()
     }
 
     @MainActor
@@ -135,12 +136,7 @@ private enum PulsarWorkoutShareContent {
     }
 
     var tint: Color {
-        switch self {
-        case .outdoor(let summary):
-            summary.workoutKind.accentColor
-        case .gym:
-            Color(red: 0.70, green: 1.0, blue: 0.76)
-        }
+        PulsarFitnessMonochromeDesign.primaryText
     }
 
     var startedAt: Date {
@@ -294,7 +290,7 @@ private struct PulsarWorkoutShareCard: View {
             photoLayer
 
             LinearGradient(
-                colors: [.black.opacity(0.12), .black.opacity(0.48)],
+                colors: [.white.opacity(0.32), .white.opacity(0.72)],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -312,24 +308,24 @@ private struct PulsarWorkoutShareCard: View {
                     Text(content.startedAt.formatted(.dateTime.day().month(.abbreviated).year()))
                         .font(.system(size: 20, weight: .semibold, design: .serif))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
 
                 Spacer()
 
                 VStack(alignment: .leading, spacing: 18) {
                     Label(content.workoutLabel.uppercased(), systemImage: content.symbolName)
                         .font(.system(size: 17, weight: .bold, design: .default))
-                        .foregroundStyle(.white.opacity(0.74))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                         .tracking(4)
 
                     if content.routePoints.count > 1 {
-                        PulsarShareRouteLine(points: content.routePoints, accent: content.tint)
+                        PulsarShareRouteLine(points: content.routePoints, accent: .black)
                             .frame(height: 120)
                     }
 
                     Text(content.title)
                         .font(.system(size: 44, weight: .semibold, design: .serif))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                         .lineLimit(2)
                         .minimumScaleFactor(0.62)
 
@@ -341,7 +337,7 @@ private struct PulsarWorkoutShareCard: View {
 
                     Label("\(content.startedAt.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())) · \(content.sourceDeviceName)", systemImage: "sparkles")
                         .font(.system(size: 18, weight: .semibold, design: .default))
-                        .foregroundStyle(.white.opacity(0.82))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                 }
                 .padding(26)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
@@ -352,7 +348,7 @@ private struct PulsarWorkoutShareCard: View {
             }
             .padding(34)
         }
-        .background(Color.black)
+        .background(PulsarFitnessMonochromeDesign.background)
     }
 
     @ViewBuilder
@@ -364,20 +360,20 @@ private struct PulsarWorkoutShareCard: View {
         } else {
             LinearGradient(
                 colors: [
-                    content.tint.opacity(0.82),
-                    Color(red: 0.05, green: 0.07, blue: 0.09),
-                    Color(red: 0.02, green: 0.03, blue: 0.05)
+                    .white,
+                    PulsarFitnessMonochromeDesign.background,
+                    Color(red: 0.95, green: 0.95, blue: 0.96)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             if content.routePoints.count > 1 {
-                PulsarShareRouteLine(points: content.routePoints, accent: content.tint, lineWidth: 11)
+                PulsarShareRouteLine(points: content.routePoints, accent: .black, lineWidth: 11)
                     .padding(90)
             } else {
                 Image(systemName: content.symbolName)
                     .font(.system(size: 260, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.12))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
             }
         }
     }
@@ -390,9 +386,9 @@ private struct PulsarWorkoutShareCard: View {
                 .lineLimit(1)
             Text(title)
                 .font(.system(size: 15, weight: .semibold, design: .default))
-                .foregroundStyle(.white.opacity(0.68))
+                .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
     }
 }
 
@@ -419,10 +415,10 @@ struct PulsarShareRouteLine: View {
             }
             context.stroke(path, with: .color(accent.opacity(0.24)), style: StrokeStyle(lineWidth: lineWidth * 3.1, lineCap: .round, lineJoin: .round))
             context.stroke(path, with: .color(.white.opacity(0.14)), style: StrokeStyle(lineWidth: lineWidth * 1.8, lineCap: .round, lineJoin: .round))
-            context.stroke(
-                path,
-                with: .linearGradient(
-                    Gradient(colors: [.white.opacity(0.96), Color(red: 1.0, green: 0.46, blue: 0.34), accent]),
+                context.stroke(
+                    path,
+                    with: .linearGradient(
+                    Gradient(colors: [.black.opacity(0.42), .black.opacity(0.72), accent]),
                     startPoint: scaled.first ?? .zero,
                     endPoint: scaled.last ?? CGPoint(x: size.width, y: size.height)
                 ),
@@ -444,18 +440,18 @@ private enum PulsarWorkoutShareFallbackRenderer {
     static func image(for content: PulsarWorkoutShareContent, size: CGSize) -> UIImage {
         let renderer = UIGraphicsImageRenderer(size: size)
         return renderer.image { context in
-            UIColor.black.setFill()
+            UIColor.white.setFill()
             context.fill(CGRect(origin: .zero, size: size))
-            UIColor.systemOrange.withAlphaComponent(0.9).setFill()
+            UIColor.black.withAlphaComponent(0.9).setFill()
             context.fill(CGRect(x: 0, y: 0, width: size.width, height: 18))
 
             let titleAttributes: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: 74, weight: .semibold),
-                .foregroundColor: UIColor.white
+                .foregroundColor: UIColor.black
             ]
             let bodyAttributes: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: 38, weight: .semibold),
-                .foregroundColor: UIColor.white.withAlphaComponent(0.82)
+                .foregroundColor: UIColor.black.withAlphaComponent(0.64)
             ]
 
             NSString(string: content.title).draw(

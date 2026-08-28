@@ -265,15 +265,14 @@ struct PulsarMetricCircle: View {
     }
 
     private func animateProgress() {
-        displayedProgress = 0
+        let target = scoreProgress
+        guard abs(displayedProgress - target) > 0.001 else { return }
 
         if reduceMotion {
-            withAnimation(.easeOut(duration: 0.24)) {
-                displayedProgress = scoreProgress
-            }
+            displayedProgress = target
         } else {
             withAnimation(.spring(response: 0.84, dampingFraction: 0.86)) {
-                displayedProgress = scoreProgress
+                displayedProgress = target
             }
         }
     }

@@ -83,14 +83,16 @@ struct StressHaloGaugeView: View {
     }
 
     private func animateToTarget() {
+        let target = targetProgress
+        guard abs(animatedProgress - target) > 0.001 else { return }
+
         if reduceMotion {
-            animatedProgress = targetProgress
+            animatedProgress = target
             return
         }
 
-        animatedProgress = 0
         withAnimation(.smooth(duration: style == .detail ? 1.15 : 0.9)) {
-            animatedProgress = targetProgress
+            animatedProgress = target
         }
     }
 

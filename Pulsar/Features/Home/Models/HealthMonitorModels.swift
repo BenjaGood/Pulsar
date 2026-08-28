@@ -5,7 +5,7 @@
 
 import Foundation
 
-enum HealthMetricStatus: String, Codable, Equatable, Hashable, CaseIterable, Identifiable {
+nonisolated enum HealthMetricStatus: String, Codable, Equatable, Hashable, CaseIterable, Identifiable, Sendable {
     case normal = "Normal"
     case higher = "Higher"
     case lower = "Lower"

@@ -77,6 +77,7 @@ struct PulsarSharedBiometricsDay {
     var wristTemperatureDeviation: Double?
     var sleepPerformance: Double?
     var strainScore: Double?
+    var recentWorkoutLoad: Double? = nil
     var sourceNames: [String]
 }
 
@@ -457,6 +458,8 @@ enum PulsarSharedMetricCalculator {
         let baselineHRV = metricBaseline(scoringBaselineDays.compactMap(\.hrvSDNN).filter(validHRV), minimumStandardDeviation: 4)
         let baselineRHR = metricBaseline(scoringBaselineDays.compactMap(\.restingHeartRate).filter(validHeartRate), minimumStandardDeviation: 2)
         let baselineDaytimeHR = metricBaseline(scoringBaselineDays.compactMap(\.daytimeHeartRate).filter(validRecentHeartRate), minimumStandardDeviation: 5)
+        let baselineRespiratoryRate = metricBaseline(scoringBaselineDays.compactMap(\.respiratoryRate).filter(validRespiratoryRate), minimumStandardDeviation: 0.5)
+        let baselineWorkoutLoad = metricBaseline(scoringBaselineDays.compactMap(\.recentWorkoutLoad).filter { $0.isFinite && $0 >= 0 }, minimumStandardDeviation: 8)
         let movementState = resolvedStressMovementState(today: today, computedAt: computedAt)
         let cooldownMinutes = today.lastWorkoutEnd.map { max(0, computedAt.timeIntervalSince($0) / 60) }
         let cooldownActive = movementState == .cooldown && (cooldownMinutes ?? .infinity) <= 12
@@ -465,7 +468,9 @@ enum PulsarSharedMetricCalculator {
             today.hrvSDNN,
             today.restingHeartRate,
             today.respiratoryRate,
-            today.recentHeartRate
+            today.recentHeartRate,
+            today.sleepDurationMinutes,
+            today.recentWorkoutLoad ?? today.strainScore
         ].compactMap { $0 }.count
 
         if today.isWorkoutActive || movementState == .workout || cooldownActive {
@@ -526,6 +531,10 @@ enum PulsarSharedMetricCalculator {
         let hrvSpread = max(4, baselineHRV?.standardDeviation ?? 8)
 
         let hrvDeviation = stressHRVDeviation(value: today.hrvSDNN, baseline: hrvBaseline, spread: hrvSpread, freshness: hrvFreshness)
+        let restingHeartRateDeviation = stressUpwardDeviation(value: today.restingHeartRate, baseline: baselineRHR, valid: validHeartRate)
+        let respiratoryDeviation = stressUpwardDeviation(value: today.respiratoryRate, baseline: baselineRespiratoryRate, valid: validRespiratoryRate)
+        let sleepDeviation = sleepStress(today: today, sleep: sleep)
+        let workoutLoadDeviation = stressWorkoutLoadDeviation(today: today, strain: strain, baseline: baselineWorkoutLoad)
         let nonActivityHeartDeviation = stressHeartRateDeviation(
             heartRate: today.recentHeartRate,
             expected: restingBaseline.map { $0 + 5 },
@@ -547,6 +556,10 @@ enum PulsarSharedMetricCalculator {
         let nonActivityScore = physiologicalStressScore(
             heartDeviation: nonActivityHeartDeviation,
             hrvDeviation: hrvDeviation,
+            restingHeartRateDeviation: restingHeartRateDeviation,
+            respiratoryDeviation: respiratoryDeviation,
+            sleepDeviation: sleepDeviation,
+            workoutLoadDeviation: workoutLoadDeviation,
             hrvFreshness: hrvFreshness,
             heartRateFreshness: heartRateFreshness,
             isInactive: true,
@@ -555,6 +568,10 @@ enum PulsarSharedMetricCalculator {
         var activityAdjustedScore = physiologicalStressScore(
             heartDeviation: contextualHeartDeviation,
             hrvDeviation: hrvDeviation,
+            restingHeartRateDeviation: restingHeartRateDeviation,
+            respiratoryDeviation: respiratoryDeviation,
+            sleepDeviation: sleepDeviation,
+            workoutLoadDeviation: workoutLoadDeviation,
             hrvFreshness: hrvFreshness,
             heartRateFreshness: heartRateFreshness,
             isInactive: movementState == .inactive || movementState == .unknown,
@@ -578,6 +595,9 @@ enum PulsarSharedMetricCalculator {
             nonActivityScore: nonActivityScore,
             heartDeviation: contextualHeartDeviation,
             hrvDeviation: hrvDeviation,
+            restingHeartRateDeviation: restingHeartRateDeviation,
+            respiratoryDeviation: respiratoryDeviation,
+            sleepDeviation: sleepDeviation,
             movementState: movementState,
             hrvIsStale: hrvIsStale,
             heartRateIsStale: heartRateIsStale,
@@ -603,7 +623,8 @@ enum PulsarSharedMetricCalculator {
             heartRateIsStale: heartRateIsStale,
             hrvIsStale: hrvIsStale,
             movementState: movementState,
-            calculationState: calculationState
+            calculationState: calculationState,
+            supportingSignalCount: [restingHeartRateDeviation, respiratoryDeviation, sleepDeviation, workoutLoadDeviation].compactMap { $0 }.count
         )
         let drivers = stressDrivers(
             score: score,
@@ -612,6 +633,10 @@ enum PulsarSharedMetricCalculator {
             calculationState: calculationState,
             heartDeviation: contextualHeartDeviation,
             hrvDeviation: hrvDeviation,
+            restingHeartRateDeviation: restingHeartRateDeviation,
+            respiratoryDeviation: respiratoryDeviation,
+            sleepDeviation: sleepDeviation,
+            workoutLoadDeviation: workoutLoadDeviation,
             hrvIsStale: hrvIsStale,
             heartRateIsStale: heartRateIsStale
         )
@@ -675,7 +700,7 @@ enum PulsarSharedMetricCalculator {
                         $0.daytimeHeartRate != nil
                 }
                 .sorted { $0.date < $1.date }
-                .suffix(14)
+                .suffix(21)
         )
     }
 
@@ -739,6 +764,26 @@ enum PulsarSharedMetricCalculator {
         return PulsarMetricMath.clamp(deviation * freshness, -2.5, 3.2)
     }
 
+    nonisolated private static func stressUpwardDeviation(
+        value: Double?,
+        baseline: (mean: Double, standardDeviation: Double)?,
+        valid: (Double) -> Bool
+    ) -> Double? {
+        guard let value, valid(value), let baseline else { return nil }
+        return PulsarMetricMath.clamp((value - baseline.mean) / baseline.standardDeviation, -2, 3)
+    }
+
+    nonisolated private static func stressWorkoutLoadDeviation(
+        today: PulsarSharedStressInput,
+        strain: PulsarStrainSyncMetric?,
+        baseline: (mean: Double, standardDeviation: Double)?
+    ) -> Double? {
+        if let load = today.recentWorkoutLoad, load.isFinite, load >= 0, let baseline {
+            return PulsarMetricMath.clamp((load - baseline.mean) / baseline.standardDeviation, -2, 3)
+        }
+        return loadStress(today: today, strain: strain)
+    }
+
     nonisolated private static func expectedStressHeartRate(restingBaseline: Double?, daytimeBaseline: Double?, movementState: PulsarSharedStressMovementState) -> Double? {
         guard let restingBaseline else { return daytimeBaseline }
         switch movementState {
@@ -777,6 +822,10 @@ enum PulsarSharedMetricCalculator {
     nonisolated private static func physiologicalStressScore(
         heartDeviation: Double?,
         hrvDeviation: Double?,
+        restingHeartRateDeviation: Double?,
+        respiratoryDeviation: Double?,
+        sleepDeviation: Double?,
+        workoutLoadDeviation: Double?,
         hrvFreshness: Double,
         heartRateFreshness: Double,
         isInactive: Bool,
@@ -787,7 +836,9 @@ enum PulsarSharedMetricCalculator {
         let positiveHeart = max(0, heart ?? 0)
         let positiveHRV = max(0, hrv ?? 0)
 
-        var score = 22.0
+        // A day close to the user's baseline is Balanced. Supporting deviations
+        // move the estimate up or down without inventing a population default.
+        var score = 34.0
         if heart != nil {
             score += positiveHeart * (isInactive ? 14.5 : 10.5)
             score += min(0, heart ?? 0) * 5.0
@@ -797,8 +848,20 @@ enum PulsarSharedMetricCalculator {
             score += positiveHRV * hrvWeight
             score += min(0, hrv ?? 0) * 4.2
         }
+        if let restingHeartRateDeviation {
+            score += restingHeartRateDeviation * 6.5
+        }
+        if let respiratoryDeviation {
+            score += respiratoryDeviation * 4.5
+        }
+        if let sleepDeviation {
+            score += sleepDeviation * 5.0
+        }
+        if let workoutLoadDeviation {
+            score += workoutLoadDeviation * 3.0
+        }
 
-        if positiveHeart > 0.35 && positiveHRV > 0.45 {
+        if positiveHeart > 0.60 && positiveHRV > 0.45 {
             score += min(positiveHeart, positiveHRV) * (isInactive ? 14 : 9)
         }
         if positiveHeart > 1.5 && positiveHRV > 1.4 && isInactive {
@@ -861,6 +924,9 @@ enum PulsarSharedMetricCalculator {
         nonActivityScore: Double,
         heartDeviation: Double?,
         hrvDeviation: Double?,
+        restingHeartRateDeviation: Double?,
+        respiratoryDeviation: Double?,
+        sleepDeviation: Double?,
         movementState: PulsarSharedStressMovementState,
         hrvIsStale: Bool,
         heartRateIsStale: Bool,
@@ -869,6 +935,10 @@ enum PulsarSharedMetricCalculator {
         var capped = PulsarStressScale.clampedScore(score)
         let heart = heartDeviation ?? 0
         let hrv = hrvDeviation ?? 0
+        let supportingEvidence = [restingHeartRateDeviation, respiratoryDeviation, sleepDeviation]
+            .compactMap { $0 }
+            .filter { $0 >= 1.0 }
+            .count
         let inactive = movementState == .inactive || movementState == .unknown
 
         if movementState == .lightMovement {
@@ -891,7 +961,12 @@ enum PulsarSharedMetricCalculator {
             }
         }
 
-        if capped > 75, !(inactive && heart >= 1.55 && hrv >= 1.25 && !hrvIsStale && !heartRateIsStale) {
+        let hasHighEvidence = inactive && !heartRateIsStale && (
+            (heart >= 1.55 && hrv >= 1.25 && !hrvIsStale) ||
+                (heart >= 1.45 && supportingEvidence >= 2) ||
+                (hrv >= 1.35 && !hrvIsStale && supportingEvidence >= 2)
+        )
+        if capped > 75, !hasHighEvidence {
             capped = 74
             adjustments.append("high-stress evidence cap")
         }
@@ -1334,11 +1409,20 @@ enum PulsarSharedMetricCalculator {
     nonisolated private static func validRespiratoryRate(_ value: Double) -> Bool { (6...30).contains(value) }
 
     nonisolated private static func metricBaseline(_ values: [Double], minimumStandardDeviation: Double) -> (mean: Double, standardDeviation: Double)? {
-        let values = values.filter(\.isFinite)
-        guard values.count >= 7 else { return nil }
-        let mean = values.reduce(0, +) / Double(values.count)
-        let variance = values.reduce(0) { $0 + pow($1 - mean, 2) } / Double(max(1, values.count - 1))
-        return (mean, max(sqrt(variance), minimumStandardDeviation))
+        let values = values.filter(\.isFinite).sorted()
+        guard values.count >= 7, let median = median(values) else { return nil }
+        let absoluteDeviations = values.map { abs($0 - median) }.sorted()
+        let robustSpread = (self.median(absoluteDeviations) ?? 0) * 1.4826
+        return (median, max(robustSpread, minimumStandardDeviation))
+    }
+
+    nonisolated private static func median(_ sortedValues: [Double]) -> Double? {
+        guard !sortedValues.isEmpty else { return nil }
+        let middle = sortedValues.count / 2
+        if sortedValues.count.isMultiple(of: 2) {
+            return (sortedValues[middle - 1] + sortedValues[middle]) / 2
+        }
+        return sortedValues[middle]
     }
 
     nonisolated private static func zScore(_ value: Double, baseline: (mean: Double, standardDeviation: Double)) -> Double {
@@ -1374,7 +1458,7 @@ enum PulsarSharedMetricCalculator {
         case .low:
             return "Low"
         case .balanced:
-            return "Medium"
+            return "Balanced"
         case .elevated:
             return "Elevated"
         case .high:
@@ -1389,13 +1473,15 @@ enum PulsarSharedMetricCalculator {
         heartRateIsStale: Bool,
         hrvIsStale: Bool,
         movementState: PulsarSharedStressMovementState,
-        calculationState: PulsarSharedStressCalculationState
+        calculationState: PulsarSharedStressCalculationState,
+        supportingSignalCount: Int
     ) -> PulsarSyncConfidence {
         if calculationState.isPaused { return .low }
         var points = 0
         points += baselineDayCount >= 14 ? 2 : (baselineDayCount >= 7 ? 1 : 0)
         if hasHeartRate { points += 2 }
         if hasHRV { points += 2 }
+        points += min(2, supportingSignalCount / 2)
         if heartRateIsStale { points -= 2 }
         if hrvIsStale { points -= 1 }
         if movementState == .lightMovement || movementState == .activeMovement || movementState == .cooldown {
@@ -1414,6 +1500,10 @@ enum PulsarSharedMetricCalculator {
         calculationState: PulsarSharedStressCalculationState,
         heartDeviation: Double?,
         hrvDeviation: Double?,
+        restingHeartRateDeviation: Double?,
+        respiratoryDeviation: Double?,
+        sleepDeviation: Double?,
+        workoutLoadDeviation: Double?,
         hrvIsStale: Bool,
         heartRateIsStale: Bool
     ) -> [String] {
@@ -1424,27 +1514,43 @@ enum PulsarSharedMetricCalculator {
             return ["Stress is paused while your heart rate settles after activity."]
         }
         if hrvIsStale || heartRateIsStale {
-            return ["Stress confidence is limited because recent wearable data is stale."]
+            return ["Limited recent data is available, so this stress score is an estimate."]
         }
         if movementState == .lightMovement || movementState == .activeMovement {
-            return ["Stress is being adjusted because movement can naturally raise heart rate."]
+            return ["Movement is filtered so activity does not inflate stress."]
         }
 
         let heart = heartDeviation ?? 0
         let hrv = hrvDeviation ?? 0
         if score >= 75, heart >= 1.5, hrv >= 1.2 {
-            return ["Your heart rate is elevated relative to baseline while HRV is suppressed."]
+            return ["Your heart rate is elevated and HRV is below your baseline."]
         }
         if score >= 50, heart >= 0.8, hrv >= 0.6 {
-            return ["HR and HRV suggest elevated physiological load right now."]
+            return ["Your heart rate is elevated and HRV is below your baseline."]
+        }
+        if (restingHeartRateDeviation ?? 0) >= 1, (respiratoryDeviation ?? 0) >= 1 {
+            return ["Resting heart and breathing rates are above your normal range."]
+        }
+        if (sleepDeviation ?? 0) >= 0.8 {
+            return ["Shorter sleep is raising today’s stress estimate."]
+        }
+        if (workoutLoadDeviation ?? 0) >= 1.2 {
+            return ["Recent physical load is above your normal range."]
         }
         if hrv >= 1.2, heart < 0.35 {
             return ["HRV is lower than usual, but heart rate is near baseline."]
         }
         if confidence == .low {
-            return ["Stress confidence is limited because recent HRV or heart-rate data is unavailable."]
+            return ["Limited recent data is available, so this stress score is an estimate."]
         }
-        return ["Your current HR and HRV are close to baseline."]
+        switch PulsarStressCategory.category(for: score) {
+        case .low:
+            return ["Your stress is below your usual range."]
+        case .balanced:
+            return ["Your signals are close to your normal baseline."]
+        case .elevated, .high:
+            return ["Several signals are above your normal range."]
+        }
     }
 
     nonisolated private static func recoveryConfidence(validHRVDays: Int, validRHRDays: Int, validRespiratoryDays: Int, availableContributorCount: Int) -> PulsarSyncConfidence {

@@ -21,14 +21,14 @@ struct WorkoutStartPulseLineView: View {
                 CinematicHeartbeatLineShape()
                     .trim(from: 0, to: 1)
                     .stroke(
-                        Color.white.opacity(0.08),
+                        Color.black.opacity(0.045),
                         style: StrokeStyle(lineWidth: 1.1, lineCap: .round, lineJoin: .round)
                     )
 
                 CinematicHeartbeatLineShape()
                     .trim(from: 0, to: clampedProgress)
                     .stroke(
-                        tint.opacity(0.34 + glowAmount * 0.26),
+                        Color.black.opacity(0.04 + glowAmount * 0.04),
                         style: StrokeStyle(lineWidth: 24, lineCap: .round, lineJoin: .round)
                     )
                     .blur(radius: 20)
@@ -37,7 +37,7 @@ struct WorkoutStartPulseLineView: View {
                 CinematicHeartbeatLineShape()
                     .trim(from: 0, to: clampedProgress)
                     .stroke(
-                        Color.white.opacity(0.16 + glowAmount * 0.22),
+                        Color.black.opacity(0.06 + glowAmount * 0.06),
                         style: StrokeStyle(lineWidth: 9, lineCap: .round, lineJoin: .round)
                     )
                     .blur(radius: 6)
@@ -45,26 +45,25 @@ struct WorkoutStartPulseLineView: View {
                 CinematicHeartbeatLineShape()
                     .trim(from: 0, to: clampedProgress)
                     .stroke(lineGradient, style: StrokeStyle(lineWidth: 2.15, lineCap: .round, lineJoin: .round))
-                    .shadow(color: tint.opacity(0.22 + glowAmount * 0.26), radius: 14 + glowAmount * 14)
-                    .shadow(color: .white.opacity(0.18 + glowAmount * 0.20), radius: 5 + glowAmount * 5)
+                    .shadow(color: .black.opacity(0.06 + glowAmount * 0.04), radius: 10 + glowAmount * 10)
 
                 CinematicHeartbeatLineShape()
                     .trim(from: highlightStart, to: highlightEnd)
                     .stroke(
                         LinearGradient(
-                            colors: [.clear, .white.opacity(0.24), .white, tint.opacity(0.80), .clear],
+                            colors: [.clear, .black.opacity(0.18), .black, .black.opacity(0.72), .clear],
                             startPoint: .leading,
                             endPoint: .trailing
                         ),
                         style: StrokeStyle(lineWidth: 3.2, lineCap: .round, lineJoin: .round)
                     )
                     .blur(radius: 0.35)
-                    .shadow(color: .white.opacity(0.26 + glowAmount * 0.18), radius: 10)
+                    .shadow(color: .black.opacity(0.08 + glowAmount * 0.05), radius: 8)
 
                 CinematicHeartbeatLineShape()
                     .trim(from: highlightStart, to: highlightEnd)
                     .stroke(
-                        tint.opacity(0.30 + glowAmount * 0.30),
+                        Color.black.opacity(0.035 + glowAmount * 0.035),
                         style: StrokeStyle(lineWidth: 16, lineCap: .round, lineJoin: .round)
                     )
                     .blur(radius: 14)
@@ -103,11 +102,11 @@ struct WorkoutStartPulseLineView: View {
     private var lineGradient: LinearGradient {
         LinearGradient(
             colors: [
-                .white.opacity(0.08),
-                .white.opacity(0.70),
-                .white,
-                .white.opacity(0.76),
-                .white.opacity(0.10)
+                .black.opacity(0.08),
+                .black.opacity(0.54),
+                .black.opacity(0.82),
+                .black.opacity(0.60),
+                .black.opacity(0.10)
             ],
             startPoint: .leading,
             endPoint: .trailing
@@ -126,21 +125,12 @@ struct WorkoutStartAmbientBackground: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    tint.opacity(0.78),
-                    tint.opacity(0.42),
-                    Color(red: 0.02, green: 0.02, blue: 0.04),
-                    .black
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            PulsarFitnessMonochromeBackground()
 
             Circle()
                 .fill(
                     RadialGradient(
-                        colors: [tint.opacity(0.52), .clear],
+                        colors: [.black.opacity(0.035), .clear],
                         center: .center,
                         startRadius: 12,
                         endRadius: 300
@@ -154,7 +144,7 @@ struct WorkoutStartAmbientBackground: View {
             Ellipse()
                 .fill(
                     RadialGradient(
-                        colors: [.white.opacity(0.14 + rhythmGlow * 0.06), tint.opacity(0.22 + rhythmGlow * 0.14), .clear],
+                        colors: [.black.opacity(0.025 + rhythmGlow * 0.015), .clear],
                         center: .center,
                         startRadius: 4,
                         endRadius: 280
@@ -169,7 +159,7 @@ struct WorkoutStartAmbientBackground: View {
             Circle()
                 .fill(
                     RadialGradient(
-                        colors: [.white.opacity(0.18), tint.opacity(0.18), .clear],
+                        colors: [.black.opacity(0.025), .clear],
                         center: .center,
                         startRadius: 8,
                         endRadius: 250
@@ -183,8 +173,7 @@ struct WorkoutStartAmbientBackground: View {
             LinearGradient(
                 colors: [
                     .clear,
-                    .white.opacity(0.10 + rhythmGlow * 0.08),
-                    tint.opacity(0.08 + rhythmGlow * 0.10),
+                    .black.opacity(0.018 + rhythmGlow * 0.012),
                     .clear
                 ],
                 startPoint: ribbonShift ? .topLeading : .leading,
@@ -195,9 +184,9 @@ struct WorkoutStartAmbientBackground: View {
 
             LinearGradient(
                 colors: [
-                    .white.opacity(0.14),
+                    .black.opacity(0.018),
                     .clear,
-                    .white.opacity(0.05),
+                    .black.opacity(0.009),
                     .clear
                 ],
                 startPoint: .topLeading,
@@ -206,11 +195,10 @@ struct WorkoutStartAmbientBackground: View {
             .blendMode(.screen)
             .blur(radius: 36)
 
-            Color.black.opacity(0.18)
         }
         .opacity(opacity)
         .ignoresSafeArea()
-        .background(Color.black.ignoresSafeArea())
+        .background(PulsarFitnessMonochromeBackground())
         .onAppear {
             guard !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 3.4).repeatForever(autoreverses: true)) {

@@ -5,6 +5,27 @@
 
 import Combine
 import Foundation
+import OSLog
+
+protocol FitnessWeeklyActivityProviding: Sendable {
+    func fetchWeeklyActivities(
+        start: Date,
+        end: Date,
+        includesHeartRate: Bool,
+        includesRoutes: Bool
+    ) async -> [WeeklyActivity]
+
+    func fetchWorkoutStartDates(start: Date, end: Date) async -> [Date]
+}
+
+extension HealthKitGateway: FitnessWeeklyActivityProviding {}
+
+protocol FitnessRunHistoryProviding: Sendable {
+    func loadCachedRuns(hydratingRoutes: Bool) async -> [PulsarRunSummary]
+    func loadCachedRunStartDates(start: Date, end: Date) async -> [Date]
+}
+
+extension PulsarRunHistoryStore: FitnessRunHistoryProviding {}
 
 @MainActor
 final class FitnessWeekViewModel: ObservableObject {
@@ -17,8 +38,8 @@ final class FitnessWeekViewModel: ObservableObject {
     @Published private(set) var isRefreshingWeeks = false
     @Published private(set) var isLoadingWeekHistory = false
 
-    private let healthKit: HealthKitGateway
-    private let runHistoryStore: PulsarRunHistoryStore
+    private let healthKit: any FitnessWeeklyActivityProviding
+    private let runHistoryStore: any FitnessRunHistoryProviding
     private let gymHistoryStore: PulsarGymWorkoutHistoryStore
     private let calendar: Calendar
     private var rolloverTask: Task<Void, Never>?
@@ -27,17 +48,18 @@ final class FitnessWeekViewModel: ObservableObject {
     private var activityFetchDatesByWeekID: [String: Date] = [:]
     private var lastPresenceRefreshAt: Date?
     private let cacheFreshnessInterval: TimeInterval = 90
+    private let cachedWeekLimit = 12
 
     init(
-        healthKit: HealthKitGateway = HealthKitGateway(),
-        runHistoryStore: PulsarRunHistoryStore = PulsarRunHistoryStore(),
+        healthKit: any FitnessWeeklyActivityProviding = HealthKitGateway(),
+        runHistoryStore: any FitnessRunHistoryProviding = PulsarRunHistoryStore.shared,
         gymHistoryStore: PulsarGymWorkoutHistoryStore? = nil,
         calendar: Calendar = .autoupdatingCurrent,
         now: Date = .now
     ) {
         self.healthKit = healthKit
         self.runHistoryStore = runHistoryStore
-        self.gymHistoryStore = gymHistoryStore ?? PulsarGymWorkoutHistoryStore()
+        self.gymHistoryStore = gymHistoryStore ?? PulsarGymWorkoutHistoryStore.shared
         let fitnessCalendar = FitnessWeekCalculator.fitnessCalendar(from: calendar)
         self.calendar = fitnessCalendar
         let generatedWeeks = FitnessWeekCalculator.getWeekPeriodsAroundCurrentWeek(calendar: fitnessCalendar, now: now)
@@ -54,6 +76,17 @@ final class FitnessWeekViewModel: ObservableObject {
     var canMoveToNextWeek: Bool {
         guard let currentWeek = weeks.first(where: \.isCurrentWeek) else { return false }
         return selectedWeek.startDate < currentWeek.startDate
+    }
+
+    var currentWeekRefreshIsStale: Bool {
+        !hasLoadedInitialData ||
+            hasCurrentWeekRolledOver ||
+            isPresenceStale ||
+            (selectedWeek.isCurrentWeek && isActivitiesCacheStale(for: selectedWeek))
+    }
+
+    var isWeekRolloverMonitoring: Bool {
+        rolloverTask != nil
     }
 
     var focusedWeeks: [WeekPeriod] {
@@ -179,7 +212,7 @@ final class FitnessWeekViewModel: ObservableObject {
     }
 
     func startWeekRolloverMonitoring() {
-        rolloverTask?.cancel()
+        guard rolloverTask == nil else { return }
         rolloverTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
@@ -192,7 +225,16 @@ final class FitnessWeekViewModel: ObservableObject {
         }
     }
 
+    func stopWeekRolloverMonitoring() {
+        rolloverTask?.cancel()
+        rolloverTask = nil
+    }
+
     private func fetchWorkouts(for week: WeekPeriod, clearsExisting: Bool = false, force: Bool = false) async {
+        let signpostState = PulsarPerformanceSignposts.fitness.beginInterval("week_fetch")
+        defer {
+            PulsarPerformanceSignposts.fitness.endInterval("week_fetch", signpostState)
+        }
         if !force, let cached = activitiesByWeekID[week.id], !isActivitiesCacheStale(for: week) {
             applyActivities(cached)
             return
@@ -208,8 +250,13 @@ final class FitnessWeekViewModel: ObservableObject {
         }
         let fetchEnd = FitnessWeekCalculator.fetchEnd(for: week, calendar: calendar)
 
-        async let healthActivities = healthKit.fetchWeeklyActivities(start: week.startDate, end: fetchEnd, includesHeartRate: true)
-        async let cachedRuns = runHistoryStore.loadCachedRuns()
+        async let healthActivities = healthKit.fetchWeeklyActivities(
+            start: week.startDate,
+            end: fetchEnd,
+            includesHeartRate: HealthKitWeeklyActivityFetchOptions.dashboard.includesHeartRate,
+            includesRoutes: HealthKitWeeklyActivityFetchOptions.dashboard.includesRoutes
+        )
+        async let cachedRuns = runHistoryStore.loadCachedRuns(hydratingRoutes: false)
 
         let runs = await cachedRuns
         let localRunActivities = runs
@@ -223,6 +270,7 @@ final class FitnessWeekViewModel: ObservableObject {
         let sortedActivities = mergedActivities.sorted { $0.startDate > $1.startDate }
         activitiesByWeekID[week.id] = sortedActivities
         activityFetchDatesByWeekID[week.id] = Date()
+        pruneActivityCaches(keeping: week.id)
         if selectedWeek.id == week.id {
             applyActivities(sortedActivities)
         }
@@ -310,9 +358,28 @@ final class FitnessWeekViewModel: ObservableObject {
         return Date().timeIntervalSince(lastPresenceRefreshAt) > cacheFreshnessInterval
     }
 
+    private var hasCurrentWeekRolledOver: Bool {
+        let latestCurrentWeek = FitnessWeekCalculator.getWeekPeriod(for: .now, calendar: calendar)
+        return weeks.first(where: \.isCurrentWeek)?.id != latestCurrentWeek.id
+    }
+
     private func isActivitiesCacheStale(for week: WeekPeriod) -> Bool {
         guard let fetchedAt = activityFetchDatesByWeekID[week.id] else { return true }
         return Date().timeIntervalSince(fetchedAt) > cacheFreshnessInterval
+    }
+
+    private func pruneActivityCaches(keeping weekID: String) {
+        guard activitiesByWeekID.count > cachedWeekLimit else { return }
+        let protectedIDs = Set([weekID, selectedWeek.id])
+        let evictionCandidates = activityFetchDatesByWeekID
+            .filter { !protectedIDs.contains($0.key) }
+            .sorted { $0.value < $1.value }
+            .map(\.key)
+        let removalCount = activitiesByWeekID.count - cachedWeekLimit
+        for cachedWeekID in evictionCandidates.prefix(removalCount) {
+            activitiesByWeekID.removeValue(forKey: cachedWeekID)
+            activityFetchDatesByWeekID.removeValue(forKey: cachedWeekID)
+        }
     }
 
     private func applyActivities(_ nextActivities: [WeeklyActivity]) {
@@ -354,12 +421,12 @@ final class FitnessWeekViewModel: ObservableObject {
 
     private func activityStartDates(start: Date, end: Date) async -> [Date] {
         async let healthWorkoutDates = healthKit.fetchWorkoutStartDates(start: start, end: end)
-        async let cachedRuns = runHistoryStore.loadCachedRuns()
+        async let cachedRunDates = runHistoryStore.loadCachedRunStartDates(start: start, end: end)
 
         let healthDates = await healthWorkoutDates
-        let runs = await cachedRuns
+        let runDates = await cachedRunDates
         let gymDates = gymHistoryStore.sessions(start: start, end: end).map(\.startedAt)
-        return healthDates + runs.map(\.startedAt) + gymDates
+        return healthDates + runDates + gymDates
     }
 
     private func localRunActivity(_ run: PulsarRunSummary) -> WeeklyActivity {
@@ -502,18 +569,50 @@ final class FitnessWeekViewModel: ObservableObject {
         for localActivity in localActivities {
             if let existingIndex = merged.firstIndex(where: { isDuplicate(localActivity, of: $0) }) {
                 let existing = merged[existingIndex]
-                if shouldPreferLocalActivity(localActivity, over: existing) {
-                    merged.remove(at: existingIndex)
-                    merged.append(localActivity)
-                    PulsarSyncDebugLogger.log("Activity Log merged duplicate session=\(localActivity.pulsarWorkoutSessionId?.uuidString ?? "none") action=localReplacedHealthKit localSource=\(localActivity.source.rawValue) healthSource=\(existing.sourceName)")
-                } else {
-                    PulsarSyncDebugLogger.log("Activity Log skipped duplicate local entry session=\(localActivity.pulsarWorkoutSessionId?.uuidString ?? "none") source=\(localActivity.source.rawValue)")
-                }
+                merged[existingIndex] = Self.mergedActivity(healthKit: existing, local: localActivity)
+                PulsarSyncDebugLogger.log(
+                    "Activity Log merged duplicate session=\(localActivity.pulsarWorkoutSessionId?.uuidString ?? "none") action=fieldMerge localSource=\(localActivity.source.rawValue) healthSource=\(existing.sourceName) routePoints=\(merged[existingIndex].route.count)"
+                )
             } else if !merged.contains(where: { isDuplicate(localActivity, of: $0) }) {
                 merged.append(localActivity)
             }
         }
 
+        return merged
+    }
+
+    nonisolated private static func mergedActivity(healthKit: WeeklyActivity, local: WeeklyActivity) -> WeeklyActivity {
+        let preferLocalShell = shouldPreferLocalActivity(local, over: healthKit)
+        var merged = preferLocalShell ? local : healthKit
+        merged.pulsarWorkoutSessionId = local.pulsarWorkoutSessionId ?? healthKit.pulsarWorkoutSessionId
+        merged.workoutUUID = local.workoutUUID ?? healthKit.workoutUUID
+        merged.route = PulsarWorkoutRouteMerge.preferredRoute(local.route, healthKit.route)
+        if local.splits.isEmpty {
+            merged.splits = healthKit.splits
+        } else if healthKit.splits.isEmpty {
+            merged.splits = local.splits
+        } else {
+            merged.splits = preferLocalShell ? local.splits : healthKit.splits
+        }
+        if merged.calories == nil {
+            merged.calories = preferLocalShell ? healthKit.calories : local.calories
+        }
+        if merged.distanceMeters == nil || (merged.distanceMeters ?? 0) <= 0 {
+            merged.distanceMeters = preferLocalShell ? healthKit.distanceMeters : local.distanceMeters
+        }
+        if merged.averageHeartRate == nil {
+            merged.averageHeartRate = local.averageHeartRate ?? healthKit.averageHeartRate
+        }
+        if merged.maxHeartRate == nil {
+            merged.maxHeartRate = local.maxHeartRate ?? healthKit.maxHeartRate
+        }
+        if merged.metadata.isEmpty {
+            merged.metadata = preferLocalShell ? healthKit.metadata : local.metadata
+        } else if preferLocalShell, local.metadata.allSatisfy({ $0.title != "Route Points" }), !merged.route.isEmpty {
+            merged.metadata.append(
+                FitnessWorkoutMetadataItem(title: "Route Points", value: "\(merged.route.count)")
+            )
+        }
         return merged
     }
 
@@ -549,6 +648,10 @@ final class FitnessWeekViewModel: ObservableObject {
     }
 
     private func shouldPreferLocalActivity(_ local: WeeklyActivity, over healthActivity: WeeklyActivity) -> Bool {
+        Self.shouldPreferLocalActivity(local, over: healthActivity)
+    }
+
+    nonisolated private static func shouldPreferLocalActivity(_ local: WeeklyActivity, over healthActivity: WeeklyActivity) -> Bool {
         if local.source == .localGym {
             return true
         }
@@ -556,6 +659,12 @@ final class FitnessWeekViewModel: ObservableObject {
         if let localSessionId = local.pulsarWorkoutSessionId,
            let healthSessionId = healthActivity.pulsarWorkoutSessionId,
            localSessionId == healthSessionId {
+            return true
+        }
+
+        // Prefer whichever side already carries a durable route so history does not
+        // permanently drop GPS data when HealthKit sync is incomplete.
+        if local.route.count > 1, healthActivity.route.count <= 1 {
             return true
         }
 

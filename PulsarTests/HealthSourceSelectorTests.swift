@@ -8,6 +8,56 @@ import Testing
 @testable import Pulsar
 
 struct HealthSourceSelectorTests {
+    @MainActor
+    @Test func workoutStartupResumeRunsAfterPublishedPhaseCommitsAndRechecksLoading() async {
+        let probe = HomeWorkoutStartupResumeProbe()
+
+        HomeViewModel.enqueueWorkoutStartupResume(
+            shouldDefer: { probe.shouldDefer },
+            resume: { probe.resumeCount += 1 }
+        )
+        probe.shouldDefer = false
+        await Task.yield()
+        #expect(probe.resumeCount == 1)
+
+        probe.shouldDefer = true
+        HomeViewModel.enqueueWorkoutStartupResume(
+            shouldDefer: { probe.shouldDefer },
+            resume: { probe.resumeCount += 1 }
+        )
+        await Task.yield()
+        #expect(probe.resumeCount == 1)
+
+        probe.shouldDefer = false
+        HomeViewModel.enqueueWorkoutStartupResume(
+            shouldDefer: { probe.shouldDefer },
+            resume: { probe.resumeCount += 1 }
+        )
+        await Task.yield()
+        #expect(probe.resumeCount == 2)
+    }
+
+    @Test func homeSourceRoutingConsumesQueuedCacheRevisionOnce() {
+        let finalRevision = 14
+        var lastRoutedRevision: Int?
+        var routeCount = 0
+
+        for _ in 10...finalRevision {
+            guard HomeViewModel.sourceCacheRevisionNeedsRouting(
+                currentRevision: finalRevision,
+                lastRoutedRevision: lastRoutedRevision
+            ) else { continue }
+            routeCount += 1
+            lastRoutedRevision = finalRevision
+        }
+
+        #expect(routeCount == 1)
+        #expect(!HomeViewModel.sourceCacheRevisionNeedsRouting(
+            currentRevision: finalRevision,
+            lastRoutedRevision: finalRevision
+        ))
+    }
+
     @Test func automaticModeKeepsAppleWatchWhenFresh() {
         let now = Date(timeIntervalSinceReferenceDate: 10_000)
         let selector = ActiveSourceSelector()
@@ -1213,4 +1263,10 @@ struct HealthSourceSelectorTests {
         defaults.removePersistentDomain(forName: suiteName)
         return defaults
     }
+}
+
+@MainActor
+private final class HomeWorkoutStartupResumeProbe {
+    var shouldDefer = true
+    var resumeCount = 0
 }

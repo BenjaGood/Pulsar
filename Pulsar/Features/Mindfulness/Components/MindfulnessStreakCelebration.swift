@@ -26,55 +26,28 @@ struct MindfulnessStreakCelebration: Identifiable, Equatable {
 struct MindfulnessStreakStatusCapsule: View {
     var dayCount: Int
 
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
     var body: some View {
-        HStack(spacing: 6) {
-            MindfulnessFlameMark(size: 24, isActive: false)
+        HStack(spacing: 9) {
+            Image(systemName: "flame.fill")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text("Logged")
-                    .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(.white)
+                    .font(.subheadline)
+                    .foregroundStyle(MindfulnessDesign.primaryText)
 
                 Text(dayText)
-                    .pulsarTextStyle(.overline)
+                    .font(.footnote)
                     .monospacedDigit()
-                    .foregroundStyle(MindfulnessVisualStyle.neonFlame)
+                    .foregroundStyle(MindfulnessDesign.secondaryText)
             }
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .frame(minHeight: 36)
+        .padding(.horizontal, 14)
+        .frame(minHeight: 52)
         .fixedSize(horizontal: true, vertical: false)
-        .background {
-            Capsule()
-                .fill(
-                    Color(red: 0.03, green: 0.08, blue: 0.14)
-                        .opacity(reduceTransparency ? 0.82 : 0.025)
-                )
-        }
-        .overlay {
-            Capsule()
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [
-                            .white.opacity(0.32),
-                            MindfulnessVisualStyle.neonFlame.opacity(0.72),
-                            .white.opacity(0.08)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 0.9
-                )
-        }
-        .shadow(color: MindfulnessVisualStyle.neonFlame.opacity(0.18), radius: 10)
-        .pulsarLiquidGlass(
-            cornerRadius: 20,
-            tint: MindfulnessVisualStyle.neonFlame.opacity(0.10),
-            isClear: true
-        )
+        .mindfulnessCardSurface(cornerRadius: 26, shadowOpacity: 0.035)
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)

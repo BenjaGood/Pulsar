@@ -48,6 +48,7 @@ struct StrainHeartLoadReference: Identifiable, Equatable {
 
 struct StrainHeartLoadChartModel: Equatable {
     var range: DateInterval
+    var timeZone: TimeZone
     var heartRatePoints: [HeartRatePoint]
     var workoutBands: [WorkoutTimelineBand]
     var references: [StrainHeartLoadReference]
@@ -159,6 +160,7 @@ final class StrainDetailsViewModel: ObservableObject {
 
         return StrainHeartLoadChartModel(
             range: range,
+            timeZone: calendar.timeZone,
             heartRatePoints: points,
             workoutBands: bands,
             references: heartLoadReferences(min: paddedMin, max: paddedMax),
@@ -174,9 +176,10 @@ final class StrainDetailsViewModel: ObservableObject {
     }
 
     var dateSubtitle: String {
-        if calendar.isDateInToday(date) { return "Today" }
-        if calendar.isDateInYesterday(date) { return "Yesterday" }
-        return date.formatted(.dateTime.weekday(.wide).month(.wide).day())
+        let dayMonthText = formattedDate(includeWeekday: false)
+        if calendar.isDateInToday(date) { return "Today, \(dayMonthText)" }
+        if calendar.isDateInYesterday(date) { return "Yesterday, \(dayMonthText)" }
+        return formattedDate(includeWeekday: true)
     }
 
     var isViewingToday: Bool {
@@ -227,56 +230,51 @@ final class StrainDetailsViewModel: ObservableObject {
 
     var insights: [StrainInsight] {
         var values: [String] = []
-        if let adaptivePlan {
-            values.append(adaptivePlan.headline)
-            values.append(adaptivePlan.rationale)
-            if let recommendation = adaptivePlan.recommendations.first {
-                values.append("\(recommendation.title): \(recommendation.detail)")
+
+        if let targetRange, hasCurrentStrainValue {
+            if summary.score > targetRange.upperBound {
+                values.append("Prioritize cooldown, hydration, and sleep")
+            } else if targetRange.contains(summary.score) {
+                values.append("Stay steady inside today's target")
+            } else {
+                values.append("Build gradually toward today's target")
             }
+        } else {
+            values.append("Strain updates as your day unfolds")
         }
-        values.append(dateAwareCopy(PulsarSharedMetricCalculator.strainGuidance(
-            currentStrain: hasCurrentStrainValue ? summary.score : nil,
-            targetRange: targetRange,
-            recoveryScore: recoveryScore,
-            activeStrain: summary.workoutLoad,
-            passiveStrain: summary.movementLoad,
-            workoutMinutes: summary.workoutMinutes,
-            exerciseMinutes: summary.exerciseMinutes,
-            steps: summary.steps,
-            isEarlyDay: calendar.isDateInToday(date) && calendar.component(.hour, from: Date()) < 11
-        )))
-        if !summary.workouts.isEmpty {
-            values.append("You completed \(summary.workouts.count) \(summary.workouts.count == 1 ? "workout" : "workouts") \(isViewingToday ? "today" : "that day") for a total of \(Self.durationText(minutes: summary.workoutMinutes)).")
-            if summary.workoutLoad >= summary.movementLoad {
-                values.append("Most of \(isViewingToday ? "today's" : "that day's") load came from active strain: workouts, duration, and workout intensity.")
-            }
-        } else if summary.exerciseMinutes < 20 {
-            values.append(isViewingToday ? "Today looks recovery-focused with light movement and no logged workouts." : "That day looked recovery-focused with light movement and no logged workouts.")
+
+        if summary.workouts.isEmpty && summary.exerciseMinutes < 20 {
+            values.append(isViewingToday ? "Recovery-focused day" : "Recovery-focused activity day")
+        } else if summary.workoutLoad >= summary.movementLoad {
+            values.append(isViewingToday ? "Training drove most of today's load" : "Training drove most of that day's load")
+        } else {
+            values.append(isViewingToday ? "Movement drove most of today's load" : "Movement drove most of that day's load")
         }
-        if summary.movementLoad > 0 {
-            values.append("Passive strain reflects walking, active calories, non-workout exercise, and sustained elevated heart rate.")
+
+        if let recoveryScore, recoveryScore < 50 {
+            values.append("Recovery signals support a lighter load")
+        } else if let recommendation = adaptivePlan?.recommendations.first {
+            values.append(recommendation.title)
+        } else if stepProgress < 1, summary.stepGoal > 0 {
+            let remainingSteps = max(0, summary.stepGoal - summary.steps)
+            values.append("\(remainingSteps.formatted()) steps remain to goal")
         }
-        if let peak = summary.peakHeartRate {
-            values.append("Your peak heart rate reached \(Int(peak.rounded())) bpm during your hardest observed effort.")
-        }
-        if summary.steps > 0 {
-            values.append("You are \(stepProgressText) of the way to your \(summary.stepGoal.formatted()) step goal.")
-        }
-        if let hardest = summary.workouts.max(by: { ($0.peakHeartRate ?? $0.averageHeartRate ?? 0) < ($1.peakHeartRate ?? $1.averageHeartRate ?? 0) }) {
-            values.append("Most of \(isViewingToday ? "today's" : "that day's") high-intensity signal came from \(hardest.workoutType.lowercased()).")
-        }
-        if values.isEmpty {
-            values.append("Strain details will appear after HealthKit records movement, workouts, or heart-rate samples for this day.")
-        }
-        return Array(values.prefix(4)).map { StrainInsight(text: $0) }
+
+        return Array(values.prefix(3)).map { StrainInsight(text: $0) }
     }
 
-    private func dateAwareCopy(_ text: String) -> String {
-        guard !isViewingToday else { return text }
-        return text
-            .replacingOccurrences(of: "today's", with: "that day's")
-            .replacingOccurrences(of: "today", with: "that day")
-            .replacingOccurrences(of: "Today", with: "That day")
+    private func formattedDate(includeWeekday: Bool) -> String {
+        var style = includeWeekday
+            ? Date.FormatStyle()
+                .weekday(.wide)
+                .day()
+                .month(.wide)
+            : Date.FormatStyle()
+                .day()
+                .month(.wide)
+        style.calendar = calendar
+        style.timeZone = calendar.timeZone
+        return date.formatted(style)
     }
 
     var sourceText: String {
@@ -285,10 +283,8 @@ final class StrainDetailsViewModel: ObservableObject {
     }
 
     private var chartRange: DateInterval {
-        let start = summary.queryStart ?? calendar.startOfDay(for: date)
         let fallbackDay = calendar.dateInterval(of: .day, for: date) ?? DateInterval(start: date, duration: 86_400)
-        let end = summary.queryEnd ?? fallbackDay.end
-        return DateInterval(start: start, end: max(end, start.addingTimeInterval(60)))
+        return fallbackDay
     }
 
     var needsDetailedRefresh: Bool {
@@ -375,10 +371,20 @@ final class StrainDetailsViewModel: ObservableObject {
         let markerHours = [0, 6, 12, 18]
         var markers = markerHours.compactMap { hour -> StrainTimelineMarker? in
             guard let date = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: range.start), range.contains(date) else { return nil }
-            return StrainTimelineMarker(date: date, label: "\(hour)")
+            let label = switch hour {
+            case 0: "12 AM"
+            case 6: "6 AM"
+            case 12: "12 PM"
+            default: "6 PM"
+            }
+            return StrainTimelineMarker(date: date, label: label)
         }
-        let endLabel = calendar.isDateInToday(range.start) ? "Now" : "24"
-        markers.append(StrainTimelineMarker(date: range.end, label: endLabel))
+        markers.append(
+            StrainTimelineMarker(
+                date: range.end.addingTimeInterval(-1),
+                label: "12 AM"
+            )
+        )
         return markers.sorted { $0.date < $1.date }
     }
 

@@ -8,76 +8,85 @@ import UIKit
 
 struct HomeView: View {
     @ObservedObject var viewModel: HomeViewModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var measurementSourceManager = MeasurementSourceManager()
     @ObservedObject private var backgroundSettings: HomeBackgroundSettingsStore
     @State private var isShowingProfile = false
     @State private var isShowingCalendar = false
     @State private var isShowingMeasurementSource = false
-    @State private var lastReportedScrollOffset: CGFloat = 0
     #if DEBUG
     @State private var lastHomeRenderDiagnosticSignature = ""
     #endif
-    private let onScrollOffsetChange: (CGFloat) -> Void
     @ObservedObject private var bottomChromeLayoutStore: PulsarBottomChromeLayoutStore
 
     init(
         viewModel: HomeViewModel,
         backgroundSettings: HomeBackgroundSettingsStore = HomeBackgroundSettingsStore(),
-        bottomChromeLayoutStore: PulsarBottomChromeLayoutStore = PulsarBottomChromeLayoutStore(),
-        onScrollOffsetChange: @escaping (CGFloat) -> Void = { _ in }
+        bottomChromeLayoutStore: PulsarBottomChromeLayoutStore = PulsarBottomChromeLayoutStore()
     ) {
         self.viewModel = viewModel
         self._backgroundSettings = ObservedObject(wrappedValue: backgroundSettings)
         self._bottomChromeLayoutStore = ObservedObject(wrappedValue: bottomChromeLayoutStore)
-        self.onScrollOffsetChange = onScrollOffsetChange
     }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 300)) { timeline in
-            let backgroundStyle = backgroundSettings.mode.resolvedStyle(for: timeline.date)
-            let appearance = HomeAdaptiveAppearance(style: backgroundStyle)
-
-            homeContent(backgroundStyle: backgroundStyle)
-                .environment(\.homeAdaptiveAppearance, appearance)
-                .preferredColorScheme(appearance.preferredColorScheme)
+        PulsarPerformanceSignposts.measureTabDestinationBody(.home) {
+            homeContent
+                .environment(\.homeAdaptiveAppearance, .premium)
+                .preferredColorScheme(.light)
         }
     }
 
-    private func homeContent(backgroundStyle: HomeBackgroundStyle) -> some View {
+    private var homeContent: some View {
         NavigationStack {
             PulsarScreenScaffold(
                 layoutStore: bottomChromeLayoutStore,
-                horizontalPadding: 16,
-                topPadding: 4,
-                spacing: 16,
+                header: homeHeaderConfiguration,
+                horizontalPadding: HomePremiumDesign.Layout.screenMargin,
+                topPadding: HomePremiumDesign.Layout.headerTopPadding,
+                spacing: HomePremiumDesign.Layout.sectionSpacing,
                 onRefresh: {
                     await viewModel.load()
                 },
-                onScrollOffsetChange: reportHomeScrollOffset,
                 background: {
-                    StaticTimeBackgroundView(style: backgroundStyle)
+                    HomePremiumDesign.background
                 },
-                content: {
+                expandedHeader: {
                     HomeHeaderView(
                         profile: viewModel.dashboard.profile,
                         activeDevice: measurementSourceManager.activeDevice,
                         date: viewModel.selectedDate,
+                        canGoPrevious: viewModel.canSelectPreviousDay,
+                        canGoNext: viewModel.canSelectNextDay,
+                        onPreviousDay: selectPreviousDay,
+                        onNextDay: selectNextDay,
                         onTodayTapped: { isShowingCalendar = true },
                         onProfileTapped: { isShowingProfile = true },
                         onDeviceTapped: { isShowingMeasurementSource = true }
                     )
-
-                    if !viewModel.healthKitStatus.hasPrefix("HealthKit connected") {
-                        HealthKitStatusBanner(message: viewModel.healthKitStatus)
+                },
+                content: {
+                    Group {
+                        if viewModel.showsSavedDailyDataConfirmation {
+                            HealthKitStatusBanner(message: HomeViewModel.savedDailyDataBannerMessage)
+                                .transition(savedDailyDataBannerTransition)
+                        } else if HomeViewModel.showsPersistentHealthKitStatusBanner(
+                            healthKitStatus: viewModel.healthKitStatus
+                        ) {
+                            HealthKitStatusBanner(message: viewModel.healthKitStatus)
+                        }
                     }
+                    .animation(savedDailyDataBannerAnimation, value: viewModel.showsSavedDailyDataConfirmation)
 
                     metricGlassCardStack
                     stressSection
-                    sourceSummaryCards
                     healthMonitorSection
                 }
             )
             .toolbar(.hidden, for: .navigationBar)
+            .blur(radius: isShowingCalendar ? 1.5 : 0)
+            .animation(.easeOut(duration: 0.2), value: isShowingCalendar)
             .sheet(isPresented: $isShowingProfile) {
                 PulsarSettingsView(store: viewModel.profileStore, backgroundSettingsStore: backgroundSettings) {
                     viewModel.refreshProfileFromStore()
@@ -91,6 +100,10 @@ struct HomeView: View {
                 }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+                .presentationCornerRadius(38)
+                .presentationBackground(.regularMaterial)
+                .presentationContentInteraction(.scrolls)
+                .presentationSizing(.page)
             }
             .sheet(isPresented: $isShowingMeasurementSource) {
                 MeasurementSourceSheet(manager: measurementSourceManager) {
@@ -103,10 +116,14 @@ struct HomeView: View {
             }
             .ouraDebugReportSheet(viewModel: viewModel)
             .onAppear {
+                viewModel.setDashboardVisible(true)
+                PulsarPerformanceSignposts.markTabDestinationAppeared(.home)
+                PulsarPerformanceSignposts.markTabDestinationUseful(.home, cacheState: .notApplicable)
+                PulsarPerformanceSignposts.markHomeUseful()
                 logHomeRenderedStateIfNeeded()
             }
             .onDisappear {
-                reportHomeScrollOffset(0)
+                viewModel.setDashboardVisible(false)
             }
             .onChange(of: viewModel.selectedDate) { _, _ in
                 logHomeRenderedStateIfNeeded()
@@ -119,21 +136,49 @@ struct HomeView: View {
         }
     }
 
-    private func reportHomeScrollOffset(_ offset: CGFloat) {
-        let normalizedOffset = max(0, offset)
-        guard abs(lastReportedScrollOffset - normalizedOffset) > 0.5 else { return }
-        lastReportedScrollOffset = normalizedOffset
-        onScrollOffsetChange(normalizedOffset)
+    private func selectPreviousDay() {
+        Task { await viewModel.selectAdjacentDay(offset: -1) }
+    }
+
+    private func selectNextDay() {
+        Task { await viewModel.selectAdjacentDay(offset: 1) }
+    }
+
+    private var savedDailyDataBannerTransition: AnyTransition {
+        reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -6))
+    }
+
+    private var savedDailyDataBannerAnimation: Animation {
+        reduceMotion ? .easeOut(duration: 0.18) : .smooth(duration: 0.28)
     }
 
     private var metricGlassCardStack: some View {
-        metricGlassCardLayout
+        PulsarGlassEffectGroup(spacing: HomePremiumDesign.Layout.cardSpacing) {
+            metricGlassCardLayout
+        }
     }
 
     private var homeNavigationTitle: String {
-        if Calendar.current.isDateInToday(viewModel.selectedDate) { return "Today" }
-        if Calendar.current.isDateInYesterday(viewModel.selectedDate) { return "Yesterday" }
-        return viewModel.selectedDate.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
+        HomeDateLabel.title(for: viewModel.selectedDate)
+    }
+
+    private var homeHeaderConfiguration: PulsarScreenHeaderConfiguration {
+        PulsarScreenHeaderConfiguration(
+            title: homeNavigationTitle,
+            titleAccessibilityLabel: "Open calendar, \(homeNavigationTitle)",
+            titleAction: { isShowingCalendar = true },
+            leading: .systemImage(
+                "line.3.horizontal",
+                accessibilityLabel: "Measurement source",
+                action: { isShowingMeasurementSource = true }
+            ),
+            trailing: [
+                .custom(accessibilityLabel: "Open profile", action: { isShowingProfile = true }) {
+                    AvatarView(profile: viewModel.dashboard.profile, size: 32)
+                        .frame(width: 44, height: 44)
+                }
+            ]
+        )
     }
 
     private var stressSection: some View {
@@ -142,7 +187,8 @@ struct HomeView: View {
         } label: {
             StressHomeMeterView(summary: viewModel.dashboard.stress)
         }
-        .buttonStyle(StressHomeMeterButtonStyle(glowColor: stressGaugeTint(for: viewModel.dashboard.stress.score)))
+        .buttonStyle(StressHomeMeterButtonStyle(glowColor: HomePremiumDesign.stressTeal))
+        .frame(maxWidth: .infinity)
         .simultaneousGesture(TapGesture().onEnded {
             UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         })
@@ -153,77 +199,52 @@ struct HomeView: View {
         HealthMonitorGlassSection(summary: viewModel.dashboard.healthMonitor)
     }
 
-    private var sourceSummaryCards: some View {
-        GeometryReader { proxy in
-            let spacing: CGFloat = 8
-            let minimumInlineWidth: CGFloat = 132
-            let cardWidth = max(118, (proxy.size.width - spacing * 2) / 3)
-
-            if proxy.size.width < minimumInlineWidth * 3 + spacing * 2 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: spacing) {
-                        ForEach(sourceCardContents) { item in
-                            sourceCardButton(item: item, width: 132)
-                        }
-                    }
-                    .padding(.horizontal, 1)
-                }
-            } else {
-                HStack(spacing: spacing) {
-                    ForEach(sourceCardContents) { item in
-                        sourceCardButton(item: item, width: cardWidth)
-                    }
-                }
-                .frame(width: proxy.size.width, alignment: .center)
-            }
-        }
-        .frame(height: 64)
-    }
-
-    private func sourceCardButton(item: HomeSourceCardContent, width: CGFloat) -> some View {
-        Button {
-            isShowingMeasurementSource = true
-        } label: {
-            HomeSourceGlassCard(item: item)
-                .frame(width: width, height: 64)
-        }
-        .buttonStyle(HomeSourceGlassButtonStyle(glowColor: item.tint))
-        .accessibilityLabel("\(item.title), \(item.subtitle)")
-        .accessibilityHint("Open measurement sources")
-    }
-
     private var metricGlassCardLayout: some View {
         GeometryReader { proxy in
-            if proxy.size.width < 334 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 8) {
+            if usesScrollableMetricCards || proxy.size.width < 318 {
+                ScrollView(.horizontal) {
+                    HStack(alignment: .top, spacing: HomePremiumDesign.Layout.cardSpacing) {
                         sleepMetricCard
-                            .frame(width: 112, height: 238)
+                            .frame(width: compactMetricCardWidth, height: metricCardHeight)
                         recoveryMetricCard
-                            .frame(width: 112, height: 238)
+                            .frame(width: compactMetricCardWidth, height: metricCardHeight)
                         strainMetricCard
-                            .frame(width: 112, height: 238)
+                            .frame(width: compactMetricCardWidth, height: metricCardHeight)
                     }
                     .padding(.horizontal, 1)
                 }
-                .frame(width: proxy.size.width, height: 238, alignment: .leading)
+                .scrollIndicators(.hidden)
+                .frame(width: proxy.size.width, height: metricCardHeight, alignment: .leading)
             } else {
-                let spacing: CGFloat = 8
-                let cardWidth = max(104, (proxy.size.width - spacing * 2) / 3)
-                let cardHeight = CGFloat(238)
+                let spacing = HomePremiumDesign.Layout.cardSpacing
+                let cardWidth = (proxy.size.width - spacing * 2) / 3
 
                 HStack(alignment: .top, spacing: spacing) {
                     sleepMetricCard
-                        .frame(width: cardWidth, height: cardHeight)
+                        .frame(width: cardWidth, height: metricCardHeight)
                     recoveryMetricCard
-                        .frame(width: cardWidth, height: cardHeight)
+                        .frame(width: cardWidth, height: metricCardHeight)
                     strainMetricCard
-                        .frame(width: cardWidth, height: cardHeight)
+                        .frame(width: cardWidth, height: metricCardHeight)
                 }
                 .frame(width: proxy.size.width, alignment: .center)
             }
         }
-        .frame(height: 238)
+        .frame(height: metricCardHeight)
+    }
+
+    private var metricCardHeight: CGFloat {
+        if dynamicTypeSize.isAccessibilitySize { return 344 }
+        if dynamicTypeSize > .large { return 278 }
+        return 246
+    }
+
+    private var compactMetricCardWidth: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 178 : 146
+    }
+
+    private var usesScrollableMetricCards: Bool {
+        dynamicTypeSize > .large
     }
 
     private var sleepMetricCard: some View {
@@ -246,7 +267,10 @@ struct HomeView: View {
             description: recoverySupportiveDescription(for: viewModel.dashboard.recovery),
             icon: "leaf.fill",
             metric: .recovery,
-            destination: RecoveryDetailsView(viewModel: viewModel.makeRecoveryDetailsViewModel())
+            destination: RecoveryDetailsView(
+                viewModel: viewModel.makeRecoveryDetailsViewModel(),
+                bottomChromeLayoutStore: bottomChromeLayoutStore
+            )
         )
     }
 
@@ -259,7 +283,10 @@ struct HomeView: View {
             icon: "figure.run",
             metric: .strain,
             showsZeroValue: hasCurrentStrainValue(viewModel.dashboard.strain),
-            destination: StrainDetailsView(viewModel: viewModel.makeStrainDetailsViewModel())
+            destination: StrainDetailsView(
+                viewModel: viewModel.makeStrainDetailsViewModel(),
+                bottomChromeLayoutStore: bottomChromeLayoutStore
+            )
         )
     }
 
@@ -287,7 +314,7 @@ struct HomeView: View {
                 metric: metric,
                 showsZeroValue: showsZeroValue
             )
-            .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .contentShape(.rect(cornerRadius: HomePremiumDesign.Radius.metricCard))
             .frame(maxWidth: .infinity, alignment: .top)
         }
         .buttonStyle(PulsarMetricCircleButtonStyle(glowColor: tint))
@@ -404,72 +431,6 @@ struct HomeView: View {
         summary.lastUpdated != nil || summary.confidence != .missing || summary.score > 0 || summary.steps > 0 || summary.workoutMinutes > 0 || summary.exerciseMinutes > 0 || (summary.activeEnergyKilocalories ?? 0) > 0
     }
 
-    private var sourceCardContents: [HomeSourceCardContent] {
-        [
-            HomeSourceCardContent(
-                title: "Recovery",
-                subtitle: sourceCardSubtitle(
-                    sources: viewModel.dashboard.recovery.sourceBadges,
-                    category: .sleepRecovery,
-                    emptyText: "No source"
-                ),
-                symbol: "chart.bar.fill",
-                tint: Color(red: 0.45, green: 0.91, blue: 0.42)
-            ),
-            HomeSourceCardContent(
-                title: "Steps",
-                subtitle: sourceCardSubtitle(
-                    sources: viewModel.dashboard.strain.sourceBadges,
-                    category: .activitySteps,
-                    emptyText: viewModel.dashboard.strain.steps > 0 ? "\(viewModel.dashboard.strain.steps.formatted()) steps" : "No source"
-                ),
-                symbol: "shoeprints.fill",
-                tint: Color(red: 0.45, green: 0.58, blue: 1.00)
-            ),
-            HomeSourceCardContent(
-                title: "Workouts",
-                subtitle: workoutSourceSubtitle,
-                symbol: "figure.run",
-                tint: Color(red: 0.58, green: 0.42, blue: 1.00)
-            )
-        ]
-    }
-
-    private func sourceCardSubtitle(sources: [SourceProvenance], category: HealthSourcePriorityCategory, emptyText: String) -> String {
-        guard let source = compactSourceName(sources) else { return emptyText }
-        let resolved = measurementSourceManager.resolvedSource(for: category)
-        let suffix = resolved.isFallback ? " fallback" : ""
-        return "from \(source)\(suffix)"
-    }
-
-    private var workoutSourceSubtitle: String {
-        if let workoutSource = viewModel.dashboard.strain.workouts.compactMap(\.sourceName).first(where: { !$0.isEmpty }) {
-            return "from \(compactDisplayName(workoutSource))"
-        }
-        if compactSourceName(viewModel.dashboard.strain.sourceBadges) != nil {
-            return sourceCardSubtitle(sources: viewModel.dashboard.strain.sourceBadges, category: .workoutsActivity, emptyText: "This week")
-        }
-        let workoutCount = viewModel.dashboard.strain.workouts.count
-        if workoutCount == 1 { return "1 today" }
-        if workoutCount > 1 { return "\(workoutCount) today" }
-        return "This week"
-    }
-
-    private func compactSourceName(_ sources: [SourceProvenance]) -> String? {
-        guard let first = sources.first else { return nil }
-        return compactDisplayName(first.displayName)
-    }
-
-    private func compactDisplayName(_ displayName: String) -> String {
-        if displayName.localizedCaseInsensitiveContains("oura") {
-            return "Oura"
-        }
-        if displayName.localizedCaseInsensitiveContains("watch") {
-            return "Apple Watch"
-        }
-        return displayName
-    }
-
     private func logHomeRenderedStateIfNeeded() {
         #if DEBUG
         let sleep = viewModel.dashboard.sleep
@@ -481,96 +442,53 @@ struct HomeView: View {
     }
 }
 
-private struct HomeSourceCardContent: Identifiable {
-    var id: String { title }
-    var title: String
-    var subtitle: String
-    var symbol: String
-    var tint: Color
-}
-
-private struct HomeSourceGlassCard: View {
-    var item: HomeSourceCardContent
-
-    @Environment(\.homeAdaptiveAppearance) private var appearance
-
-    var body: some View {
-        PremiumGlassContainer(cornerRadius: 26, tint: item.tint.opacity(0.72), isInteractive: true) {
-            HStack(spacing: 8) {
-                PulsarGlassIconCircle(size: 40, tint: item.tint, systemImage: item.symbol, symbolScale: 0.42)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(item.title)
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundStyle(appearance.primaryText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.68)
-
-                    Text(item.subtitle)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(appearance.secondaryText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.62)
-                }
-
-                Spacer(minLength: 0)
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(appearance.tertiaryText)
-                    .frame(width: 12, alignment: .trailing)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        }
-    }
-}
-
-private struct HomeSourceGlassButtonStyle: ButtonStyle {
-    var glowColor: Color
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.984 : 1)
-            .brightness(configuration.isPressed ? 0.035 : 0)
-            .shadow(color: glowColor.opacity(configuration.isPressed ? 0.16 : 0), radius: 12, y: 6)
-            .animation(.spring(response: 0.28, dampingFraction: 0.82), value: configuration.isPressed)
-    }
-}
-
 private struct HealthKitStatusBanner: View {
     var message: String
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Image(systemName: "heart.text.square")
-                .foregroundStyle(.orange.opacity(0.95))
+                .foregroundStyle(HomePremiumDesign.tertiaryText)
+
             Text(message)
-                .pulsarTextStyle(.caption)
-                .foregroundStyle(colorScheme == .dark ? .white.opacity(0.92) : .primary)
-            Spacer(minLength: 0)
+                .foregroundStyle(HomePremiumDesign.secondaryText)
+
+            Spacer(minLength: 8)
+
+            Image(systemName: "checkmark.shield")
+                .foregroundStyle(HomePremiumDesign.tertiaryText)
+                .accessibilityHidden(true)
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.orange.opacity(0.22),
-                            Color.white.opacity(colorScheme == .dark ? 0.06 : 0.42),
-                            Color.orange.opacity(colorScheme == .dark ? 0.10 : 0.14)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-        )
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(colorScheme == .dark ? .white.opacity(0.10) : .black.opacity(0.06), lineWidth: 1)
+        .pulsarTextStyle(.caption)
+        .symbolRenderingMode(.monochrome)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .modifier(HealthKitStatusBannerGlass(reduceTransparency: reduceTransparency))
+    }
+}
+
+private struct HealthKitStatusBannerGlass: ViewModifier {
+    var reduceTransparency: Bool
+
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content
+                .background(HomePremiumDesign.surface, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(HomePremiumDesign.border, lineWidth: 0.5)
+                }
+        } else if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: .capsule)
+        } else {
+            content
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(.white.opacity(0.16), lineWidth: 0.5)
+                }
         }
     }
 }
@@ -827,6 +745,18 @@ private func percent(_ value: Double) -> String {
     HomePolishPreview()
 }
 
+#Preview("Home - Compact 375×667", traits: .fixedLayout(width: 375, height: 667)) {
+    HomePolishPreview()
+}
+
+#Preview("Home - Standard 393×852", traits: .fixedLayout(width: 393, height: 852)) {
+    HomePolishPreview()
+}
+
+#Preview("Home - Pro Max 430×932", traits: .fixedLayout(width: 430, height: 932)) {
+    HomePolishPreview()
+}
+
 @MainActor
 private struct HomePolishPreview: View {
     @StateObject private var viewModel: HomeViewModel
@@ -839,7 +769,6 @@ private struct HomePolishPreview: View {
 
         let defaults = UserDefaults(suiteName: "pulsar.home.polish.preview") ?? .standard
         let backgroundSettings = HomeBackgroundSettingsStore(defaults: defaults)
-        backgroundSettings.setMode(.sunset)
         _backgroundSettings = StateObject(wrappedValue: backgroundSettings)
     }
 

@@ -23,7 +23,7 @@ final class CompletedWorkoutDetailViewModel: ObservableObject {
         catalogStore: ExerciseCatalogStore? = nil
     ) {
         self.activity = activity
-        self.historyStore = historyStore ?? PulsarGymWorkoutHistoryStore()
+        self.historyStore = historyStore ?? .shared
         self.catalogStore = catalogStore ?? ExerciseCatalogStore()
         reloadSourceSession()
         rebuildPresentations(shouldDefaultExpandFirst: true)

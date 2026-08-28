@@ -55,33 +55,41 @@ struct MindfulnessView: View {
 
             PulsarScreenScaffold(
                 layoutStore: bottomChromeLayoutStore,
-                horizontalPadding: 22,
-                spacing: 14,
-                headerBlur: PulsarScreenHeaderBlur(height: 48, fadeStart: 12, fadeEnd: 48),
+                header: PulsarScreenHeaderConfiguration(
+                    title: "Mindfulness",
+                    trailing: [
+                        .custom(accessibilityLabel: "Current streak status") {
+                            MindfulnessStreakStatusCapsule(dayCount: store.dashboard.streak.currentStreak)
+                        }
+                    ]
+                ),
+                horizontalPadding: PulsarTabLayout.horizontalPadding,
+                spacing: 24,
                 background: {
-                    MindfulnessScenicBackground()
+                    PulsarFitnessMonochromeBackground()
+                },
+                expandedHeader: {
+                    MindfulnessPremiumHeader(
+                        streakDays: store.dashboard.streak.currentStreak
+                    )
                 },
                 content: {
-                    MindfulnessPageTitleHeader()
-
-                    MindfulnessMoodLoggingCard(
+                    MindfulnessMoodFlowView(
                         draft: $dailyDraft,
                         loggedEntry: store.dashboard.todayEntry,
-                        loggedStreakDays: store.dashboard.streak.currentStreak,
-                        isCelebratingStreak: streakCelebration != nil,
                         onLog: saveDailyMood
                     )
 
-                    MindfulnessWeeklySummaryCard(
+                    MindfulnessWeeklyOverviewCard(
                         snapshot: weekSnapshot,
                         onViewMore: openMoodHistory
                     )
 
-                    MindfulnessCompactInsightsCard(
+                    MindfulnessInsightsOverviewCard(
                         average: weekSnapshot.wellnessAverage
                     )
 
-                    MindfulnessGuidedMeditationSection(
+                    MindfulnessMeditationSection(
                         snapshot: meditationSnapshot,
                         templates: PulsarMindfulnessContentLibrary.meditationTemplates,
                         onStart: startMeditation
@@ -147,8 +155,12 @@ struct MindfulnessView: View {
             .onReceive(router.$pendingPresentation.compactMap { $0 }) { presentation in
                 presentDailyRewind(presentation: presentation)
             }
+            .onAppear {
+                PulsarPerformanceSignposts.markTabDestinationAppeared(.mindfulness)
+                PulsarPerformanceSignposts.markTabDestinationUseful(.mindfulness, cacheState: .notApplicable)
+            }
         }
-        .preferredColorScheme(.dark)
+        .pulsarFitnessMonochromeAppearance()
         .toolbarBackground(.hidden, for: .navigationBar)
         .sensoryFeedback(.success, trigger: streakCelebration?.id) { _, newValue in
             newValue != nil

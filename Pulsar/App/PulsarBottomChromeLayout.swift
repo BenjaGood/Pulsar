@@ -14,19 +14,108 @@ struct PulsarBottomChromeLayout: Equatable {
     static let maximumSystemBottomInset: CGFloat = 44
 
     var safeAreaBottom: CGFloat = 0
+    var accessoryHeight: CGFloat = 0
 
     var scrollContentBottomMargin: CGFloat {
-        Self.scrollContentBottomMargin(for: safeAreaBottom)
+        Self.scrollContentBottomMargin(
+            for: safeAreaBottom,
+            accessoryHeight: accessoryHeight
+        )
     }
 
     var endOfContentSpacerHeight: CGFloat {
         Self.floatingNavigationEndOfContentBuffer
     }
 
-    static func scrollContentBottomMargin(for safeAreaBottom: CGFloat) -> CGFloat {
+    static func scrollContentBottomMargin(
+        for safeAreaBottom: CGFloat,
+        accessoryHeight: CGFloat = 0
+    ) -> CGFloat {
         floatingNavigationHeight
             + min(max(safeAreaBottom, 0), maximumSystemBottomInset)
+            + max(accessoryHeight, 0)
             + floatingNavigationExtraScrollSpacing
+    }
+}
+
+enum PulsarNativeBottomAccessoryLayoutState: Equatable {
+    case orion
+    case workout
+}
+
+/// Native-tab accessory identity derived from workout presentation.
+/// Launch-owned and hidden states keep Orion installed so `setBottomAccessory`
+/// cannot run underneath a still-present Fitness cover.
+struct PulsarRootLiveChromeIdentity: Equatable, Sendable {
+    var showsMiniWorkout: Bool
+    var miniSessionID: UUID?
+    var showsOrion: Bool
+
+    static func resolve(
+        presentationState: PulsarActiveWorkoutPresentationState
+    ) -> Self {
+        let showsOrion: Bool
+        switch presentationState {
+        case .hidden, .launchOwned, .handoffPending:
+            showsOrion = true
+        case .minimized, .expanded, .dismissing, .minimizing:
+            showsOrion = false
+        }
+
+        let miniSessionID: UUID?
+        if case .minimized(let sessionID) = presentationState {
+            miniSessionID = sessionID
+        } else {
+            miniSessionID = nil
+        }
+
+        return Self(
+            showsMiniWorkout: miniSessionID != nil,
+            miniSessionID: miniSessionID,
+            showsOrion: showsOrion
+        )
+    }
+
+    var accessoryIdentity: PulsarNativeBottomAccessoryIdentity {
+        if let miniSessionID {
+            return .workout(sessionID: miniSessionID)
+        }
+        if showsOrion {
+            return .orion
+        }
+        return .none
+    }
+}
+
+enum PulsarNativeBottomAccessorySizing {
+    static func height(for state: PulsarNativeBottomAccessoryLayoutState) -> CGFloat {
+        switch state {
+        case .orion: 44
+        case .workout: PulsarWorkoutMiniPlayerSizing.stableNativeAccessoryHeight
+        }
+    }
+}
+
+struct PulsarBottomChromeLayoutInputs: Equatable {
+    var safeAreaBottom: CGFloat
+    var accessoryHeight: CGFloat
+    var displayScale: CGFloat
+
+    init(
+        safeAreaBottom: CGFloat,
+        displayScale: CGFloat,
+        showsMiniWorkout: Bool,
+        showsOrion: Bool
+    ) {
+        self.safeAreaBottom = safeAreaBottom
+        self.displayScale = displayScale
+        if showsMiniWorkout {
+            accessoryHeight = PulsarNativeBottomAccessorySizing.height(for: .workout)
+        } else if showsOrion {
+            accessoryHeight = PulsarNativeBottomAccessorySizing.height(for: .orion)
+        } else {
+            accessoryHeight = 0
+        }
     }
 }
 
@@ -34,9 +123,19 @@ final class PulsarBottomChromeLayoutStore: ObservableObject {
     @Published private(set) var layout = PulsarBottomChromeLayout()
 
     @MainActor
-    func update(safeAreaBottom: CGFloat) {
+    func update(
+        safeAreaBottom: CGFloat,
+        accessoryHeight: CGFloat = 0,
+        displayScale: CGFloat = 1
+    ) {
+        guard safeAreaBottom.isFinite, accessoryHeight.isFinite else { return }
+        let normalizedScale = displayScale.isFinite ? max(displayScale, 1) : 1
+        let normalizedBottomInset = (max(safeAreaBottom, 0) * normalizedScale).rounded() / normalizedScale
+        let normalizedAccessoryHeight = (max(accessoryHeight, 0) * normalizedScale).rounded() / normalizedScale
+
         var nextLayout = layout
-        nextLayout.safeAreaBottom = safeAreaBottom
+        nextLayout.safeAreaBottom = normalizedBottomInset
+        nextLayout.accessoryHeight = normalizedAccessoryHeight
         guard nextLayout != layout else { return }
         layout = nextLayout
     }

@@ -6,27 +6,6 @@
 import Combine
 import Foundation
 
-enum RecoveryDetailsState: Equatable {
-    case loading
-    case loaded
-    case permissionRequired
-    case noData
-    case error(String)
-}
-
-struct RecoveryMetricTileModel: Identifiable, Equatable {
-    var id: String { title }
-    var title: String
-    var value: String
-    var subtitle: String?
-    var symbol: String
-}
-
-struct RecoveryInsight: Identifiable, Equatable {
-    var id: String { text }
-    var text: String
-}
-
 @MainActor
 final class RecoveryDetailsViewModel: ObservableObject {
     @Published private(set) var state: RecoveryDetailsState
@@ -59,9 +38,17 @@ final class RecoveryDetailsViewModel: ObservableObject {
     var deepSleepText: String { summary.deepSleep.map(Self.durationText(seconds:)) ?? "Not enough data" }
     var remSleepText: String { summary.remSleep.map(Self.durationText(seconds:)) ?? "Not enough data" }
     var strainText: String { summary.strainScore.map { "\(Int($0.rounded()))" } ?? "Not enough data" }
-    var respiratoryRateText: String { summary.respiratoryRate.map { String(format: "%.1f/min", $0) } ?? "Not enough data" }
+    var respiratoryRateText: String {
+        summary.respiratoryRate.map {
+            "\($0.formatted(.number.precision(.fractionLength(1))))/min"
+        } ?? "Not enough data"
+    }
     var oxygenText: String { summary.oxygenSaturation.map { "\(Int(($0 * 100).rounded()))%" } ?? "Not enough data" }
-    var wristTemperatureText: String { summary.wristTemperatureDeviation.map { String(format: "%+.1f °C vs baseline", $0) } ?? "Not enough data" }
+    var wristTemperatureText: String {
+        summary.wristTemperatureDeviation.map {
+            "\($0.formatted(.number.sign(strategy: .always()).precision(.fractionLength(1)))) °C vs baseline"
+        } ?? "Not enough data"
+    }
     var sampleCountText: String { summary.analyzedSampleCount > 0 ? "\(summary.analyzedSampleCount) samples" : "No samples" }
     var lastUpdatedText: String { summary.lastUpdated.map { "Updated \($0.formatted(.relative(presentation: .named)))" } ?? "Not updated" }
     var baselineText: String { summary.baselineWindowDays > 0 ? "\(summary.baselineWindowDays)-day window" : "Not available" }
@@ -76,27 +63,37 @@ final class RecoveryDetailsViewModel: ObservableObject {
         return date.formatted(.dateTime.weekday(.wide).month(.wide).day())
     }
 
-    var recoveryBalanceSubtitle: String {
-        calendar.isDateInToday(date)
-            ? "What is supporting or reducing recovery today"
-            : "What supported or reduced recovery that day"
-    }
-
-    var metricTiles: [RecoveryMetricTileModel] {
-        var tiles = [
-            RecoveryMetricTileModel(title: "Recovery", value: scoreText, subtitle: "Baseline-relative", symbol: "heart.text.square.fill"),
-            RecoveryMetricTileModel(title: "HRV", value: hrvText, subtitle: hrvBaselineText, symbol: "waveform.path.ecg"),
-            RecoveryMetricTileModel(title: "Resting HR", value: restingHeartRateText, subtitle: restingHeartRateBaselineText, symbol: "heart.fill"),
-            RecoveryMetricTileModel(title: "Sleep", value: sleepDurationText, subtitle: "Total sleep", symbol: "moon.zzz.fill"),
-            RecoveryMetricTileModel(title: "Efficiency", value: sleepEfficiencyText, subtitle: "Sleep quality signal", symbol: "gauge.with.dots.needle.bottom.50percent"),
-            RecoveryMetricTileModel(title: "Deep Sleep", value: deepSleepText, subtitle: nil, symbol: "bed.double.fill"),
-            RecoveryMetricTileModel(title: "REM Sleep", value: remSleepText, subtitle: nil, symbol: "brain.head.profile"),
-            RecoveryMetricTileModel(title: "Strain", value: strainText, subtitle: "Training context", symbol: "figure.run.circle.fill")
+    var recoveryDrivers: [RecoveryDriver] {
+        [
+            RecoveryDriver(
+                kind: .hrv,
+                context: hrvBaselineText,
+                value: summary.hrvSDNN == nil ? "No data" : hrvText,
+                status: hrvDriverStatus.label,
+                statusSymbol: hrvDriverStatus.symbol
+            ),
+            RecoveryDriver(
+                kind: .restingHeartRate,
+                context: restingHeartRateBaselineText,
+                value: summary.restingHeartRate == nil ? "No data" : restingHeartRateText,
+                status: restingHeartRateDriverStatus.label,
+                statusSymbol: restingHeartRateDriverStatus.symbol
+            ),
+            RecoveryDriver(
+                kind: .sleep,
+                context: "Total sleep",
+                value: summary.sleepDuration == nil ? "No data" : sleepDurationText,
+                status: sleepDriverStatus.label,
+                statusSymbol: sleepDriverStatus.symbol
+            ),
+            RecoveryDriver(
+                kind: .strain,
+                context: "Training context",
+                value: summary.strainScore == nil ? "No data" : strainText,
+                status: strainDriverStatus.label,
+                statusSymbol: strainDriverStatus.symbol
+            )
         ]
-        if summary.respiratoryRate != nil { tiles.append(RecoveryMetricTileModel(title: "Respiration", value: respiratoryRateText, subtitle: "Breaths per minute", symbol: "lungs.fill")) }
-        if summary.oxygenSaturation != nil { tiles.append(RecoveryMetricTileModel(title: "Oxygen", value: oxygenText, subtitle: "Latest sample", symbol: "drop.fill")) }
-        if summary.wristTemperatureDeviation != nil { tiles.append(RecoveryMetricTileModel(title: "Temp trend", value: wristTemperatureText, subtitle: "Nighttime vs baseline", symbol: "thermometer.medium")) }
-        return tiles
     }
 
     var insights: [RecoveryInsight] {
@@ -158,7 +155,7 @@ final class RecoveryDetailsViewModel: ObservableObject {
             state = .loading
         }
         do {
-            let refreshedAt = Date()
+            let refreshedAt = Date.now
             let loaded = try await provider.recoverySummary(profile: profile, date: date, calendar: calendar, refreshedAt: refreshedAt)
             if Self.hasData(loaded) || !Self.hasData(summary) {
                 summary = loaded
@@ -197,5 +194,45 @@ final class RecoveryDetailsViewModel: ObservableObject {
 
     private func bpmOrMS(_ value: Double?, unit: String) -> String {
         value.map { "\(Int($0.rounded())) \(unit)" } ?? "Not enough data"
+    }
+
+    private var hrvDriverStatus: (label: String, symbol: String) {
+        guard let hrv = summary.hrvSDNN else { return ("No data", "minus") }
+        guard let baseline = summary.hrvBaseline, baseline > 0 else {
+            return ("Building baseline", "ellipsis")
+        }
+
+        let delta = (hrv - baseline) / baseline
+        if delta <= -0.06 { return ("Below average", "arrow.down") }
+        if delta >= 0.06 { return ("Above average", "arrow.up") }
+        return ("Near average", "equal")
+    }
+
+    private var restingHeartRateDriverStatus: (label: String, symbol: String) {
+        guard let restingHeartRate = summary.restingHeartRate else {
+            return ("No data", "minus")
+        }
+        guard let baseline = summary.restingHeartRateBaseline else {
+            return ("Building baseline", "ellipsis")
+        }
+
+        let delta = restingHeartRate - baseline
+        if delta >= 4 { return ("Elevated", "arrow.up") }
+        if delta <= -2 { return ("Lower", "arrow.down") }
+        return ("Near avg", "equal")
+    }
+
+    private var sleepDriverStatus: (label: String, symbol: String) {
+        guard summary.sleepDuration != nil else { return ("No data", "minus") }
+        if summary.sleepContribution >= 0.75 { return ("Strong", "arrow.up") }
+        if summary.sleepContribution >= 0.55 { return ("Moderate", "circle.fill") }
+        return ("Low", "arrow.down")
+    }
+
+    private var strainDriverStatus: (label: String, symbol: String) {
+        guard let strain = summary.strainScore else { return ("No data", "minus") }
+        if strain >= 75 { return ("High", "arrow.up") }
+        if strain >= 45 { return ("Moderate", "circle.fill") }
+        return ("Light", "arrow.down")
     }
 }

@@ -1,6 +1,6 @@
 import Foundation
 
-enum PulsarSyncSourceDevice: String, Codable, Hashable {
+enum PulsarSyncSourceDevice: String, nonisolated Codable, Hashable, Sendable {
     case iPhone
     case appleWatch
     case ouraRing
@@ -15,7 +15,7 @@ enum PulsarSyncSourceDevice: String, Codable, Hashable {
     }
 }
 
-enum PulsarSyncConfidence: String, Codable {
+enum PulsarSyncConfidence: String, nonisolated Codable, Sendable {
     case high
     case moderate
     case low
@@ -44,7 +44,7 @@ enum PulsarDailyMetricsDateKey {
     }
 }
 
-struct PulsarStrainSyncMetric: Codable, Equatable {
+struct PulsarStrainSyncMetric: nonisolated Codable, Equatable, Sendable {
     var score: Int
     var confidence: PulsarSyncConfidence
     var rawLoad: Double
@@ -89,7 +89,7 @@ struct PulsarStrainSyncMetric: Codable, Equatable {
     }
 }
 
-struct PulsarRecoverySyncMetric: Codable, Equatable {
+struct PulsarRecoverySyncMetric: nonisolated Codable, Equatable, Sendable {
     var score: Int
     var confidence: PulsarSyncConfidence
     var statusText: String
@@ -138,7 +138,7 @@ struct PulsarRecoverySyncMetric: Codable, Equatable {
     }
 }
 
-struct PulsarSleepStageSyncInterval: Codable, Equatable {
+struct PulsarSleepStageSyncInterval: nonisolated Codable, Equatable, Sendable {
     var stage: String
     var start: Date
     var end: Date
@@ -151,7 +151,7 @@ struct PulsarSleepStageSyncInterval: Codable, Equatable {
     }
 }
 
-struct PulsarSleepSyncMetric: Codable, Equatable {
+struct PulsarSleepSyncMetric: nonisolated Codable, Equatable, Sendable {
     var score: Int
     var confidence: PulsarSyncConfidence
     var sleepDateKey: String
@@ -236,13 +236,13 @@ struct PulsarSleepSyncMetric: Codable, Equatable {
     }
 }
 
-struct PulsarStressSyncSample: Codable, Equatable {
+struct PulsarStressSyncSample: nonisolated Codable, Equatable, Sendable {
     var timestamp: Date
     var score: Double
     var context: String?
 }
 
-struct PulsarStressSyncMetric: Codable, Equatable {
+struct PulsarStressSyncMetric: nonisolated Codable, Equatable, Sendable {
     var score: Int
     var confidence: PulsarSyncConfidence
     var levelText: String
@@ -323,7 +323,7 @@ struct PulsarStressSyncMetric: Codable, Equatable {
     }
 }
 
-enum PulsarHealthMetricSyncKind: String, Codable, CaseIterable {
+enum PulsarHealthMetricSyncKind: String, nonisolated Codable, CaseIterable, Sendable {
     case respiratoryRate
     case restingHeartRate
     case hrv
@@ -332,14 +332,14 @@ enum PulsarHealthMetricSyncKind: String, Codable, CaseIterable {
     case sleep
 }
 
-enum PulsarHealthMetricSyncStatus: String, Codable {
+enum PulsarHealthMetricSyncStatus: String, nonisolated Codable, Sendable {
     case normal = "Normal"
     case higher = "Higher"
     case lower = "Lower"
     case noData = "No data"
 }
 
-struct PulsarHealthMetricSyncValue: Codable, Equatable {
+struct PulsarHealthMetricSyncValue: nonisolated Codable, Equatable, Sendable {
     var kind: PulsarHealthMetricSyncKind
     var value: Double?
     var status: PulsarHealthMetricSyncStatus
@@ -375,7 +375,7 @@ struct PulsarHealthMetricSyncValue: Codable, Equatable {
     }
 }
 
-struct PulsarHealthMonitorSyncMetric: Codable, Equatable {
+struct PulsarHealthMonitorSyncMetric: nonisolated Codable, Equatable, Sendable {
     var metrics: [PulsarHealthMetricSyncValue]
     var baselineWindowDays: Int
     var sourceNames: [String]
@@ -392,7 +392,7 @@ struct PulsarHealthMonitorSyncMetric: Codable, Equatable {
     }
 }
 
-struct PulsarDailyMetricsSyncPayload: Codable, Equatable {
+struct PulsarDailyMetricsSyncPayload: nonisolated Codable, Equatable, Sendable {
     var date: Date
     var dateKey: String? = nil
     var syncedAt: Date
@@ -840,11 +840,21 @@ enum PulsarSyncPayloadCodec {
     static let payloadKey = "pulsar.dailyMetricsPayload"
 
     static func encode(_ payload: PulsarDailyMetricsSyncPayload) -> Data? {
-        try? JSONEncoder().encode(payload)
+        PulsarPerformanceSignposts.measure(
+            PulsarPerformanceSignposts.watchConnectivity,
+            name: "encode"
+        ) {
+            try? JSONEncoder().encode(payload)
+        }
     }
 
     static func decode(data: Data) -> PulsarDailyMetricsSyncPayload? {
-        try? JSONDecoder().decode(PulsarDailyMetricsSyncPayload.self, from: data)
+        PulsarPerformanceSignposts.measure(
+            PulsarPerformanceSignposts.watchConnectivity,
+            name: "decode"
+        ) {
+            try? JSONDecoder().decode(PulsarDailyMetricsSyncPayload.self, from: data)
+        }
     }
 }
 

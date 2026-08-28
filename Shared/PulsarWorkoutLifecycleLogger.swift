@@ -25,6 +25,27 @@ enum PulsarWorkoutLifecycleEvent: String {
     case workoutActivated
     case workoutStartFailed
     case workoutSessionCleanedUp
+    case watchLaunchRequestSubmitted
+    case watchLaunchRequestFailed
+    case watchLaunchDecision
+    case watchPrelaunchDurablyQueued
+    case watchRecoveryAttempt
+    case watchStartVerified
+    case watchHealthKitMirroringStarted
+    case watchHealthKitActivityStarted
+    case watchAppHandlerInvoked
+    case watchWorkoutSessionCreated
+    case watchWorkoutSessionPrepared
+    case watchWorkoutSessionRunning
+    case watchAcknowledgementReceived
+    case mirroredSessionReceived
+    case firstHeartRateSampleReceived
+    case routineSnapshotReceived
+    case workoutStartTimedOut
+    case summaryPresentationAttempted
+    case summaryPresentationBlocked
+    case staleFinishedIgnored
+    case staleAcknowledgementIgnored
 }
 
 enum PulsarWorkoutLifecycleLogger {
@@ -33,6 +54,7 @@ enum PulsarWorkoutLifecycleLogger {
     static func log(
         _ event: PulsarWorkoutLifecycleEvent,
         sessionID: UUID? = nil,
+        requestID: UUID? = nil,
         workoutType: String? = nil,
         source: String? = nil,
         detail: String? = nil,
@@ -43,7 +65,13 @@ enum PulsarWorkoutLifecycleLogger {
         reachability: String? = nil,
         messageType: String? = nil,
         ackStatus: String? = nil,
-        error: String? = nil
+        error: String? = nil,
+        healthKitState: String? = nil,
+        watchConnectivityState: String? = nil,
+        transport: String? = nil,
+        retryAttempt: Int? = nil,
+        latencyMilliseconds: Int? = nil,
+        role: String? = nil
     ) {
         var parts: [String] = [
             "event=\(event.rawValue)",
@@ -52,11 +80,17 @@ enum PulsarWorkoutLifecycleLogger {
         if let sessionID {
             parts.append("workoutID=\(sessionID.uuidString)")
         }
+        if let requestID {
+            parts.append("requestID=\(requestID.uuidString)")
+        }
         if let workoutType, !workoutType.isEmpty {
             parts.append("type=\(workoutType)")
         }
         if let source, !source.isEmpty {
             parts.append("source=\(source)")
+        }
+        if let role, !role.isEmpty {
+            parts.append("role=\(role)")
         }
         if let detail, !detail.isEmpty {
             parts.append("detail=\(detail)")
@@ -81,6 +115,21 @@ enum PulsarWorkoutLifecycleLogger {
         }
         if let error, !error.isEmpty {
             parts.append("error=\(error)")
+        }
+        if let healthKitState, !healthKitState.isEmpty {
+            parts.append("hkState=\(healthKitState)")
+        }
+        if let watchConnectivityState, !watchConnectivityState.isEmpty {
+            parts.append("wcState=\(watchConnectivityState)")
+        }
+        if let transport, !transport.isEmpty {
+            parts.append("transport=\(transport)")
+        }
+        if let retryAttempt {
+            parts.append("retry=\(retryAttempt)")
+        }
+        if let latencyMilliseconds {
+            parts.append("latencyMs=\(latencyMilliseconds)")
         }
         logger.log("\(parts.joined(separator: " "), privacy: .public)")
     }

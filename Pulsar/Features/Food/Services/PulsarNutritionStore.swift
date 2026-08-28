@@ -19,7 +19,7 @@ struct PulsarNutritionPersistedState: Codable, Equatable {
     var version: Int
     var state: PulsarNutritionState
 
-    static let currentVersion = 3
+    static let currentVersion = 5
     static let empty = PulsarNutritionPersistedState(version: currentVersion, state: .empty)
 }
 
@@ -162,6 +162,11 @@ extension PulsarNutritionState {
             targetsByID[target.id] = target
         }
 
+        var calculationsByID: [UUID: SavedNutritionalCalculation] = [:]
+        for calculation in savedNutritionalCalculations {
+            calculationsByID[calculation.id] = calculation
+        }
+
         return PulsarNutritionState(
             entries: entriesByID.values.sorted { $0.loggedAt > $1.loggedAt },
             mealCategories: sortedCategories,
@@ -171,6 +176,7 @@ extension PulsarNutritionState {
             recipes: recipesByID.values.sorted { $0.updatedAt > $1.updatedAt },
             bodyCheckIns: bodyByID.values.sorted { $0.date > $1.date },
             targetSnapshots: targetsByID.values.sorted { $0.date > $1.date },
+            savedNutritionalCalculations: calculationsByID.values.sorted { $0.savedAt > $1.savedAt },
             eatingWindow: eatingWindow
         )
     }
@@ -217,6 +223,46 @@ final class PulsarNutritionStore: ObservableObject {
 
     func reload() {
         updateState(provider.loadState(), persist: false)
+    }
+
+    var latestNutritionalCalculation: SavedNutritionalCalculation? {
+        state.savedNutritionalCalculations.max { $0.savedAt < $1.savedAt }
+    }
+
+    func applyCalculatedTargets(_ calculation: SavedNutritionalCalculation) {
+        guard let protein = calculation.result.macro(.protein),
+              let carbohydrates = calculation.result.macro(.carbohydrates),
+              let fat = calculation.result.macro(.fat) else { return }
+        let now = nowProvider()
+        let currentTarget = dashboard.target
+        let snapshot = PulsarNutritionTargetSnapshot(
+            date: now,
+            fuelRange: calculation.result.energy.targetRange,
+            proteinRange: protein.range,
+            fiberTarget: calculation.result.fiberGrams,
+            hydrationTargetMilliliters: calculation.result.hydrationMilliliters,
+            recoveryScore: currentTarget.recoveryScore,
+            activityLoad: currentTarget.activityLoad,
+            rationale: "Personalized by Orion Nutritional Calculation (\(calculation.result.guidelineVersion)).",
+            carbohydratesTargetGrams: carbohydrates.grams,
+            fatTargetGrams: fat.grams,
+            source: .orionCalculation,
+            calculationID: calculation.id
+        )
+        var next = state
+        next.targetSnapshots.removeAll { calendar.isDate($0.date, inSameDayAs: now) }
+        next.targetSnapshots.insert(snapshot, at: 0)
+        next.savedNutritionalCalculations.removeAll { $0.id == calculation.id }
+        next.savedNutritionalCalculations.insert(calculation, at: 0)
+        updateState(next)
+        haptic(.medium)
+    }
+
+    func deleteNutritionalCalculation(id: UUID) {
+        var next = state
+        next.savedNutritionalCalculations.removeAll { $0.id == id }
+        next.targetSnapshots.removeAll { $0.calculationID == id }
+        updateState(next)
     }
 
     func searchFoods(_ query: String) -> [PulsarFoodItem] {
@@ -784,6 +830,7 @@ final class PulsarNutritionStore: ObservableObject {
             recipes: state.recipes.sorted { $0.updatedAt > $1.updatedAt },
             bodyCheckIns: state.bodyCheckIns.sorted { $0.date > $1.date },
             targetSnapshots: state.targetSnapshots.sorted { $0.date > $1.date },
+            savedNutritionalCalculations: state.savedNutritionalCalculations.sorted { $0.savedAt > $1.savedAt },
             eatingWindow: state.eatingWindow
         )
     }

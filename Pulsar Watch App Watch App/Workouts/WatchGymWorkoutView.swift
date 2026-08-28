@@ -28,10 +28,7 @@ struct WatchActiveGymWorkoutView: View {
             }
         }
         .onAppear {
-            syncStore.sendGymAction(.requestState(sessionId: state.sessionId))
-            Task {
-                await WatchGymSessionManager.shared.startIfNeeded(for: state)
-            }
+            WatchGymSessionManager.shared.noteWorkoutViewAppeared(state)
         }
         .sheet(isPresented: $isShowingNowPlaying) {
             NowPlayingView()
@@ -157,7 +154,7 @@ struct WatchActiveGymWorkoutView: View {
                         .minimumScaleFactor(0.78)
                 }
 
-                Text(currentExercise?.exerciseName ?? "Open Gym")
+                Text(currentExerciseTitle)
                     .pulsarTextStyle(.watchTitle)
                     .foregroundStyle(.white)
                     .lineLimit(2)
@@ -291,13 +288,26 @@ struct WatchActiveGymWorkoutView: View {
         state.currentSet
     }
 
+    private var currentExerciseTitle: String {
+        if let exerciseName = currentExercise?.exerciseName {
+            return exerciseName
+        }
+        return state.workoutKind == .freeWorkout ? "Open Gym" : "Loading Routine…"
+    }
+
     private var progressFraction: Double {
-        guard state.totalSets > 0 else { return 1 }
+        guard state.totalSets > 0 else {
+            return state.workoutKind == .freeWorkout ? 1 : 0
+        }
         return min(max(Double(state.completedSets) / Double(state.totalSets), 0), 1)
     }
 
     private var subtitleText: String {
-        guard let currentExercise else { return "Freestyle strength session" }
+        guard let currentExercise else {
+            return state.workoutKind == .freeWorkout
+                ? "Freestyle strength session"
+                : "Waiting for routine details"
+        }
         return "\(currentExercise.muscleGroup) / \(currentExercise.equipment)"
     }
 

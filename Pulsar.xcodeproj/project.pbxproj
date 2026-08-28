@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		8ECDB2DB49274C60A0998571 /* Shared/PulsarTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ECDB2DB49274C60A0998570 /* Shared/PulsarTypography.swift */; };
+		A17C7E7B2FEA000000000001 /* Lottie in Frameworks */ = {isa = PBXBuildFile; productRef = A17C7E7B2FEA000000000002 /* Lottie */; };
 		EDF329D42FA7FABD00359606 /* Pulsar Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = EDF329CA2FA7FABC00359606 /* Pulsar Watch App.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		EDF33A102FA9000000000001 /* PulsarWidgetsExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = EDF33A132FA9000000000004 /* PulsarWidgetsExtension.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
@@ -111,6 +112,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A17C7E7B2FEA000000000001 /* Lottie in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -209,6 +211,7 @@
 			);
 			name = Pulsar;
 			packageProductDependencies = (
+				A17C7E7B2FEA000000000002 /* Lottie */,
 			);
 			productName = Pulsar;
 			productReference = EDF329B82FA7FA4B00359606 /* Pulsar.app */;
@@ -317,6 +320,9 @@
 			);
 			mainGroup = EDF329AF2FA7FA4B00359606;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A17C7E7B2FEA000000000003 /* XCRemoteSwiftPackageReference "lottie-spm" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EDF329B92FA7FA4B00359606 /* Products */;
 			projectDirPath = "";
@@ -872,6 +878,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A17C7E7B2FEA000000000003 /* XCRemoteSwiftPackageReference "lottie-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/airbnb/lottie-spm.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 4.6.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A17C7E7B2FEA000000000002 /* Lottie */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A17C7E7B2FEA000000000003 /* XCRemoteSwiftPackageReference "lottie-spm" */;
+			productName = Lottie;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = EDF329B02FA7FA4B00359606 /* Project object */;
 }

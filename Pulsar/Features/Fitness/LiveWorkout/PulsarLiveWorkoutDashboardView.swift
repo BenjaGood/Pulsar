@@ -102,7 +102,7 @@ struct PulsarLiveWorkoutDashboardView<Background: View>: View {
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .persistentSystemOverlays(.hidden)
-        .preferredColorScheme(.dark)
+        .pulsarFitnessMonochromeAppearance()
         .confirmationDialog("End this \(state.title.lowercased())?", isPresented: $showingEndConfirmation, titleVisibility: .visible) {
             Button("End Workout", role: .destructive) {
                 onEnd()
@@ -145,21 +145,21 @@ struct PulsarLiveWorkoutDashboardView<Background: View>: View {
             VStack(alignment: .leading, spacing: layout.isCompact ? 4 : 5) {
                 Label(state.statusText, systemImage: "chart.bar.fill")
                     .font(.system(size: layout.liveBadgeFontSize, weight: .bold, design: .default))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     .padding(.horizontal, layout.isCompact ? 8 : 9)
                     .padding(.vertical, layout.isCompact ? 4 : 5)
-                    .background(.green.opacity(0.18), in: Capsule(style: .continuous))
+                    .background(.black.opacity(0.055), in: Capsule(style: .continuous))
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(state.title)
                         .font(.system(size: layout.titleSize, weight: .bold, design: .default))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.64)
 
                     Text(state.subtitle)
                         .font(.system(size: layout.subtitleSize, weight: .medium, design: .default))
-                        .foregroundStyle(.white.opacity(0.58))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.78)
                 }
@@ -585,18 +585,7 @@ private enum PulsarPremiumWorkoutRadius {
 
 private struct PulsarPremiumWorkoutBackground: View {
     var body: some View {
-        Color.black
-            .overlay {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.030, green: 0.034, blue: 0.044).opacity(0.82),
-                        .black.opacity(0.98),
-                        .black
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            }
+        PulsarFitnessMonochromeBackground()
     }
 }
 
@@ -604,9 +593,9 @@ private struct PulsarPremiumWorkoutAtmosphere: View {
     var body: some View {
         LinearGradient(
             colors: [
-                Color.white.opacity(0.030),
+                Color.black.opacity(0.012),
                 .clear,
-                Color.white.opacity(0.018)
+                Color.black.opacity(0.007)
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -620,10 +609,10 @@ struct PulsarLiveWorkoutAmbientBackground: View {
     var glowColor: Color
 
     var body: some View {
-        Color(red: 0.01, green: 0.012, blue: 0.017)
+        PulsarFitnessMonochromeDesign.background
         .overlay {
             RadialGradient(
-                colors: [glowColor.opacity(0.20), .clear],
+                colors: [.black.opacity(0.028), .clear],
                 center: .topTrailing,
                 startRadius: 32,
                 endRadius: 360
@@ -631,7 +620,7 @@ struct PulsarLiveWorkoutAmbientBackground: View {
         }
         .overlay {
             LinearGradient(
-                colors: [.black.opacity(0.0), .black.opacity(0.58)],
+                colors: [.white.opacity(0.0), .black.opacity(0.025)],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -647,9 +636,9 @@ private struct PulsarLiveWorkoutAtmosphere: View {
     var body: some View {
         LinearGradient(
             colors: [
-                .black.opacity(0.10),
-                tint.opacity(0.04),
-                .black.opacity(0.34)
+                .white.opacity(0.18),
+                .clear,
+                .black.opacity(0.018)
             ],
             startPoint: .top,
             endPoint: .bottom
@@ -658,7 +647,7 @@ private struct PulsarLiveWorkoutAtmosphere: View {
             Rectangle()
                 .fill(
                     LinearGradient(
-                        colors: [.clear, glowColor.opacity(0.08), .black.opacity(0.48)],
+                        colors: [.clear, .black.opacity(0.012), .black.opacity(0.035)],
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -714,13 +703,13 @@ private struct PulsarCompactNowPlayingCapsule: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.displayTitle)
                         .font(.system(size: height < 50 ? 12 : 13, weight: .semibold, design: .default))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.70)
 
                     Text(track.displaySubtitle)
                         .font(.system(size: height < 50 ? 11 : 12, weight: .medium, design: .default))
-                        .foregroundStyle(.white.opacity(0.66))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.70)
                 }
@@ -731,9 +720,9 @@ private struct PulsarCompactNowPlayingCapsule: View {
             Button(action: onTogglePlayback) {
                 Image(systemName: track.isPlaying ? "pause.fill" : "play.fill")
                     .pulsarTextStyle(.label)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     .frame(width: height < 50 ? 32 : 36, height: height < 50 ? 32 : 36)
-                    .background(.black.opacity(0.44), in: Circle())
+                    .background(.white.opacity(0.72), in: Circle())
             }
             .buttonStyle(.plain)
             .disabled(controlsDisabled || !track.isAvailable)
@@ -745,8 +734,8 @@ private struct PulsarCompactNowPlayingCapsule: View {
         .background(
             LinearGradient(
                 colors: [
-                    Color.white.opacity(0.13),
-                    Color(red: 0.055, green: 0.058, blue: 0.066).opacity(0.92)
+                    Color.white.opacity(0.92),
+                    Color.white.opacity(0.58)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -755,7 +744,7 @@ private struct PulsarCompactNowPlayingCapsule: View {
         )
         .overlay {
             RoundedRectangle(cornerRadius: height / 2, style: .continuous)
-                .stroke(.white.opacity(0.045), lineWidth: 1)
+                .stroke(.black.opacity(0.055), lineWidth: 0.7)
         }
         .shadow(color: .black.opacity(0.22), radius: 12, y: 7)
     }
@@ -774,7 +763,7 @@ private struct PulsarCompactNowPlayingCapsule: View {
                     .fill(.white.opacity(0.10))
                 Image(systemName: "music.note")
                     .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(.white.opacity(0.72))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
             }
             .frame(width: artworkSize, height: artworkSize)
         }
@@ -788,13 +777,13 @@ private struct PulsarPremiumHeartRateCard: View {
         VStack(alignment: .leading, spacing: 9) {
             Text("HEART RATE")
                 .font(.system(size: 11, weight: .semibold, design: .default))
-                .foregroundStyle(.white.opacity(0.50))
+                .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
 
             if let currentHeartRate = state.currentHeartRate, currentHeartRate > 0 {
                 HStack(alignment: .lastTextBaseline, spacing: 6) {
                     Text("\(Int(currentHeartRate.rounded()))")
                         .font(.system(size: 44, weight: .bold, design: .default).monospacedDigit())
-                        .foregroundStyle(.white)
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.54)
                         .layoutPriority(1)
@@ -806,33 +795,33 @@ private struct PulsarPremiumHeartRateCard: View {
 
                     Text("bpm")
                         .pulsarTextStyle(.captionEmphasis)
-                        .foregroundStyle(.white.opacity(0.62))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                 }
 
                 HStack(spacing: 6) {
                     Text("Real-time")
                     Circle()
-                        .fill(.green)
+                        .fill(PulsarFitnessMonochromeDesign.active)
                         .frame(width: 5, height: 5)
                 }
                 .pulsarTextStyle(.captionEmphasis)
-                .foregroundStyle(.green)
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     Image(systemName: "heart")
                         .font(.title3.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.42))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
 
                     Text(state.heartRatePlaceholderText)
                         .font(.system(size: 17, weight: .semibold, design: .default))
-                        .foregroundStyle(.white.opacity(0.78))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                         .fixedSize(horizontal: false, vertical: true)
                         .lineLimit(2)
                         .minimumScaleFactor(0.76)
 
                     Text(state.percentOfMaxText)
                         .font(.system(size: 11, weight: .medium, design: .default))
-                        .foregroundStyle(.white.opacity(0.42))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.74)
                 }
@@ -878,11 +867,11 @@ private struct PulsarPremiumZoneGauge: View {
             VStack(spacing: 3) {
                 Text("ZONE")
                     .font(.system(size: 11, weight: .semibold, design: .default))
-                    .foregroundStyle(.white.opacity(0.42))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
 
                 Text(state.heartRateZone.map { "\($0.number)" } ?? "--")
                     .font(.system(size: 32, weight: .bold, design: .default).monospacedDigit())
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     .lineLimit(1)
 
                 Text(state.heartRateZone?.title ?? "Waiting")
@@ -926,7 +915,7 @@ private struct PulsarPremiumHeartRateZoneCard: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Heart Rate Zones")
                     .font(.system(size: 17, weight: .semibold, design: .default))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
 
                 Spacer()
 
@@ -935,7 +924,7 @@ private struct PulsarPremiumHeartRateZoneCard: View {
                     Image(systemName: "chevron.right")
                 }
                 .font(.system(size: 13, weight: .medium, design: .default))
-                .foregroundStyle(.white.opacity(0.48))
+                .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
             }
 
             HStack(spacing: 0) {
@@ -959,7 +948,7 @@ private struct PulsarPremiumHeartRateZoneCard: View {
 
                 Text(state.activeZoneTargetText)
                     .font(.system(size: 12, weight: .medium, design: .default))
-                    .foregroundStyle(.white.opacity(0.62))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
             }
@@ -993,7 +982,7 @@ private struct PulsarPremiumZonePill: View {
 
             Text(zone.percentRangeText)
                 .font(.system(size: 11, weight: .semibold, design: .default))
-                .foregroundStyle(.white.opacity(isActive ? 0.82 : 0.52))
+                .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.70)
         }
@@ -1010,24 +999,24 @@ private struct PulsarPremiumMetricTile: View {
         VStack(alignment: .leading, spacing: height < 68 ? 4 : 5) {
             Image(systemName: metric.symbolName)
                 .pulsarTextStyle(.captionEmphasis)
-                .foregroundStyle(metric.tint.opacity(0.92))
+                .foregroundStyle(metric.fitnessIconStyle)
                 .frame(height: 13, alignment: .leading)
 
             Text(metric.title.uppercased())
                 .font(.system(size: 8.5, weight: .semibold, design: .default))
-                .foregroundStyle(.white.opacity(0.48))
+                .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.68)
 
             Text(metric.value)
                 .font(.system(size: height < 68 ? 18 : 21, weight: .bold, design: .default).monospacedDigit())
-                .foregroundStyle(.white)
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.48)
 
             Text(metric.unit ?? " ")
                 .font(.system(size: 10, weight: .medium, design: .default))
-                .foregroundStyle(.white.opacity(0.52))
+                .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                 .lineLimit(1)
         }
         .padding(height < 68 ? 8 : 10)
@@ -1036,8 +1025,8 @@ private struct PulsarPremiumMetricTile: View {
         .background(
             LinearGradient(
                 colors: [
-                    Color(red: 0.070, green: 0.075, blue: 0.088).opacity(0.84),
-                    Color(red: 0.036, green: 0.039, blue: 0.047).opacity(0.96)
+                    Color.white.opacity(0.92),
+                    Color.white.opacity(0.62)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -1046,7 +1035,7 @@ private struct PulsarPremiumMetricTile: View {
         )
         .overlay {
             RoundedRectangle(cornerRadius: PulsarPremiumWorkoutRadius.smallCard, style: .continuous)
-                .stroke(.white.opacity(0.035), lineWidth: 1)
+                .stroke(.black.opacity(0.055), lineWidth: 0.7)
         }
         .shadow(color: .black.opacity(0.18), radius: 8, y: 5)
     }
@@ -1078,7 +1067,7 @@ private struct PulsarPremiumWorkoutInsightCard: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(state.insightTitle)
                     .font(.system(size: isCompact ? 11 : 12, weight: .medium, design: .default))
-                    .foregroundStyle(.white.opacity(0.72))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                     .lineLimit(1)
 
                 Text(state.intensityTitle)
@@ -1089,7 +1078,7 @@ private struct PulsarPremiumWorkoutInsightCard: View {
 
                 Text(state.intensitySubtitle)
                     .font(.system(size: isCompact ? 11 : 12, weight: .medium, design: .default))
-                    .foregroundStyle(.white.opacity(0.62))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
             }
@@ -1133,18 +1122,18 @@ private struct PulsarPremiumNowPlayingCard: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.isPlaying ? "Now Playing" : "Music")
                         .font(.system(size: isCompact ? 10 : 11, weight: .medium, design: .default))
-                        .foregroundStyle(.white.opacity(0.58))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                         .lineLimit(1)
 
                     Text(track.displayTitle)
                         .font(.system(size: isCompact ? 15 : 17, weight: .semibold, design: .default))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.74)
 
                     Text(track.displaySubtitle)
                         .font(.system(size: isCompact ? 12 : 13, weight: .medium, design: .default))
-                        .foregroundStyle(.white.opacity(0.58))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.74)
 
@@ -1219,7 +1208,7 @@ private struct PulsarPremiumNowPlayingCard: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(prominence ? .subheadline.weight(.bold) : .caption.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                 .frame(width: prominence ? (isCompact ? 32 : 36) : (isCompact ? 27 : 31), height: prominence ? (isCompact ? 32 : 36) : (isCompact ? 27 : 31))
                 .background(Color.white.opacity(prominence ? 0.11 : 0.075), in: Circle())
         }
@@ -1392,7 +1381,7 @@ private struct PulsarLiveWorkoutMetricTile: View {
             HStack {
                 Image(systemName: metric.symbolName)
                     .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(metric.tint)
+                    .foregroundStyle(metric.fitnessIconStyle)
                 Spacer(minLength: 0)
             }
 
@@ -1442,7 +1431,7 @@ private struct PulsarNowPlayingCard: View {
                             .pulsarTextStyle(.overline)
                             .foregroundStyle(.secondary)
                         Circle()
-                            .fill(track.isPlaying ? Color.green : Color.secondary)
+                            .fill(track.isPlaying ? PulsarFitnessMonochromeDesign.active : Color.secondary)
                             .frame(width: 5, height: 5)
                     }
 
@@ -1546,11 +1535,11 @@ private struct PulsarLiveWorkoutControlButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font((height == nil ? Font.headline : .subheadline).weight(.bold))
-            .foregroundStyle(.white)
+            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
             .padding(.vertical, height == nil ? 16 : 0)
             .frame(height: height)
-            .background(tint.gradient, in: Capsule(style: .continuous))
-            .overlay(Capsule(style: .continuous).stroke(.white.opacity(height == nil ? 0.30 : 0.16), lineWidth: 1))
+            .background(.white.opacity(0.76), in: Capsule(style: .continuous))
+            .overlay(Capsule(style: .continuous).stroke(.black.opacity(0.07), lineWidth: 0.7))
             .shadow(
                 color: tint.opacity(configuration.isPressed ? (height == nil ? 0.16 : 0.14) : (height == nil ? 0.34 : 0.28)),
                 radius: configuration.isPressed ? (height == nil ? 8 : 6) : (height == nil ? 18 : 13),
@@ -1567,14 +1556,14 @@ private struct PulsarLiveWorkoutLockButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .pulsarTextStyle(.label)
-            .foregroundStyle(.white.opacity(0.92))
+            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
             .padding(.vertical, height == nil ? 16 : 0)
             .frame(height: height)
             .background(
                 LinearGradient(
                     colors: [
-                        Color.white.opacity(0.12),
-                        Color(red: 0.060, green: 0.064, blue: 0.072).opacity(0.92)
+                        Color.white.opacity(0.92),
+                        Color.white.opacity(0.62)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -1583,7 +1572,7 @@ private struct PulsarLiveWorkoutLockButtonStyle: ButtonStyle {
             )
             .overlay {
                 RoundedRectangle(cornerRadius: PulsarPremiumWorkoutRadius.control, style: .continuous)
-                    .stroke(.white.opacity(0.08), lineWidth: 1)
+                    .stroke(.black.opacity(0.07), lineWidth: 0.7)
             }
             .shadow(color: .black.opacity(configuration.isPressed ? 0.14 : 0.24), radius: configuration.isPressed ? 6 : 12, y: 7)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
@@ -1594,86 +1583,35 @@ private struct PulsarLiveWorkoutLockButtonStyle: ButtonStyle {
 private extension View {
     @ViewBuilder
     func pulsarPremiumWorkoutCard(cornerRadius: CGFloat, interactive: Bool = false) -> some View {
-        if #available(iOS 26.0, *) {
-            self
-                .background(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.080, green: 0.086, blue: 0.100).opacity(0.78),
-                            Color(red: 0.032, green: 0.035, blue: 0.043).opacity(0.96)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                )
-                .glassEffect(
-                    .regular.tint(Color.black.opacity(0.22)).interactive(interactive),
-                    in: .rect(cornerRadius: cornerRadius, style: .continuous)
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(.white.opacity(0.035), lineWidth: 1)
-                }
-                .shadow(color: .black.opacity(0.22), radius: 11, y: 6)
-        } else {
-            self
-                .background(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.080, green: 0.086, blue: 0.100).opacity(0.82),
-                            Color(red: 0.032, green: 0.035, blue: 0.043).opacity(0.98)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(.white.opacity(0.035), lineWidth: 1)
-                }
-                .shadow(color: .black.opacity(0.22), radius: 11, y: 6)
-        }
+        self.pulsarFitnessMonochromeSurface(
+            cornerRadius: cornerRadius,
+            isInteractive: interactive,
+            shadowOpacity: 0.055
+        )
     }
 
     @ViewBuilder
     func pulsarLiveWorkoutGlass(cornerRadius: CGFloat, tint: Color, interactive: Bool = false) -> some View {
-        if #available(iOS 26.0, *) {
-            self.glassEffect(
-                .regular.tint(tint.opacity(0.16)).interactive(interactive),
-                in: .rect(cornerRadius: cornerRadius, style: .continuous)
-            )
-        } else {
-            self
-                .background(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.13),
-                            Color.white.opacity(0.055),
-                            tint.opacity(0.045)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                )
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [.white.opacity(0.30), tint.opacity(0.20), .white.opacity(0.08)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                }
-        }
+        self.pulsarFitnessMonochromeSurface(
+            cornerRadius: cornerRadius,
+            isInteractive: interactive,
+            shadowOpacity: 0.045
+        )
     }
 }
 
+private extension PulsarLiveWorkoutMetric {
+    var fitnessIconStyle: Color {
+        let normalizedTitle = title.lowercased()
+        let representsPhysiology =
+            normalizedTitle.contains("heart") ||
+            normalizedTitle.contains("hrv") ||
+            normalizedTitle.contains("calories")
+        return representsPhysiology ? tint : PulsarFitnessMonochromeDesign.primaryText
+    }
+}
+
+#if DEBUG
 #Preview {
     let zoneProfile = PulsarHeartRateZoneProfile(maxHeartRate: 190, source: .manual)
     PulsarLiveWorkoutDashboardView(
@@ -1717,3 +1655,4 @@ private extension View {
         PulsarLiveWorkoutAmbientBackground(tint: WorkoutAccent.velocity.color, glowColor: .orange)
     }
 }
+#endif

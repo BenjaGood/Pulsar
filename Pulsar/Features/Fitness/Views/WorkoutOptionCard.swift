@@ -18,7 +18,7 @@ struct WorkoutOptionCard: View {
             PulsarGlassCard(
                 cornerRadius: 26,
                 contentPadding: 14,
-                tint: workout.accent.color.opacity(usesPickerGlass ? 0.05 : 0.08),
+                tint: Color.black.opacity(usesPickerGlass ? 0.025 : 0.04),
                 fillOpacity: usesPickerGlass ? 0.10 : nil,
                 suppressShadow: usesPickerGlass,
                 isInteractive: true
@@ -32,9 +32,9 @@ struct WorkoutOptionCard: View {
 
                         Image(systemName: workout.isPersonalized ? "sparkles" : "plus")
                             .pulsarTextStyle(.captionEmphasis)
-                            .foregroundStyle(workout.accent.color.opacity(0.95))
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                             .frame(width: 26, height: 26)
-                            .background(PulsarCircularGlassSurface(cornerRadius: 13, tint: workout.accent.color, opacity: 0.86))
+                            .background(PulsarCircularGlassSurface(cornerRadius: 13, tint: .black, opacity: 0.86))
                     }
 
                     VStack(alignment: .leading, spacing: 5) {
@@ -46,7 +46,7 @@ struct WorkoutOptionCard: View {
 
                         Text(workout.category)
                             .pulsarTextStyle(.overline)
-                            .foregroundStyle(workout.accent.color)
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                             .padding(.horizontal, 9)
                             .padding(.vertical, 5)
                             .background(categoryBackground, in: Capsule())
@@ -78,7 +78,7 @@ struct WorkoutOptionCard: View {
                 LinearGradient(
                     colors: [
                         .white.opacity(colorScheme == .dark ? 0.12 : 0.54),
-                        workout.accent.color.opacity(colorScheme == .dark ? 0.16 : 0.24),
+                        Color.black.opacity(0.06),
                         .clear
                     ],
                     startPoint: .topLeading,
@@ -91,7 +91,7 @@ struct WorkoutOptionCard: View {
     }
 
     private var categoryBackground: Color {
-        workout.accent.color.opacity(colorScheme == .dark ? 0.16 : 0.12)
+        Color.black.opacity(0.045)
     }
 }
 
@@ -102,7 +102,7 @@ private struct WorkoutGlyphView: View {
 
     var body: some View {
         ZStack {
-            PulsarCircularGlassSurface(cornerRadius: 22, tint: workout.accent.color, opacity: 0.96)
+            PulsarCircularGlassSurface(cornerRadius: 22, tint: .black, opacity: 0.96)
 
             if let personalizedKind = workout.personalizedKind {
                 personalizedGlyph(for: personalizedKind)
@@ -186,7 +186,7 @@ private struct WorkoutGlyphView: View {
         LinearGradient(
             colors: [
                 colorScheme == .dark ? .white.opacity(0.94) : Color(red: 0.10, green: 0.12, blue: 0.18),
-                workout.accent.color
+                PulsarFitnessMonochromeDesign.secondaryText
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing

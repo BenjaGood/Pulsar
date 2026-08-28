@@ -7,7 +7,7 @@ import Foundation
 import CoreLocation
 import HealthKit
 
-enum PulsarWorkoutStartedFrom: String, Codable, Hashable {
+enum PulsarWorkoutStartedFrom: String, nonisolated Codable, Hashable, Sendable {
     case iPhone
     case appleWatch = "AppleWatch"
     case iPhoneRequestedWatchStart
@@ -78,7 +78,7 @@ enum PulsarWorkoutMetadata {
     }
 }
 
-enum PulsarOutdoorWorkoutKind: String, Codable, CaseIterable, Identifiable, Hashable {
+enum PulsarOutdoorWorkoutKind: String, nonisolated Codable, CaseIterable, Identifiable, Hashable, Sendable {
     case running
     case indoorRunning
     case walking
@@ -536,7 +536,7 @@ extension PulsarWorkoutCatalogTint {
     nonisolated static let climber = PulsarWorkoutCatalogTint(red: 1.00, green: 0.70, blue: 0.30)
 }
 
-enum PulsarActiveWorkoutSyncPhase: String, Codable, Hashable {
+enum PulsarActiveWorkoutSyncPhase: String, nonisolated Codable, Hashable, Sendable {
     case starting
     case active
     case paused
@@ -586,7 +586,7 @@ enum PulsarActiveWorkoutSyncPhase: String, Codable, Hashable {
     }
 }
 
-enum PulsarActiveWorkoutSyncKind: Codable, Hashable {
+enum PulsarActiveWorkoutSyncKind: nonisolated Codable, Hashable, Sendable {
     case outdoor(PulsarOutdoorWorkoutKind)
     case gym(PulsarGymWorkoutKind)
 
@@ -652,7 +652,7 @@ enum PulsarActiveWorkoutSyncKind: Codable, Hashable {
     }
 }
 
-struct PulsarActiveWorkoutSyncState: Codable, Hashable, Identifiable {
+struct PulsarActiveWorkoutSyncState: nonisolated Codable, Hashable, Identifiable, Sendable {
     nonisolated var id: UUID { sessionId }
 
     var sessionId: UUID
@@ -951,7 +951,7 @@ extension PulsarActiveWorkoutSyncState {
             endedAt: state.isFinished ? state.updatedAt : nil,
             startedFrom: startedFrom,
             lastUpdatedFrom: lastUpdatedFrom ?? startedFrom,
-            phase: state.isFinished ? .ended : .active,
+            phase: state.isFinished ? .ended : (state.isPrelaunchPlaceholder ? .starting : .active),
             elapsedSeconds: state.elapsedSeconds,
             currentHeartRate: state.currentHeartRate,
             activeEnergyKilocalories: state.activeEnergyKilocalories,
@@ -1001,7 +1001,7 @@ extension PulsarActiveWorkoutSyncPhase {
     }
 }
 
-enum PulsarRunRecordingSource: String, Codable, Hashable {
+enum PulsarRunRecordingSource: String, nonisolated Codable, Hashable, Sendable {
     case appleWatch
     case iPhone
 
@@ -1013,7 +1013,7 @@ enum PulsarRunRecordingSource: String, Codable, Hashable {
     }
 }
 
-enum PulsarWatchRecorderFallbackReason: String, Codable, Hashable {
+enum PulsarWatchRecorderFallbackReason: String, nonisolated Codable, Hashable, Sendable {
     case unsupported
     case activationPending
     case noPairedWatch
@@ -1032,7 +1032,7 @@ struct PulsarWatchRecorderFallbackPrompt: Identifiable, Equatable {
     var message: String
 }
 
-enum PulsarRunPhase: String, Codable, Hashable {
+enum PulsarRunPhase: String, nonisolated Codable, Hashable, Sendable {
     case idle
     case requestingPermissions
     case countingDown
@@ -1044,7 +1044,7 @@ enum PulsarRunPhase: String, Codable, Hashable {
     case failed
 }
 
-struct PulsarRunOptions: Codable, Equatable {
+struct PulsarRunOptions: nonisolated Codable, Equatable, Sendable {
     var prefersWatchRecorder: Bool
     var autoPauseEnabled: Bool
     var audioCuesEnabled: Bool
@@ -1056,7 +1056,7 @@ struct PulsarRunOptions: Codable, Equatable {
     )
 }
 
-struct PulsarRunCoordinate: Codable, Hashable, Identifiable {
+struct PulsarRunCoordinate: nonisolated Codable, Hashable, Identifiable, Sendable {
     nonisolated var id: String { "\(timestamp.timeIntervalSince1970)-\(latitude)-\(longitude)" }
     var latitude: Double
     var longitude: Double
@@ -1082,7 +1082,7 @@ struct PulsarRunCoordinate: Codable, Hashable, Identifiable {
     }
 }
 
-struct PulsarRunMetricSnapshot: Codable, Equatable {
+struct PulsarRunMetricSnapshot: nonisolated Codable, Equatable, Sendable {
     var pulsarWorkoutSessionId: UUID?
     var phase: PulsarRunPhase
     var source: PulsarRunRecordingSource
@@ -1200,7 +1200,7 @@ nonisolated struct PulsarRunSplit: Codable, Equatable, Identifiable {
     }
 }
 
-struct PulsarRunSummary: Codable, Equatable, Identifiable {
+struct PulsarRunSummary: nonisolated Codable, Equatable, Identifiable, Sendable {
     var id: UUID
     var pulsarWorkoutSessionId: UUID?
     var workoutUUID: UUID?
@@ -1381,27 +1381,42 @@ struct PulsarRunSummary: Codable, Equatable, Identifiable {
     }
 }
 
-struct PulsarRunSessionIdentity: Codable, Equatable {
+struct PulsarRunSessionIdentity: nonisolated Codable, Equatable, Sendable {
     var sessionId: UUID
+    var requestID: UUID? = nil
     var workoutKind: PulsarOutdoorWorkoutKind
     var startedFrom: PulsarWorkoutStartedFrom
     var sentAt: Date
 }
 
-struct PulsarRunRouteDelta: Codable, Equatable {
+struct PulsarRunStartAcknowledgement: nonisolated Codable, Equatable, Sendable {
+    var requestID: UUID
+    var candidateSessionID: UUID
+    var authoritativeSessionID: UUID
+    var workoutKind: PulsarOutdoorWorkoutKind
+    var isHealthKitRunning: Bool
+    var isMirroringAvailable: Bool
+    var acknowledgedAt: Date
+
+    var isAuthoritativeWatchRunning: Bool {
+        isHealthKitRunning && candidateSessionID == authoritativeSessionID
+    }
+}
+
+struct PulsarRunRouteDelta: nonisolated Codable, Equatable, Sendable {
     var sessionId: UUID
     var workoutKind: PulsarOutdoorWorkoutKind
     var points: [PulsarRunCoordinate]
     var sentAt: Date
 }
 
-enum PulsarRunControlCommand: String, Codable, Hashable {
+enum PulsarRunControlCommand: String, nonisolated Codable, Hashable, Sendable {
     case pause
     case resume
     case finish
 }
 
-struct PulsarRunSessionCommand: Codable, Equatable {
+struct PulsarRunSessionCommand: nonisolated Codable, Equatable, Sendable {
     var sessionId: UUID?
     var command: PulsarRunControlCommand
     var commandId: UUID
@@ -1409,7 +1424,7 @@ struct PulsarRunSessionCommand: Codable, Equatable {
     var retryAttempt: Int
 }
 
-struct PulsarRunCommandAcknowledgement: Codable, Equatable {
+struct PulsarRunCommandAcknowledgement: nonisolated Codable, Equatable, Sendable {
     var commandId: UUID
     var sessionId: UUID?
     var command: PulsarRunControlCommand
@@ -1419,8 +1434,9 @@ struct PulsarRunCommandAcknowledgement: Codable, Equatable {
     var acknowledgedAt: Date
 }
 
-enum PulsarRunTransportEnvelope: Codable, Equatable {
+enum PulsarRunTransportEnvelope: nonisolated Codable, Equatable, Sendable {
     case identity(PulsarRunSessionIdentity)
+    case startAcknowledgement(PulsarRunStartAcknowledgement)
     case options(PulsarRunOptions)
     case metrics(PulsarRunMetricSnapshot)
     case routeDelta(PulsarRunRouteDelta)
@@ -1432,6 +1448,7 @@ enum PulsarRunTransportEnvelope: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case kind
         case identity
+        case startAcknowledgement
         case options
         case metrics
         case routeDelta
@@ -1443,6 +1460,7 @@ enum PulsarRunTransportEnvelope: Codable, Equatable {
 
     private enum Kind: String, Codable {
         case identity
+        case startAcknowledgement
         case options
         case metrics
         case routeDelta
@@ -1458,6 +1476,8 @@ enum PulsarRunTransportEnvelope: Codable, Equatable {
         switch kind {
         case .identity:
             self = .identity(try container.decode(PulsarRunSessionIdentity.self, forKey: .identity))
+        case .startAcknowledgement:
+            self = .startAcknowledgement(try container.decode(PulsarRunStartAcknowledgement.self, forKey: .startAcknowledgement))
         case .options:
             self = .options(try container.decode(PulsarRunOptions.self, forKey: .options))
         case .metrics:
@@ -1481,6 +1501,9 @@ enum PulsarRunTransportEnvelope: Codable, Equatable {
         case .identity(let identity):
             try container.encode(Kind.identity, forKey: .kind)
             try container.encode(identity, forKey: .identity)
+        case .startAcknowledgement(let acknowledgement):
+            try container.encode(Kind.startAcknowledgement, forKey: .kind)
+            try container.encode(acknowledgement, forKey: .startAcknowledgement)
         case .options(let options):
             try container.encode(Kind.options, forKey: .kind)
             try container.encode(options, forKey: .options)
@@ -1508,11 +1531,21 @@ enum PulsarRunTransportEnvelope: Codable, Equatable {
 
 enum PulsarRunTransportCodec {
     static func encode(_ envelope: PulsarRunTransportEnvelope) -> Data? {
-        try? JSONEncoder.pulsarRun.encode(envelope)
+        PulsarPerformanceSignposts.measure(
+            PulsarPerformanceSignposts.watchConnectivity,
+            name: "encode"
+        ) {
+            try? JSONEncoder.pulsarRun.encode(envelope)
+        }
     }
 
     static func decode(_ data: Data) -> PulsarRunTransportEnvelope? {
-        try? JSONDecoder.pulsarRun.decode(PulsarRunTransportEnvelope.self, from: data)
+        PulsarPerformanceSignposts.measure(
+            PulsarPerformanceSignposts.watchConnectivity,
+            name: "decode"
+        ) {
+            try? JSONDecoder.pulsarRun.decode(PulsarRunTransportEnvelope.self, from: data)
+        }
     }
 }
 
@@ -1770,7 +1803,7 @@ nonisolated struct PulsarRunDerivedMetrics {
     }
 }
 
-struct PulsarRunGPSDistanceFilter {
+nonisolated struct PulsarRunGPSDistanceFilter {
     struct Decision {
         var timestamp: Date
         var horizontalAccuracy: Double?

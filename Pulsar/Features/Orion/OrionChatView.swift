@@ -885,6 +885,7 @@ private struct OrionFloatingGlassBackground: View {
     }
 }
 
+#if DEBUG
 #Preview("Orion Chat") {
     OrionChatView(viewModel: .preview)
         .background(StaticTimeBackgroundView(mode: .night))
@@ -896,3 +897,4 @@ private struct OrionFloatingGlassBackground: View {
         isPresented: .constant(true)
     )
 }
+#endif

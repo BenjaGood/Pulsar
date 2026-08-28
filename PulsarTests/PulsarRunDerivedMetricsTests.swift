@@ -10,6 +10,18 @@ import WatchConnectivity
 @testable import Pulsar
 
 struct PulsarRunDerivedMetricsTests {
+    @MainActor
+    private func finalizePendingRootDismissal(_ manager: PulsarActiveWorkoutManager) {
+        guard let dismissal = manager.consumePendingDismissedCurrentWorkout() else {
+            Issue.record("Expected a pending dismissal for the current run")
+            return
+        }
+        #expect(manager.finalizeWorkoutPresentationDismissal(
+            dismissal,
+            reason: "testRootSheetOnDismiss"
+        ))
+    }
+
     @Test func durationFormatterDistinguishesHours() {
         #expect(PulsarRunFormatters.duration(65) == "01:05")
         #expect(PulsarRunFormatters.duration(3_725) == "1:02:05")
@@ -461,7 +473,7 @@ struct PulsarRunDerivedMetricsTests {
         #expect(route.elevationSamples.count == 3)
     }
 
-    @Test func recentWatchHeartbeatOverridesRawInstalledFalse() {
+    @Test func recentWatchHeartbeatIsDiagnosticOnly() {
         let snapshot = PulsarWatchRecorderAvailabilitySnapshot(
             isSupported: true,
             activationStateRawValue: WCSessionActivationState.activated.rawValue,
@@ -475,14 +487,15 @@ struct PulsarRunDerivedMetricsTests {
         )
 
         #expect(snapshot.hasRecentWatchHeartbeat)
-        #expect(snapshot.isWatchAppInstalled)
-        #expect(snapshot.isReachable)
-        #expect(snapshot.canStartOnWatch)
-        #expect(snapshot.fallbackReason == nil)
-        #expect(snapshot.derivedReachabilityDescription == "recentHeartbeat")
+        #expect(snapshot.hasDiagnosticRecentWatchHeartbeat)
+        #expect(!snapshot.isWatchAppInstalled)
+        #expect(!snapshot.isReachable)
+        #expect(!snapshot.canStartOnWatch)
+        #expect(snapshot.fallbackReason == .notReachable)
+        #expect(snapshot.derivedReachabilityDescription == "recentHeartbeatDiagnosticOnly")
     }
 
-    @Test func staleWatchPayloadAvoidsFalseNotInstalledFallback() {
+    @Test func staleWatchPayloadDoesNotPromoteRawInstallationState() {
         let snapshot = PulsarWatchRecorderAvailabilitySnapshot(
             isSupported: true,
             activationStateRawValue: WCSessionActivationState.activated.rawValue,
@@ -496,7 +509,7 @@ struct PulsarRunDerivedMetricsTests {
         )
 
         #expect(!snapshot.hasRecentWatchHeartbeat)
-        #expect(snapshot.isWatchAppInstalled)
+        #expect(!snapshot.isWatchAppInstalled)
         #expect(!snapshot.isReachable)
         #expect(snapshot.fallbackReason == .notReachable)
     }
@@ -762,6 +775,21 @@ struct PulsarRunDerivedMetricsTests {
         #expect(activeState.isFreshRestoreConfirmation(now: now, interval: 90))
         #expect(!staleState.isFreshRestoreConfirmation(now: now, interval: 90))
         #expect(!endingState.isFreshRestoreConfirmation(now: now, interval: 90))
+        #expect(!PulsarWatchConnectivitySyncStore.shouldAcceptFreshCounterpartWorkout(
+            activeState,
+            reason: "activationHydration.workoutPriority",
+            now: now
+        ))
+        #expect(PulsarWatchConnectivitySyncStore.shouldAcceptFreshCounterpartWorkout(
+            activeState,
+            reason: "receivedApplicationContext.workoutPriority",
+            now: now
+        ))
+        #expect(!PulsarWatchConnectivitySyncStore.shouldAcceptFreshCounterpartWorkout(
+            staleState,
+            reason: "receivedApplicationContext",
+            now: now
+        ))
     }
 
     @Test func cancelledWorkoutDecisionOnlyClearsMatchingCurrentSession() {
@@ -786,6 +814,7 @@ struct PulsarRunDerivedMetricsTests {
     }
 
     @Test @MainActor func activeWorkoutManagerBlocksMinimizeWithoutSession() {
+        PulsarWorkoutStartCoordinator.shared.resetForTesting()
         let manager = PulsarActiveWorkoutManager()
 
         manager.minimizeRunWorkout(.running, sessionID: nil)
@@ -796,8 +825,10 @@ struct PulsarRunDerivedMetricsTests {
     }
 
     @Test @MainActor func activeWorkoutManagerMinimizesCurrentRunImmediately() {
+        PulsarWorkoutStartCoordinator.shared.resetForTesting()
         let manager = PulsarActiveWorkoutManager()
         let sessionId = UUID()
+        PulsarWorkoutStartCoordinator.shared.markSessionReachedActive(sessionID: sessionId, source: "test")
 
         manager.reconcileActiveWorkoutPresentation(
             route: .run(.running),
@@ -808,13 +839,19 @@ struct PulsarRunDerivedMetricsTests {
         manager.minimizeRunWorkout(.running, sessionID: sessionId)
 
         #expect(manager.activeWorkout?.sessionID == sessionId)
+        #expect(manager.presentationState == .minimizing(sessionId))
+        #expect(manager.presentation == .expanded(sessionId))
+        finalizePendingRootDismissal(manager)
         #expect(manager.presentation == .minimized(sessionId))
         #expect(manager.presentedWorkout == nil)
+        PulsarWorkoutStartCoordinator.shared.resetForTesting()
     }
 
     @Test @MainActor func activeWorkoutManagerIgnoresClearForDifferentSession() {
+        PulsarWorkoutStartCoordinator.shared.resetForTesting()
         let manager = PulsarActiveWorkoutManager()
         let currentSessionId = UUID()
+        PulsarWorkoutStartCoordinator.shared.markSessionReachedActive(sessionID: currentSessionId, source: "test")
 
         manager.reconcileActiveWorkoutPresentation(
             route: .run(.running),
@@ -823,15 +860,19 @@ struct PulsarRunDerivedMetricsTests {
             reason: "testStart"
         )
         manager.minimizeRunWorkout(.running, sessionID: currentSessionId)
+        finalizePendingRootDismissal(manager)
         manager.clearRunWorkout(sessionID: UUID())
 
         #expect(manager.activeWorkout?.sessionID == currentSessionId)
         #expect(manager.presentation == .minimized(currentSessionId))
+        PulsarWorkoutStartCoordinator.shared.resetForTesting()
     }
 
     @Test @MainActor func activeWorkoutManagerBlocksNonTerminalRunClear() {
+        PulsarWorkoutStartCoordinator.shared.resetForTesting()
         let manager = PulsarActiveWorkoutManager()
         let sessionId = UUID()
+        PulsarWorkoutStartCoordinator.shared.markSessionReachedActive(sessionID: sessionId, source: "test")
 
         manager.reconcileActiveWorkoutPresentation(
             route: .run(.running),
@@ -840,6 +881,7 @@ struct PulsarRunDerivedMetricsTests {
             reason: "testStart"
         )
         manager.minimizeRunWorkout(.running, sessionID: sessionId)
+        finalizePendingRootDismissal(manager)
         manager.clearRunWorkout(
             sessionID: sessionId,
             phase: "idle",
@@ -850,11 +892,14 @@ struct PulsarRunDerivedMetricsTests {
         #expect(manager.activeWorkout?.sessionID == sessionId)
         #expect(manager.presentation == .minimized(sessionId))
         #expect(manager.presentedWorkout == nil)
+        PulsarWorkoutStartCoordinator.shared.resetForTesting()
     }
 
     @Test @MainActor func activeWorkoutManagerPreservesMinimizedRunAcrossDuplicateSync() {
+        PulsarWorkoutStartCoordinator.shared.resetForTesting()
         let manager = PulsarActiveWorkoutManager()
         let sessionId = UUID()
+        PulsarWorkoutStartCoordinator.shared.markSessionReachedActive(sessionID: sessionId, source: "test")
 
         let didOpen = manager.reconcileActiveWorkoutPresentation(
             route: .run(.running),
@@ -863,6 +908,7 @@ struct PulsarRunDerivedMetricsTests {
             reason: "initialSync"
         )
         manager.minimizeRunWorkout(.running, sessionID: sessionId)
+        #expect(manager.presentationState == .minimizing(sessionId))
         let didReopen = manager.reconcileActiveWorkoutPresentation(
             route: .run(.running),
             sessionID: sessionId,
@@ -872,9 +918,12 @@ struct PulsarRunDerivedMetricsTests {
 
         #expect(didOpen)
         #expect(!didReopen)
+        #expect(manager.presentationState == .minimizing(sessionId))
+        finalizePendingRootDismissal(manager)
         #expect(manager.activeWorkout?.sessionID == sessionId)
         #expect(manager.presentation == .minimized(sessionId))
         #expect(manager.presentedWorkout == nil)
+        PulsarWorkoutStartCoordinator.shared.resetForTesting()
     }
 
     @Test func runHistoryMergesSavesWithSamePulsarSessionId() async throws {
@@ -924,6 +973,41 @@ struct PulsarRunDerivedMetricsTests {
 
         let acknowledgementData = try #require(PulsarRunTransportCodec.encode(.commandAcknowledgement(acknowledgement)))
         #expect(PulsarRunTransportCodec.decode(acknowledgementData) == .commandAcknowledgement(acknowledgement))
+    }
+
+    @Test func runStartAcknowledgementRoundTripsAndRequiresMatchingWatchState() throws {
+        let sessionID = UUID()
+        let acknowledgement = PulsarRunStartAcknowledgement(
+            requestID: UUID(),
+            candidateSessionID: sessionID,
+            authoritativeSessionID: sessionID,
+            workoutKind: .running,
+            isHealthKitRunning: true,
+            isMirroringAvailable: true,
+            acknowledgedAt: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+        let data = try #require(PulsarRunTransportCodec.encode(.startAcknowledgement(acknowledgement)))
+        #expect(PulsarRunTransportCodec.decode(data) == .startAcknowledgement(acknowledgement))
+
+        let state = PulsarActiveWorkoutSyncState(
+            sessionId: sessionID,
+            kind: .outdoor(.running),
+            startedAt: Date(timeIntervalSince1970: 1_800_000_000),
+            startedFrom: .iPhoneRequestedWatchStart,
+            lastUpdatedFrom: .appleWatch,
+            phase: .active,
+            elapsedSeconds: 1
+        )
+        #expect(PulsarRunCoordinator.isAuthoritativeWatchRunState(
+            state,
+            sessionID: sessionID,
+            workoutKind: .running
+        ))
+        #expect(!PulsarRunCoordinator.isAuthoritativeWatchRunState(
+            state,
+            sessionID: UUID(),
+            workoutKind: .running
+        ))
     }
 
     private func makeActiveWorkoutState(

@@ -105,15 +105,18 @@ final class OuraSyncService: OuraSyncServicing {
             PulsarOuraLogger.log("Incremental sync deferred reason=\(reason) retryIn=\(delay)s")
             throw OuraAPIError.transport(message)
         }
+        PulsarOuraLogger.log("sync scheduled reason=\(reason) start=\(OuraDateParser.dayString(for: window.start, calendar: calendar)) end=\(OuraDateParser.dayString(for: window.end, calendar: calendar))")
         PulsarOuraLogger.log("Incremental sync started start=\(OuraDateParser.dayString(for: window.start, calendar: calendar)) end=\(OuraDateParser.dayString(for: window.end, calendar: calendar)) reason=\(reason) lastSyncAt=\(connectionStore.lastSyncAt?.description ?? "nil") scopes=\(scopes.map(\.rawValue).sorted().joined(separator: ","))")
 
         do {
+            PulsarOuraLogger.log("network request started reason=\(reason)")
             let bundle = try await apiClient.fetchBundle(
                 startDate: window.start,
                 endDate: window.end,
                 scopes: scopes,
                 calendar: calendar
             )
+            PulsarOuraLogger.log("decode started reason=\(reason)")
             var mapped = mapper.map(bundle: bundle, for: date, syncedAt: Date())
             mapped.debugReport = OuraSyncDebugReport.make(
                 reason: reason,
@@ -132,6 +135,7 @@ final class OuraSyncService: OuraSyncServicing {
             }
             consecutiveFailureCount = 0
             nextAllowedAutomaticSyncAt = nil
+            PulsarOuraLogger.log("persistence started reason=\(reason)")
             connectionStore.markSynced(at: mapped.mappedAt)
             recentSuccessfulSync = RecentSuccessfulSync(
                 mapped: mapped,

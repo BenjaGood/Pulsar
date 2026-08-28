@@ -67,6 +67,13 @@ Do not use unrelated document, web, data, presentation, deployment, or general c
 - Do not introduce SwiftLint, SwiftFormat, or broad formatting churn without explicit user approval. If those tools are added later, start with a gradual config that protects correctness without rewriting the whole project.
 - Keep previews, fixtures, and tests aligned with the touched feature. Prefer focused tests for scoring logic, Orion contracts, HealthKit transforms, duplicate-workout guards, and WatchConnectivity state reconciliation.
 
+## Supabase Food Community Boundary
+
+- Supabase is limited to the shared food catalog: OpenNutrition imports, community food contributions, nutrients, review state, and food evidence images.
+- Keep profile data, HealthKit, workouts, sleep, recovery, personal meals, settings, and iPhone/Apple Watch sync in local/iCloud stores. Do not add those payloads to Supabase requests.
+- The iOS target may use only the public Supabase URL and publishable/anon key. Keep service-role credentials in backend/importer code only.
+- Public food reads must expose only imported or reviewed products. Pending community contributions and their evidence are private to the authenticated contributor.
+
 ## Subagent Guidance
 
 - Use subagents for independent read-heavy research, codebase mapping, log/test analysis, or clearly separated implementation slices.

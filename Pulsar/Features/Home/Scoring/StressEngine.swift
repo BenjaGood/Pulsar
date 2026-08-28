@@ -151,15 +151,13 @@ struct StressBaselineBuilder {
     }
 
     private func metric(_ values: [Double], minimumStandardDeviation: Double) -> StressMetricBaseline? {
-        let values = values.filter { $0.isFinite }
-        guard values.count >= Self.minimumBaselineDays else { return nil }
-        let mean = values.reduce(0, +) / Double(values.count)
-        let variance = values.reduce(0) { partial, value in
-            partial + pow(value - mean, 2)
-        } / Double(max(1, values.count - 1))
+        let values = values.filter(\.isFinite).sorted()
+        guard values.count >= Self.minimumBaselineDays,
+              let median = ScoreMath.median(values) else { return nil }
+        let medianAbsoluteDeviation = ScoreMath.medianAbsoluteDeviation(values, median: median) ?? 0
         return StressMetricBaseline(
-            mean: mean,
-            standardDeviation: max(sqrt(variance), minimumStandardDeviation),
+            mean: median,
+            standardDeviation: max(medianAbsoluteDeviation * 1.4826, minimumStandardDeviation),
             sampleCount: values.count
         )
     }
@@ -498,7 +496,7 @@ struct StressEngine {
         let confidence: ConfidenceGrade = signalQualityLimited ? .low : metric.confidence.appConfidence
         let score = metric.isPaused ? nil : metric.score
         let state = signalQualityLimited ? .lowConfidence : stressSummaryState(from: metric)
-        var insights = metric.driverInsights.isEmpty ? ["Your current HR and HRV are close to baseline."] : metric.driverInsights
+        var insights = metric.driverInsights.isEmpty ? ["Your heart and recovery signals are close to your normal baseline."] : metric.driverInsights
         if signalQualityLimited {
             insights.insert("Low confidence because motion or signal quality may be affecting heart-rate data.", at: 0)
         }
@@ -544,7 +542,7 @@ struct StressEngine {
             daytimeHeartRate: today.walkingHeartRateAverage,
             sleepDurationMinutes: today.sleepDurationHours.map { $0 * 60 },
             sleepPerformance: nil,
-            strainScore: nil,
+            strainScore: today.strainScore,
             recentWorkoutLoad: today.recentWorkoutLoad,
             isWorkoutActive: today.currentMotionContext == .workout,
             lastWorkoutEnd: today.lastWorkoutEnd,
@@ -570,6 +568,7 @@ struct StressEngine {
                 wristTemperatureDeviation: $0.wristTemperatureDelta,
                 sleepPerformance: nil,
                 strainScore: nil,
+                recentWorkoutLoad: $0.recentWorkoutLoad,
                 sourceNames: $0.sourceBadges.map(\.displayName)
             )
         }
@@ -621,7 +620,7 @@ struct StressEngine {
             StressDriver(
                 id: "stress-driver-\(index)",
                 title: insight,
-                detail: "Based on recent HR and HRV relative to your personal baseline, with movement filtered out.",
+                detail: "Based on available heart, breathing, sleep, and load signals relative to your personal baseline, with movement filtered out.",
                 severity: (metric.score >= 75 ? .high : (metric.score >= 50 ? .elevated : .neutral)),
                 relatedMetric: nil
             )
@@ -643,6 +642,27 @@ struct StressEngine {
                 value: metric.hrvSDNN.map { "\(Int($0.rounded())) ms" } ?? "Not available",
                 baseline: metric.hrvBaseline.map { "Baseline \(Int($0.rounded())) ms" },
                 availability: metric.hrvSDNN == nil ? .unavailable : .available
+            ),
+            StressSignal(
+                id: "resting-heart-rate",
+                title: "Resting HR",
+                value: metric.restingHeartRate.map { "\(Int($0.rounded())) bpm" } ?? "Not available",
+                baseline: metric.restingHeartRateBaseline.map { "Baseline \(Int($0.rounded())) bpm" },
+                availability: metric.restingHeartRate == nil ? .unavailable : .available
+            ),
+            StressSignal(
+                id: "respiratory-rate",
+                title: "Respiratory rate",
+                value: metric.respiratoryRate.map { $0.formatted(.number.precision(.fractionLength(1))) + " breaths/min" } ?? "Not available",
+                baseline: "Compared with your rolling baseline",
+                availability: metric.respiratoryRate == nil ? .unavailable : .available
+            ),
+            StressSignal(
+                id: "sleep-duration",
+                title: "Sleep duration",
+                value: metric.sleepDurationMinutes.map { Int($0.rounded()).formatted() + " min" } ?? "Not available",
+                baseline: "Supports the daily estimate",
+                availability: metric.sleepDurationMinutes == nil ? .unavailable : .available
             ),
             StressSignal(
                 id: "non-activity-stress",
@@ -670,14 +690,14 @@ struct StressEngine {
 
     private func explanation(metric: PulsarStressSyncMetric, state: StressSummaryState) -> String {
         if state == .workoutPaused {
-            return "Stress tracking is paused during workouts because exercise naturally raises heart rate."
+            return "Stress pauses during workouts to separate exercise from daily load."
         }
         if state == .cooldown {
-            return "Stress is paused while your heart rate settles after activity."
+            return "Stress resumes after your heart rate settles."
         }
         if state == .lowConfidence || metric.confidence == .low {
-            return "Estimated stress is shown with low confidence because recent HRV or heart-rate data is limited."
+            return "Recent wearable data is limited, so this score is an estimate."
         }
-        return "Current stress compares recent HR and HRV with your baseline, while filtering movement and workout effects."
+        return metric.driverInsights.first ?? "Your heart and recovery signals are close to your normal baseline."
     }
 }

@@ -55,7 +55,7 @@ struct CompletedWorkoutExercisesSection: View {
         HStack(alignment: .center, spacing: 12) {
             Text("Completed Exercises")
                 .pulsarTextStyle(.sectionHeader)
-                .foregroundStyle(.white)
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
 
             Spacer(minLength: 0)
 
@@ -70,7 +70,7 @@ struct CompletedWorkoutExercisesSection: View {
                 Label(allExpanded ? "Collapse All" : "Expand All", systemImage: allExpanded ? "chevron.up" : "chevron.down")
                     .pulsarTextStyle(.captionEmphasis)
                     .labelStyle(.titleAndIcon)
-                    .foregroundStyle(.white.opacity(0.82))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 9)
                     .background(.white.opacity(0.075), in: Capsule(style: .continuous))
@@ -107,20 +107,20 @@ private struct CompletedWorkoutExerciseCard: View {
 
                     Text(exercise.exerciseName)
                         .pulsarTextStyle(.cardTitle)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     if !isExpanded {
                         Text(exercise.setCountText)
                             .pulsarTextStyle(.captionEmphasis)
-                            .foregroundStyle(.white.opacity(0.58))
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                             .lineLimit(1)
                     }
 
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .pulsarTextStyle(.label)
-                        .foregroundStyle(.white.opacity(0.82))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                         .frame(width: 28, height: 28)
                 }
                 .contentShape(Rectangle())
@@ -172,7 +172,7 @@ private struct CompletedWorkoutExerciseCard: View {
                     Label("History & PR", systemImage: "chevron.right")
                         .pulsarTextStyle(.captionEmphasis)
                         .labelStyle(.titleAndIcon)
-                        .foregroundStyle(Color(red: 0.78, green: 0.62, blue: 1.0))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
                         .background(.white.opacity(0.055), in: Capsule(style: .continuous))
@@ -193,12 +193,12 @@ private struct CompletedWorkoutExerciseCard: View {
         Text("\(exercise.index)")
             .pulsarTextStyle(.label)
             .monospacedDigit()
-            .foregroundStyle(Color(red: 0.78, green: 0.62, blue: 1.0))
+            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
             .frame(width: 36, height: 36)
-            .background(Color(red: 0.64, green: 0.50, blue: 1.0).opacity(0.14), in: Circle())
+            .background(PulsarFitnessMonochromeDesign.primaryText.opacity(0.14), in: Circle())
             .overlay {
                 Circle()
-                    .stroke(Color(red: 0.78, green: 0.62, blue: 1.0).opacity(0.30), lineWidth: 1)
+                    .stroke(PulsarFitnessMonochromeDesign.primaryText.opacity(0.30), lineWidth: 1)
             }
     }
 
@@ -207,7 +207,7 @@ private struct CompletedWorkoutExerciseCard: View {
             colors: [
                 .white.opacity(isExpanded ? 0.12 : 0.085),
                 .white.opacity(isExpanded ? 0.055 : 0.038),
-                Color(red: 0.64, green: 0.50, blue: 1.0).opacity(isExpanded ? 0.055 : 0.028)
+                PulsarFitnessMonochromeDesign.primaryText.opacity(isExpanded ? 0.055 : 0.028)
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -225,7 +225,7 @@ private struct CompletedWorkoutInstructionPreview: View {
 
     private var accent: Color {
         ExerciseProgressService.primaryMatrixGroup(for: exercise.primaryMuscleGroup)?.accent
-            ?? Color(red: 0.78, green: 0.62, blue: 1.0)
+            ?? PulsarFitnessMonochromeDesign.primaryText
     }
 
     var body: some View {
@@ -233,7 +233,7 @@ private struct CompletedWorkoutInstructionPreview: View {
             if let instructions = exercise.instructionsPreview {
                 Text(instructions)
                     .pulsarTextStyle(.label)
-                    .foregroundStyle(.white.opacity(0.72))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -241,7 +241,7 @@ private struct CompletedWorkoutInstructionPreview: View {
                     Button(action: onShowInstructions) {
                         Label("View instructions", systemImage: "text.alignleft")
                             .pulsarTextStyle(.captionEmphasis)
-                            .foregroundStyle(Color(red: 0.78, green: 0.62, blue: 1.0))
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("View full instructions for \(exercise.exerciseName)")
@@ -249,7 +249,7 @@ private struct CompletedWorkoutInstructionPreview: View {
             } else {
                 Label("No form instructions saved for this exercise.", systemImage: "info.circle")
                     .pulsarTextStyle(.label)
-                    .foregroundStyle(.white.opacity(0.58))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -301,7 +301,7 @@ private struct CompletedWorkoutSetTable: View {
     private func tableHeaderText(_ text: String, width: CGFloat? = nil, alignment: Alignment) -> some View {
         let label = Text(text)
             .pulsarTextStyle(.captionEmphasis)
-            .foregroundStyle(.white.opacity(0.48))
+            .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
 
         if let width {
             label.frame(width: width, alignment: alignment)
@@ -323,13 +323,13 @@ private struct CompletedWorkoutSetTableRow: View {
             Text("\(set.setNumber)")
                 .pulsarTextStyle(.label)
                 .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.90))
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                 .frame(width: 42, alignment: .leading)
 
             Text("\(set.reps)")
                 .pulsarTextStyle(.label)
                 .monospacedDigit()
-                .foregroundStyle(.white)
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                 .frame(width: 54, alignment: .center)
 
             weightCell
@@ -338,14 +338,14 @@ private struct CompletedWorkoutSetTableRow: View {
             Text(oneRepMaxText)
                 .pulsarTextStyle(.label)
                 .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.86))
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
                 .frame(width: 76, alignment: .center)
 
             Image(systemName: "checkmark.circle")
                 .pulsarTextStyle(.label)
-                .foregroundStyle(Color(red: 0.52, green: 1.0, blue: 0.62))
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                 .frame(width: 30)
         }
         .padding(.horizontal, 10)
@@ -380,7 +380,7 @@ private struct CompletedWorkoutSetTableRow: View {
                 }
                 .pulsarTextStyle(.captionEmphasis)
                 .monospacedDigit()
-                .foregroundStyle(.white)
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.76)
                 .padding(.horizontal, 12)
@@ -393,7 +393,7 @@ private struct CompletedWorkoutSetTableRow: View {
             Text(weightText)
                 .pulsarTextStyle(.captionEmphasis)
                 .monospacedDigit()
-                .foregroundStyle(.white)
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.76)
                 .padding(.horizontal, 12)

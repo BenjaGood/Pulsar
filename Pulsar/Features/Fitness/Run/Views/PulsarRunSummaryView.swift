@@ -53,7 +53,7 @@ struct PulsarRunSummaryView: View {
                         .stroke(summary.workoutKind.accentColor, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
                     if let startCoordinate = routeCoordinates.first {
                         Marker("Start", systemImage: "record.circle", coordinate: startCoordinate)
-                            .tint(.green)
+                            .tint(PulsarFitnessMonochromeDesign.active)
                     }
                     if let endCoordinate = routeCoordinates.last {
                         Marker("Finish", systemImage: "flag.checkered", coordinate: endCoordinate)

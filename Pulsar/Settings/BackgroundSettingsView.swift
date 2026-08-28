@@ -10,101 +10,45 @@ struct HomeBackgroundSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 18) {
-                HelperCard(
-                    symbol: "sparkles",
-                    title: "Home Background",
-                    message: "Automatic mode selects a cinematic wallpaper from local time. Manual modes keep the Home wallpaper fixed.",
-                    tint: .indigo
-                )
+            VStack(alignment: .leading, spacing: 12) {
+                Text("MODE")
+                    .font(.caption)
+                    .bold()
+                    .tracking(0.6)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 2)
 
-                SettingsSectionCard(title: "Mode") {
-                    VStack(spacing: 0) {
+                PulsarGlassEffectGroup(spacing: 18) {
+                    VStack(spacing: 18) {
                         ForEach(HomeBackgroundMode.allCases) { mode in
-                            Button {
+                            AppearanceModeCard(
+                                mode: mode,
+                                isSelected: store.mode == mode
+                            ) {
                                 store.setMode(mode)
-                            } label: {
-                                HStack(spacing: 14) {
-                                    SettingsIcon(symbol: symbol(for: mode), tint: tint(for: mode))
-
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(mode.title)
-                                            .pulsarTextStyle(.bodyEmphasis)
-                                            .foregroundStyle(.primary)
-                                        Text(subtitle(for: mode))
-                                            .pulsarTextStyle(.metadata)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(2)
-                                    }
-
-                                    Spacer(minLength: 12)
-
-                                    if store.mode == mode {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .pulsarTextStyle(.cardTitle)
-                                            .foregroundStyle(tint(for: mode))
-                                    }
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-
-                            if mode != HomeBackgroundMode.allCases.last {
-                                SettingsDivider()
                             }
                         }
                     }
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 12)
-            .padding(.bottom, 30)
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, 36)
         }
-        .background(PulsarSectionBackground())
-        .navigationTitle("Home Background")
+        .background(PulsarSettingsBackground())
+        .navigationTitle("Appearance")
         .navigationBarTitleDisplayMode(.large)
-    }
-
-    private func symbol(for mode: HomeBackgroundMode) -> String {
-        switch mode {
-        case .automatic: "clock.badge.checkmark.fill"
-        case .morning: "sunrise.fill"
-        case .day: "sun.max.fill"
-        case .sunset: "sunset.fill"
-        case .night, .minimalDark: "moon.stars.fill"
-        }
-    }
-
-    private func tint(for mode: HomeBackgroundMode) -> Color {
-        switch mode {
-        case .automatic: .cyan
-        case .morning: .pink
-        case .day: .blue
-        case .sunset: .orange
-        case .night, .minimalDark: .indigo
-        }
-    }
-
-    private func subtitle(for mode: HomeBackgroundMode) -> String {
-        switch mode {
-        case .automatic:
-            return "5 AM sunrise, 11 AM day, 6 PM sunset, 9 PM night."
-        case .morning:
-            return "Soft sunrise wallpaper with warm horizon light."
-        case .day:
-            return "Bright calm daylight wallpaper."
-        case .sunset:
-            return "Dramatic orange horizon and deep navy sky."
-        case .night, .minimalDark:
-            return "Deep night wallpaper with subtle stars."
-        }
+        .tint(SettingsMonochromeDesign.primary)
+        .preferredColorScheme(.light)
     }
 }
 
-#Preview("Background Settings") {
+#Preview("Appearance Settings") {
     NavigationStack {
-        HomeBackgroundSettingsView(store: HomeBackgroundSettingsStore(defaults: UserDefaults(suiteName: "pulsar.background.preview") ?? .standard))
+        HomeBackgroundSettingsView(
+            store: HomeBackgroundSettingsStore(
+                defaults: UserDefaults(suiteName: "pulsar.appearance.preview") ?? .standard
+            )
+        )
     }
 }

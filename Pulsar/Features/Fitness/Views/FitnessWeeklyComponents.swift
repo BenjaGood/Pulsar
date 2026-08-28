@@ -76,7 +76,7 @@ struct FitnessWeekHeaderView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .frame(height: 164)
-        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 30, tint: Color(red: 0.70, green: 0.88, blue: 0.72)))
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: PulsarTabLayout.primaryCardCornerRadius))
     }
 
     private func weekArrow(systemName: String, action: @escaping () -> Void, isEnabled: Bool) -> some View {
@@ -108,12 +108,12 @@ struct FitnessWeekHeaderView: View {
     private func statusPill(text: String) -> some View {
         HStack(spacing: 9) {
             Circle()
-                .fill(week.hasWorkout ? Color.green : secondaryText.opacity(0.54))
+                .fill(week.hasWorkout ? PulsarFitnessMonochromeDesign.active : secondaryText.opacity(0.54))
                 .frame(width: 8, height: 8)
 
             Text(text)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(week.hasWorkout ? Color.green.opacity(0.92) : secondaryText)
+                .foregroundStyle(week.hasWorkout ? PulsarFitnessMonochromeDesign.primaryText : secondaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
         }
@@ -159,7 +159,7 @@ private struct FitnessWeeklyRhythmChart: View {
                 ForEach(Array(labels.enumerated()), id: \.offset) { _, label in
                     Text(label)
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.50))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.tertiaryText)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -175,7 +175,7 @@ private struct FitnessWeeklyRhythmChart: View {
                 path.move(to: CGPoint(x: x, y: 0))
                 path.addLine(to: CGPoint(x: x, y: canvasSize.height))
             }
-            context.stroke(path, with: .color(.white.opacity(0.08)), lineWidth: 0.7)
+            context.stroke(path, with: .color(.black.opacity(0.065)), lineWidth: 0.7)
         }
     }
 
@@ -190,17 +190,7 @@ private struct FitnessWeeklyRhythmChart: View {
             }
             area.addLine(to: CGPoint(x: last.x, y: canvasSize.height))
             area.closeSubpath()
-            context.fill(
-                area,
-                with: .linearGradient(
-                    Gradient(colors: [
-                        Color.green.opacity(hasWorkout ? 0.30 : 0.16),
-                        Color.green.opacity(0.040)
-                    ]),
-                    startPoint: CGPoint(x: canvasSize.width, y: 0),
-                    endPoint: CGPoint(x: canvasSize.width, y: canvasSize.height)
-                )
-            )
+            context.fill(area, with: .color(.black.opacity(hasWorkout ? 0.018 : 0.010)))
         }
     }
 
@@ -212,17 +202,17 @@ private struct FitnessWeeklyRhythmChart: View {
             for point in points.dropFirst() {
                 path.addLine(to: point)
             }
-            context.stroke(path, with: .color(Color.green.opacity(hasWorkout ? 0.42 : 0.20)), style: StrokeStyle(lineWidth: 7.0, lineCap: .round, lineJoin: .round))
-            context.stroke(path, with: .color(.white.opacity(0.78)), style: StrokeStyle(lineWidth: 2.0, lineCap: .round, lineJoin: .round))
+            context.stroke(path, with: .color(.black.opacity(0.055)), style: StrokeStyle(lineWidth: 5.0, lineCap: .round, lineJoin: .round))
+            context.stroke(path, with: .color(.black.opacity(hasWorkout ? 0.82 : 0.40)), style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
         }
     }
 
     private func endpoint(points: [CGPoint]) -> some View {
         Canvas { context, _ in
             guard let last = points.last else { return }
-            let color = hasWorkout ? Color.green : Color.white.opacity(0.54)
-            context.fill(Path(ellipseIn: CGRect(x: last.x - 7, y: last.y - 7, width: 14, height: 14)), with: .color(color.opacity(0.22)))
-            context.fill(Path(ellipseIn: CGRect(x: last.x - 4.5, y: last.y - 4.5, width: 9, height: 9)), with: .color(color))
+            let color = hasWorkout ? Color.black : Color.black.opacity(0.42)
+            context.fill(Path(ellipseIn: CGRect(x: last.x - 6, y: last.y - 6, width: 12, height: 12)), with: .color(.white))
+            context.fill(Path(ellipseIn: CGRect(x: last.x - 3.5, y: last.y - 3.5, width: 7, height: 7)), with: .color(color))
         }
     }
 
@@ -329,10 +319,10 @@ private struct FitnessWeekCard: View {
                     if week.isCurrentWeek {
                         Text("Current")
                             .pulsarTextStyle(.caption)
-                            .foregroundStyle(.green)
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.active)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 4)
-                            .background(.green.opacity(colorScheme == .dark ? 0.15 : 0.11), in: Capsule(style: .continuous))
+                            .background(PulsarFitnessMonochromeDesign.active.opacity(colorScheme == .dark ? 0.15 : 0.11), in: Capsule(style: .continuous))
                     }
                 }
 
@@ -350,12 +340,12 @@ private struct FitnessWeekCard: View {
             .padding(14)
             .frame(maxWidth: .infinity, minHeight: 96, maxHeight: 96, alignment: .leading)
             .background(cardGradient, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .modifier(FitnessGlassSurfaceModifier(cornerRadius: 24, tint: isSelected ? .green : Color(red: 0.68, green: 0.80, blue: 0.92), isInteractive: true))
+            .modifier(FitnessGlassSurfaceModifier(cornerRadius: 24, tint: isSelected ? PulsarFitnessMonochromeDesign.active : Color(red: 0.68, green: 0.80, blue: 0.92), isInteractive: true))
             .overlay {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(isSelected ? Color.green.opacity(0.70) : .white.opacity(colorScheme == .dark ? 0.14 : 0.72), lineWidth: isSelected ? 1.4 : 1)
+                    .stroke(isSelected ? PulsarFitnessMonochromeDesign.active.opacity(0.70) : .white.opacity(colorScheme == .dark ? 0.14 : 0.72), lineWidth: isSelected ? 1.4 : 1)
             }
-            .shadow(color: (isSelected ? Color.green : .black).opacity(isSelected ? 0.20 : (colorScheme == .dark ? 0.22 : 0.08)), radius: isSelected ? 18 : 12, y: isSelected ? 9 : 7)
+            .shadow(color: (isSelected ? PulsarFitnessMonochromeDesign.active : .black).opacity(isSelected ? 0.20 : (colorScheme == .dark ? 0.22 : 0.08)), radius: isSelected ? 18 : 12, y: isSelected ? 9 : 7)
             .scaleEffect(isSelected ? 1.015 : 1)
         }
         .buttonStyle(FitnessWeekPressStyle())
@@ -366,13 +356,13 @@ private struct FitnessWeekCard: View {
     private var statusIndicator: some View {
         ZStack {
             Circle()
-                .fill(week.hasWorkout ? .green.opacity(0.16) : secondaryText.opacity(0.12))
+                .fill(week.hasWorkout ? PulsarFitnessMonochromeDesign.active.opacity(0.16) : secondaryText.opacity(0.12))
                 .frame(width: 22, height: 22)
 
             Circle()
-                .fill(week.hasWorkout ? .green : secondaryText.opacity(0.45))
+                .fill(week.hasWorkout ? PulsarFitnessMonochromeDesign.active : secondaryText.opacity(0.45))
                 .frame(width: 8, height: 8)
-                .shadow(color: (week.hasWorkout ? Color.green : .clear).opacity(0.72), radius: 7)
+                .shadow(color: (week.hasWorkout ? PulsarFitnessMonochromeDesign.active : .clear).opacity(0.72), radius: 7)
         }
     }
 
@@ -380,9 +370,9 @@ private struct FitnessWeekCard: View {
         LinearGradient(
             colors: isSelected
                 ? [
-                    Color.green.opacity(colorScheme == .dark ? 0.22 : 0.16),
+                    PulsarFitnessMonochromeDesign.active.opacity(colorScheme == .dark ? 0.22 : 0.16),
                     Color.white.opacity(colorScheme == .dark ? 0.10 : 0.86),
-                    Color.green.opacity(colorScheme == .dark ? 0.08 : 0.06)
+                    PulsarFitnessMonochromeDesign.active.opacity(colorScheme == .dark ? 0.08 : 0.06)
                 ]
                 : [
                     Color.white.opacity(colorScheme == .dark ? 0.10 : 0.76),
@@ -491,8 +481,8 @@ struct FitnessActivityLogSection: View {
     private var expandButtonBackground: LinearGradient {
         LinearGradient(
             colors: colorScheme == .dark
-                ? [Color.white.opacity(0.10), Color.white.opacity(0.04), Color.green.opacity(0.045)]
-                : [Color.white.opacity(0.86), Color(red: 0.95, green: 0.98, blue: 1.00).opacity(0.68), Color.green.opacity(0.045)],
+                ? [Color.white.opacity(0.10), Color.white.opacity(0.04), PulsarFitnessMonochromeDesign.active.opacity(0.045)]
+                : [Color.white.opacity(0.86), Color(red: 0.95, green: 0.98, blue: 1.00).opacity(0.68), PulsarFitnessMonochromeDesign.active.opacity(0.045)],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -516,12 +506,12 @@ private struct FitnessActivityRow: View {
         HStack(alignment: .top, spacing: 14) {
             ZStack {
                 Circle()
-                    .fill(activity.category.accent.opacity(colorScheme == .dark ? 0.18 : 0.14))
+                    .fill(PulsarFitnessMonochromeDesign.primaryText.opacity(colorScheme == .dark ? 0.18 : 0.14))
                     .frame(width: 48, height: 48)
 
                 Image(systemName: activity.category.symbolName)
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(activity.category.accent)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
             }
 
             VStack(alignment: .leading, spacing: 11) {
@@ -579,13 +569,13 @@ private struct FitnessActivityRow: View {
         .padding(15)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(rowGradient, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 28, tint: activity.category.accent, isInteractive: true))
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 28, tint: PulsarFitnessMonochromeDesign.primaryText, isInteractive: true))
         .overlay(alignment: .leading) {
             Capsule(style: .continuous)
-                .fill(activity.category.accent)
+                .fill(PulsarFitnessMonochromeDesign.primaryText)
                 .frame(width: 4)
                 .padding(.vertical, 18)
-                .shadow(color: activity.category.accent.opacity(0.42), radius: 8)
+                .shadow(color: PulsarFitnessMonochromeDesign.primaryText.opacity(0.42), radius: 8)
         }
         .overlay {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -597,8 +587,8 @@ private struct FitnessActivityRow: View {
     private var rowGradient: LinearGradient {
         LinearGradient(
             colors: colorScheme == .dark
-                ? [Color.white.opacity(0.095), Color.white.opacity(0.035), activity.category.accent.opacity(0.055)]
-                : [Color.white.opacity(0.90), Color(red: 0.95, green: 0.98, blue: 1.00).opacity(0.72), activity.category.accent.opacity(0.045)],
+                ? [Color.white.opacity(0.095), Color.white.opacity(0.035), PulsarFitnessMonochromeDesign.primaryText.opacity(0.055)]
+                : [Color.white.opacity(0.90), Color(red: 0.95, green: 0.98, blue: 1.00).opacity(0.72), PulsarFitnessMonochromeDesign.primaryText.opacity(0.045)],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -635,7 +625,7 @@ private struct FitnessActivityMetricChip: View {
 }
 
 struct FitnessWorkoutDetailView: View {
-    var activity: WeeklyActivity
+    @State private var activity: WeeklyActivity
 
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var bottomChromeLayoutStore: PulsarBottomChromeLayoutStore
@@ -644,27 +634,35 @@ struct FitnessWorkoutDetailView: View {
     @State private var selectedExerciseProgressTarget: ExerciseProgressLookup?
     @State private var selectedSetEditor: CompletedWorkoutSetEditContext?
     @State private var selectedInstructionsExercise: CompletedWorkoutExercisePresentation?
+    @State private var resolvedRoute: [PulsarRunCoordinate]
+    @State private var routeLoadState: FitnessWorkoutRouteLoadState
 
     @MainActor
     init(
         activity: WeeklyActivity,
         bottomChromeLayoutStore: PulsarBottomChromeLayoutStore? = nil
     ) {
-        self.activity = activity
+        self._activity = State(initialValue: activity)
         self._bottomChromeLayoutStore = ObservedObject(wrappedValue: bottomChromeLayoutStore ?? PulsarBottomChromeLayoutStore())
         self._detailViewModel = StateObject(wrappedValue: CompletedWorkoutDetailViewModel(activity: activity))
+        self._resolvedRoute = State(initialValue: activity.route)
+        self._routeLoadState = State(
+            initialValue: activity.route.count > 1 ? .loaded(activity.route) : .idle
+        )
     }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                header
-                routeSection
-                gymSetsSection
-                splitsSection
-                trainingSection
-                metadataSection
-                shareButton
+            PulsarGlassEffectGroup(spacing: 12) {
+                VStack(alignment: .leading, spacing: 12) {
+                    header
+                    routeSection
+                    gymSetsSection
+                    splitsSection
+                    trainingSection
+                    metadataSection
+                    shareButton
+                }
             }
             .padding(.horizontal, 18)
             .padding(.top, 18)
@@ -674,6 +672,9 @@ struct FitnessWorkoutDetailView: View {
         .background(FitnessWeeklyBackground())
         .navigationTitle(activity.displayName)
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: activity.id) {
+            await reloadWorkoutDetailsIfNeeded()
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -755,16 +756,16 @@ struct FitnessWorkoutDetailView: View {
 
                     Map(initialPosition: routeMapPosition) {
                         MapPolyline(coordinates: routeCoordinates)
-                            .stroke(activity.category.accent, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                            .stroke(PulsarFitnessMonochromeDesign.primaryText, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
 
                         if let start = routeCoordinates.first {
                             Marker("Start", systemImage: "record.circle", coordinate: start)
-                                .tint(.green)
+                                .tint(PulsarFitnessMonochromeDesign.active)
                         }
 
                         if let finish = routeCoordinates.last {
                             Marker("Finish", systemImage: "flag.checkered", coordinate: finish)
-                                .tint(activity.category.accent)
+                                .tint(PulsarFitnessMonochromeDesign.primaryText)
                         }
                     }
                     .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
@@ -779,9 +780,18 @@ struct FitnessWorkoutDetailView: View {
                         .pulsarTextStyle(.cardTitle)
                         .foregroundStyle(primaryText)
 
-                    Text("No route data is attached to this workout.")
-                        .pulsarTextStyle(.label)
-                        .foregroundStyle(secondaryText)
+                    if routeLoadState == .loading || routeLoadState == .idle {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text("Loading route from Health…")
+                                .pulsarTextStyle(.label)
+                                .foregroundStyle(secondaryText)
+                        }
+                    } else {
+                        Text("No route data is attached to this workout.")
+                            .pulsarTextStyle(.label)
+                            .foregroundStyle(secondaryText)
+                    }
                 }
             }
         }
@@ -861,7 +871,7 @@ struct FitnessWorkoutDetailView: View {
                                     .foregroundStyle(primaryText)
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 7)
-                                    .background(activity.category.accent.opacity(colorScheme == .dark ? 0.18 : 0.12), in: Capsule(style: .continuous))
+                                    .background(PulsarFitnessMonochromeDesign.primaryText.opacity(colorScheme == .dark ? 0.18 : 0.12), in: Capsule(style: .continuous))
                             }
                         }
                     }
@@ -911,17 +921,17 @@ struct FitnessWorkoutDetailView: View {
     }
 
     private var shareButton: some View {
-        Button {
-            renderShareImage()
-        } label: {
+        Button(action: renderShareImage) {
             Label(activity.shareActionTitle, systemImage: "square.and.arrow.up")
                 .pulsarTextStyle(.cardTitle)
-                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(activity.category.accent.gradient, in: Capsule(style: .continuous))
+                .frame(minHeight: 56)
         }
-        .buttonStyle(FitnessWeekPressStyle())
+        .buttonStyle(.glassProminent)
+        .buttonBorderShape(.capsule)
+        .tint(PulsarFitnessMonochromeDesign.active)
+        .foregroundStyle(.white)
+        .accessibilityHint("Opens the system share sheet")
     }
 
     private var compactHeaderMetrics: [FitnessWorkoutDetailMetric] {
@@ -930,11 +940,11 @@ struct FitnessWorkoutDetailView: View {
 
     private var compactGymMetrics: [FitnessWorkoutDetailMetric] {
         var metrics = [
-            FitnessWorkoutDetailMetric(title: "Duration", value: FitnessWeekFormatters.duration(activity.duration), symbolName: "timer", tint: .green)
+            FitnessWorkoutDetailMetric(title: "Duration", value: FitnessWeekFormatters.duration(activity.duration), symbolName: "timer", tint: PulsarFitnessMonochromeDesign.active)
         ]
 
         if let calories = activity.calories, calories > 0 {
-            metrics.append(FitnessWorkoutDetailMetric(title: "Calories", value: FitnessWeekFormatters.calories(calories), symbolName: "flame.fill", tint: .orange))
+            metrics.append(FitnessWorkoutDetailMetric(title: "Calories", value: FitnessWeekFormatters.calories(calories), symbolName: "flame.fill", tint: PulsarFitnessMonochromeDesign.primaryText))
         }
 
         if let averageHeartRate = activity.averageHeartRate, averageHeartRate > 0 {
@@ -955,15 +965,15 @@ struct FitnessWorkoutDetailView: View {
 
     private var compactTrainingMetrics: [FitnessWorkoutDetailMetric] {
         var metrics = [
-            FitnessWorkoutDetailMetric(title: "Duration", value: FitnessWeekFormatters.duration(activity.duration), symbolName: "timer", tint: .green)
+            FitnessWorkoutDetailMetric(title: "Duration", value: FitnessWeekFormatters.duration(activity.duration), symbolName: "timer", tint: PulsarFitnessMonochromeDesign.active)
         ]
 
         if let distance = activity.distanceMeters, distance > 0 {
-            metrics.append(FitnessWorkoutDetailMetric(title: "Distance", value: FitnessWeekFormatters.distance(distance), symbolName: "point.topleft.down.curvedto.point.bottomright.up", tint: activity.category.accent))
+            metrics.append(FitnessWorkoutDetailMetric(title: "Distance", value: FitnessWeekFormatters.distance(distance), symbolName: "point.topleft.down.curvedto.point.bottomright.up", tint: PulsarFitnessMonochromeDesign.primaryText))
         }
 
         if let calories = activity.calories, calories > 0 {
-            metrics.append(FitnessWorkoutDetailMetric(title: "Calories", value: FitnessWeekFormatters.calories(calories), symbolName: "flame.fill", tint: .orange))
+            metrics.append(FitnessWorkoutDetailMetric(title: "Calories", value: FitnessWeekFormatters.calories(calories), symbolName: "flame.fill", tint: PulsarFitnessMonochromeDesign.primaryText))
         }
 
         if let averageHeartRate = activity.averageHeartRate, averageHeartRate > 0 {
@@ -990,7 +1000,7 @@ struct FitnessWorkoutDetailView: View {
         guard let completedSets = activity.completedSets,
               completedSets > 0 || (activity.totalSets ?? 0) > 0 else { return nil }
         let value = activity.totalSets.map { "\(completedSets)/\($0)" } ?? "\(completedSets)"
-        return FitnessWorkoutDetailMetric(title: "Sets", value: value, symbolName: "checkmark.circle.fill", tint: activity.category.accent)
+        return FitnessWorkoutDetailMetric(title: "Sets", value: value, symbolName: "checkmark.circle.fill", tint: PulsarFitnessMonochromeDesign.primaryText)
     }
 
     private var maxHeartRateMetric: FitnessWorkoutDetailMetric? {
@@ -1010,7 +1020,7 @@ struct FitnessWorkoutDetailView: View {
             title: PulsarRunFormatters.paceOrSpeedTitle(for: kind, average: true),
             value: PulsarRunFormatters.paceOrSpeed(workoutKind: kind, paceSecondsPerKilometer: pace, speedMetersPerSecond: speed),
             symbolName: "speedometer",
-            tint: activity.category.accent
+            tint: PulsarFitnessMonochromeDesign.primaryText
         )
     }
 
@@ -1045,11 +1055,11 @@ struct FitnessWorkoutDetailView: View {
     }
 
     private var routeCoordinates: [CLLocationCoordinate2D] {
-        activity.route.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+        resolvedRoute.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
     }
 
     private var routeMapPosition: MapCameraPosition {
-        let route = GPSWorkoutRoute(runCoordinates: activity.route)
+        let route = GPSWorkoutRoute(runCoordinates: resolvedRoute)
         guard let bounds = route.bounds else { return .automatic }
         return .region(
             MKCoordinateRegion(
@@ -1068,13 +1078,55 @@ struct FitnessWorkoutDetailView: View {
     }
 
     @MainActor
+    private func reloadWorkoutDetailsIfNeeded() async {
+        let enrichedActivity = await FitnessWorkoutRouteReloader.loadDetails(for: activity)
+        guard !Task.isCancelled else { return }
+        activity = enrichedActivity
+        if enrichedActivity.route.count > 1 {
+            resolvedRoute = enrichedActivity.route
+            routeLoadState = .loaded(enrichedActivity.route)
+            return
+        }
+        await reloadRouteIfNeeded()
+    }
+
+    @MainActor
+    private func reloadRouteIfNeeded() async {
+        guard activity.category.isRouteTraining else { return }
+        if resolvedRoute.count > 1 {
+            routeLoadState = .loaded(resolvedRoute)
+            return
+        }
+        routeLoadState = .loading
+        let diskRoute = await PulsarRunRouteFileStore.shared.load(
+            sessionId: activity.pulsarWorkoutSessionId,
+            workoutUUID: activity.workoutUUID
+        )
+        if diskRoute.count > 1 {
+            resolvedRoute = diskRoute
+            routeLoadState = .loaded(diskRoute)
+            return
+        }
+        let state = await FitnessWorkoutRouteReloader.loadRoute(
+            existingRoute: resolvedRoute,
+            workoutUUID: activity.workoutUUID
+        )
+        routeLoadState = state
+        if case .loaded(let coordinates) = state {
+            resolvedRoute = coordinates
+        }
+    }
+
+    @MainActor
     private func renderShareImage() {
-        let card = FitnessWorkoutHistoryShareCard(activity: activity)
+        var shareActivity = activity
+        shareActivity.route = resolvedRoute
+        let card = FitnessWorkoutHistoryShareCard(activity: shareActivity)
             .frame(width: 1080, height: 1350)
         let renderer = ImageRenderer(content: card)
         renderer.proposedSize = ProposedViewSize(width: 1080, height: 1350)
         renderer.scale = 1
-        let image = renderer.uiImage ?? FitnessWorkoutFallbackShareRenderer.image(for: activity, size: CGSize(width: 1080, height: 1350))
+        let image = renderer.uiImage ?? FitnessWorkoutFallbackShareRenderer.image(for: shareActivity, size: CGSize(width: 1080, height: 1350))
         renderedShareImage = FitnessWorkoutRenderedImage(image: image)
     }
 }
@@ -1163,7 +1215,7 @@ private struct CompletedWorkoutSummaryHeaderCard: View {
             .minimumScaleFactor(0.74)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .modifier(FitnessGlassSurfaceModifier(cornerRadius: 17, tint: activity.category.accent, borderOpacity: 0.74))
+            .modifier(FitnessGlassSurfaceModifier(cornerRadius: 17, tint: PulsarFitnessMonochromeDesign.primaryText, borderOpacity: 0.74))
     }
 
     private var exerciseCountChip: some View {
@@ -1241,11 +1293,11 @@ private struct CompletedWorkoutSummaryIcon: View {
             } else {
                 Image(systemName: category.symbolName)
                     .font(.system(size: 26, weight: .bold))
-                    .foregroundStyle(category.accent)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
             }
         }
         .frame(width: 64, height: 64)
-        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 22, tint: category.accent, borderOpacity: 0.86))
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 22, tint: PulsarFitnessMonochromeDesign.primaryText, borderOpacity: 0.86))
         .accessibilityHidden(true)
     }
 }
@@ -1304,23 +1356,15 @@ private struct FitnessWorkoutHistoryShareCard: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    activity.category.accent.opacity(0.86),
-                    Color(red: 0.04, green: 0.06, blue: 0.08),
-                    Color.black
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            PulsarFitnessMonochromeBackground()
 
             if routePoints.count > 1 {
-                PulsarShareRouteLine(points: routePoints, accent: activity.category.accent, lineWidth: 11)
+                PulsarShareRouteLine(points: routePoints, accent: .black, lineWidth: 11)
                     .padding(94)
             } else {
                 Image(systemName: activity.category.symbolName)
                     .font(.system(size: 270, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.12))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
             }
 
             VStack(alignment: .leading) {
@@ -1336,19 +1380,19 @@ private struct FitnessWorkoutHistoryShareCard: View {
                     Text(activity.startDate.formatted(.dateTime.day().month(.abbreviated).year()))
                         .font(.system(size: 20, weight: .semibold, design: .serif))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
 
                 Spacer()
 
                 VStack(alignment: .leading, spacing: 18) {
                     Label(activity.workoutType.uppercased(), systemImage: activity.category.symbolName)
                         .font(.system(size: 17, weight: .bold, design: .default))
-                        .foregroundStyle(.white.opacity(0.76))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                         .tracking(4)
 
                     Text(activity.displayName)
                         .font(.system(size: 44, weight: .semibold, design: .serif))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                         .lineLimit(2)
                         .minimumScaleFactor(0.62)
 
@@ -1357,24 +1401,24 @@ private struct FitnessWorkoutHistoryShareCard: View {
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(metric.value)
                                     .font(.system(size: 32, weight: .bold, design: .default))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.70)
                                 Text(metric.title)
                                     .font(.system(size: 15, weight: .semibold, design: .default))
-                                    .foregroundStyle(.white.opacity(0.68))
+                                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                             }
                         }
                     }
 
                     Label("\(activity.startDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())) - \(activity.effectiveSourceDeviceName)", systemImage: "sparkles")
                         .font(.system(size: 18, weight: .semibold, design: .default))
-                        .foregroundStyle(.white.opacity(0.82))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                         .lineLimit(2)
                         .minimumScaleFactor(0.72)
                 }
                 .padding(26)
-                .modifier(FitnessGlassSurfaceModifier(cornerRadius: 30, tint: activity.category.accent))
+                .modifier(FitnessGlassSurfaceModifier(cornerRadius: 30, tint: PulsarFitnessMonochromeDesign.primaryText))
                 .overlay {
                     RoundedRectangle(cornerRadius: 30, style: .continuous)
                         .stroke(.white.opacity(0.22), lineWidth: 1)
@@ -1382,7 +1426,7 @@ private struct FitnessWorkoutHistoryShareCard: View {
             }
             .padding(34)
         }
-        .background(Color.black)
+        .background(PulsarFitnessMonochromeDesign.background)
     }
 
     private var shareMetrics: [FitnessWorkoutShareMetric] {
@@ -1506,7 +1550,7 @@ private enum FitnessWorkoutFallbackShareRenderer {
     static func image(for activity: WeeklyActivity, size: CGSize) -> UIImage {
         let renderer = UIGraphicsImageRenderer(size: size)
         return renderer.image { context in
-            UIColor.black.setFill()
+            UIColor.white.setFill()
             context.fill(CGRect(origin: .zero, size: size))
             UIColor.systemGreen.setFill()
             context.fill(CGRect(x: 0, y: 0, width: size.width, height: 18))
@@ -1565,12 +1609,12 @@ private struct FitnessWeeklyEmptyState: View {
         VStack(spacing: 13) {
             ZStack {
                 Circle()
-                    .fill(.green.opacity(colorScheme == .dark ? 0.14 : 0.10))
+                    .fill(PulsarFitnessMonochromeDesign.active.opacity(colorScheme == .dark ? 0.14 : 0.10))
                     .frame(width: 66, height: 66)
 
                 Image(systemName: "figure.run.circle")
                     .font(.system(size: 31, weight: .semibold))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.active)
             }
 
             VStack(spacing: 5) {
@@ -1587,7 +1631,7 @@ private struct FitnessWeeklyEmptyState: View {
         .padding(24)
         .frame(maxWidth: .infinity, minHeight: 190)
         .background(emptyGradient, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 30, tint: .green))
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 30, tint: PulsarFitnessMonochromeDesign.active))
         .overlay {
             RoundedRectangle(cornerRadius: 30, style: .continuous)
                 .stroke(.white.opacity(colorScheme == .dark ? 0.14 : 0.78), lineWidth: 1)
@@ -1597,8 +1641,8 @@ private struct FitnessWeeklyEmptyState: View {
     private var emptyGradient: LinearGradient {
         LinearGradient(
             colors: colorScheme == .dark
-                ? [Color.white.opacity(0.09), Color.white.opacity(0.035), Color.green.opacity(0.055)]
-                : [Color.white.opacity(0.90), Color(red: 0.95, green: 0.98, blue: 1.00).opacity(0.74), Color.green.opacity(0.055)],
+                ? [Color.white.opacity(0.09), Color.white.opacity(0.035), PulsarFitnessMonochromeDesign.active.opacity(0.055)]
+                : [Color.white.opacity(0.90), Color(red: 0.95, green: 0.98, blue: 1.00).opacity(0.74), PulsarFitnessMonochromeDesign.active.opacity(0.055)],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -1706,14 +1750,14 @@ struct FitnessWeekHistorySheet: View {
 
             Text("\(selectedWeek.year)")
                 .pulsarTextStyle(.captionEmphasis)
-                .foregroundStyle(.green)
+                .foregroundStyle(PulsarFitnessMonochromeDesign.active)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(.green.opacity(colorScheme == .dark ? 0.14 : 0.10), in: Capsule(style: .continuous))
+                .background(PulsarFitnessMonochromeDesign.active.opacity(colorScheme == .dark ? 0.14 : 0.10), in: Capsule(style: .continuous))
         }
         .padding(18)
         .background(headerBackground, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 30, tint: .green))
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 30, tint: PulsarFitnessMonochromeDesign.active))
         .overlay {
             RoundedRectangle(cornerRadius: 30, style: .continuous)
                 .stroke(.white.opacity(colorScheme == .dark ? 0.15 : 0.78), lineWidth: 1)
@@ -1727,8 +1771,8 @@ struct FitnessWeekHistorySheet: View {
     private var headerBackground: LinearGradient {
         LinearGradient(
             colors: colorScheme == .dark
-                ? [Color.white.opacity(0.10), Color.white.opacity(0.04), Color.green.opacity(0.055)]
-                : [Color.white.opacity(0.90), Color(red: 0.94, green: 0.98, blue: 0.96).opacity(0.78), Color.green.opacity(0.055)],
+                ? [Color.white.opacity(0.10), Color.white.opacity(0.04), PulsarFitnessMonochromeDesign.active.opacity(0.055)]
+                : [Color.white.opacity(0.90), Color(red: 0.94, green: 0.98, blue: 0.96).opacity(0.78), PulsarFitnessMonochromeDesign.active.opacity(0.055)],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -1765,13 +1809,13 @@ private struct FitnessWeekHistoryRow: View {
             HStack(spacing: 13) {
                 ZStack {
                     Circle()
-                        .fill(week.hasWorkout ? .green.opacity(0.16) : secondaryText.opacity(0.12))
+                        .fill(week.hasWorkout ? PulsarFitnessMonochromeDesign.active.opacity(0.16) : secondaryText.opacity(0.12))
                         .frame(width: 38, height: 38)
 
                     Circle()
-                        .fill(week.hasWorkout ? .green : secondaryText.opacity(0.45))
+                        .fill(week.hasWorkout ? PulsarFitnessMonochromeDesign.active : secondaryText.opacity(0.45))
                         .frame(width: 10, height: 10)
-                        .shadow(color: (week.hasWorkout ? Color.green : .clear).opacity(0.72), radius: 8)
+                        .shadow(color: (week.hasWorkout ? PulsarFitnessMonochromeDesign.active : .clear).opacity(0.72), radius: 8)
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
@@ -1784,10 +1828,10 @@ private struct FitnessWeekHistoryRow: View {
                         if week.isCurrentWeek {
                             Text("Current")
                                 .pulsarTextStyle(.overline)
-                                .foregroundStyle(.green)
+                                .foregroundStyle(PulsarFitnessMonochromeDesign.active)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 4)
-                                .background(.green.opacity(colorScheme == .dark ? 0.15 : 0.11), in: Capsule(style: .continuous))
+                                .background(PulsarFitnessMonochromeDesign.active.opacity(colorScheme == .dark ? 0.15 : 0.11), in: Capsule(style: .continuous))
                         }
                     }
 
@@ -1800,14 +1844,14 @@ private struct FitnessWeekHistoryRow: View {
 
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "chevron.right")
                     .pulsarTextStyle(.cardTitle)
-                    .foregroundStyle(isSelected ? Color.green : secondaryText.opacity(0.55))
+                    .foregroundStyle(isSelected ? PulsarFitnessMonochromeDesign.active : secondaryText.opacity(0.55))
             }
             .padding(14)
             .background(rowBackground, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .modifier(FitnessGlassSurfaceModifier(cornerRadius: 24, tint: isSelected ? .green : Color(red: 0.68, green: 0.80, blue: 0.92), isInteractive: true))
+            .modifier(FitnessGlassSurfaceModifier(cornerRadius: 24, tint: isSelected ? PulsarFitnessMonochromeDesign.active : Color(red: 0.68, green: 0.80, blue: 0.92), isInteractive: true))
             .overlay {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(isSelected ? Color.green.opacity(0.58) : .white.opacity(colorScheme == .dark ? 0.13 : 0.70), lineWidth: isSelected ? 1.3 : 1)
+                    .stroke(isSelected ? PulsarFitnessMonochromeDesign.active.opacity(0.58) : .white.opacity(colorScheme == .dark ? 0.13 : 0.70), lineWidth: isSelected ? 1.3 : 1)
             }
         }
         .buttonStyle(FitnessWeekPressStyle())
@@ -1819,7 +1863,7 @@ private struct FitnessWeekHistoryRow: View {
         LinearGradient(
             colors: isSelected
                 ? [
-                    Color.green.opacity(colorScheme == .dark ? 0.17 : 0.12),
+                    PulsarFitnessMonochromeDesign.active.opacity(colorScheme == .dark ? 0.17 : 0.12),
                     Color.white.opacity(colorScheme == .dark ? 0.09 : 0.86)
                 ]
                 : [
@@ -1841,34 +1885,8 @@ private struct FitnessWeekHistoryRow: View {
 }
 
 struct FitnessWeeklyBackground: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        GeometryReader { proxy in
-            ZStack {
-                Color(red: 0.115, green: 0.125, blue: 0.140)
-
-                Image("FitnessBackground")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-                    .clipped()
-                    .saturation(colorScheme == .dark ? 1.0 : 0.78)
-                    .brightness(colorScheme == .dark ? 0.02 : 0.06)
-
-                LinearGradient(
-                    colors: [
-                        Color.black.opacity(colorScheme == .dark ? 0.00 : 0.03),
-                        Color.black.opacity(colorScheme == .dark ? 0.05 : 0.08),
-                        Color.black.opacity(colorScheme == .dark ? 0.18 : 0.16)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-        }
-        .ignoresSafeArea()
+        PulsarFitnessMonochromeBackground()
     }
 }
 
@@ -1964,7 +1982,7 @@ struct FitnessPanel<Content: View>: View {
     var cornerRadius: CGFloat = 24
     var padding: CGFloat = 14
     var borderOpacity: Double = 1
-    var tint: Color = .green
+    var tint: Color = PulsarFitnessMonochromeDesign.active
     @ViewBuilder var content: () -> Content
 
     var body: some View {

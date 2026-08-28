@@ -496,6 +496,131 @@ final class StressEngineTests: XCTestCase {
         XCTAssertTrue(summary.driverInsights.contains { $0.contains("Low confidence") })
     }
 
+    func testPersonalizedSignalsProduceLowStress() {
+        let (day, measuredAt, baseline) = personalizedFixture()
+        var today = baselineMatchedSignals(day: day, measuredAt: measuredAt)
+        today.heartRateVariabilitySDNN = 54
+        today.restingHeartRate = 56
+        today.sleepRespiratoryRate = 14
+        today.sleepDurationHours = 8.5
+        today.currentHeartRate = 56
+        today.recentHeartRate = 56
+
+        let summary = StressEngine().score(today: today, baselineDays: baseline)
+
+        XCTAssertNotNil(summary.score)
+        XCTAssertEqual(summary.level, .low)
+        XCTAssertEqual(summary.explanation, "Your stress is below your usual range.")
+    }
+
+    func testSignalsNearPersonalBaselineProduceBalancedStress() {
+        let (day, measuredAt, baseline) = personalizedFixture()
+
+        let summary = StressEngine().score(
+            today: baselineMatchedSignals(day: day, measuredAt: measuredAt),
+            baselineDays: baseline
+        )
+
+        XCTAssertNotNil(summary.score)
+        XCTAssertEqual(summary.level, .balanced)
+        XCTAssertEqual(summary.explanation, "Your signals are close to your normal baseline.")
+    }
+
+    func testSeveralModerateDeviationsProduceElevatedStress() {
+        let (day, measuredAt, baseline) = personalizedFixture()
+        var today = baselineMatchedSignals(day: day, measuredAt: measuredAt)
+        today.heartRateVariabilitySDNN = 40
+        today.restingHeartRate = 62
+        today.sleepRespiratoryRate = 15.5
+        today.sleepDurationHours = 6.5
+        today.currentHeartRate = 70
+        today.recentHeartRate = 70
+
+        let summary = StressEngine().score(today: today, baselineDays: baseline)
+
+        XCTAssertNotNil(summary.score)
+        XCTAssertEqual(summary.level, .elevated)
+        XCTAssertTrue((50...74).contains(summary.score ?? -1))
+    }
+
+    func testConvergingStrongDeviationsProduceHighStress() {
+        let (day, measuredAt, baseline) = personalizedFixture()
+        var today = baselineMatchedSignals(day: day, measuredAt: measuredAt)
+        today.heartRateVariabilitySDNN = 35
+        today.restingHeartRate = 65
+        today.sleepRespiratoryRate = 16.5
+        today.sleepDurationHours = 5.5
+        today.currentHeartRate = 82
+        today.recentHeartRate = 82
+
+        let summary = StressEngine().score(today: today, baselineDays: baseline)
+
+        XCTAssertNotNil(summary.score)
+        XCTAssertEqual(summary.level, .high)
+        XCTAssertTrue((75...100).contains(summary.score ?? -1))
+        XCTAssertTrue(summary.explanation.contains("heart rate") || summary.explanation.contains("signals"))
+    }
+
+    func testMissingRestingHeartRateKeepsEstimateButReducesAvailableSignals() {
+        let (day, measuredAt, baseline) = personalizedFixture()
+        var complete = baselineMatchedSignals(day: day, measuredAt: measuredAt)
+        let completeSummary = StressEngine().score(today: complete, baselineDays: baseline)
+        complete.restingHeartRate = nil
+
+        let partialSummary = StressEngine().score(today: complete, baselineDays: baseline)
+
+        XCTAssertNotNil(partialSummary.score)
+        XCTAssertNotEqual(partialSummary.state, .noData)
+        XCTAssertLessThan(partialSummary.availableSignalCount, completeSummary.availableSignalCount)
+        XCTAssertTrue(partialSummary.signals.contains { $0.id == "resting-heart-rate" && $0.availability == .unavailable })
+    }
+
+    func testRobustBaselineResistsSingleOutlier() {
+        let (_, _, baseline) = personalizedFixture()
+        var withOutlier = baseline
+        withOutlier[0].heartRateVariabilitySDNN = 200
+        withOutlier[0].restingHeartRate = 110
+        let result = StressBaselineBuilder().build(from: withOutlier)
+
+        XCTAssertEqual(result.hrvSDNN?.mean ?? 0, 44, accuracy: 1)
+        XCTAssertEqual(result.restingHeartRate?.mean ?? 0, 60, accuracy: 1)
+        XCTAssertEqual(result.validDayCount, 21)
+        XCTAssertLessThan(result.hrvSDNN?.standardDeviation ?? 100, 8)
+    }
+
+    func testStressScaleAlwaysClampsToZeroThroughOneHundred() {
+        XCTAssertEqual(PulsarStressScale.clampedScore(-50), 0)
+        XCTAssertEqual(PulsarStressScale.clampedScore(150), 100)
+        XCTAssertEqual(PulsarStressScale.roundedScore(49.6), 50)
+    }
+
+    private func personalizedFixture() -> (day: Date, measuredAt: Date, baseline: [StressDailySignals]) {
+        let day = MockHealthData.calendar.date(from: DateComponents(year: 2026, month: 5, day: 7))!
+        let measuredAt = day.addingTimeInterval(13 * 60 * 60)
+        return (day, measuredAt, stressBaseline(day: day, hrv: 44, restingHeartRate: 60, walkingHeartRate: 82))
+    }
+
+    private func baselineMatchedSignals(day: Date, measuredAt: Date) -> StressDailySignals {
+        StressDailySignals(
+            date: day,
+            computedAt: measuredAt,
+            heartRateVariabilitySDNN: 44,
+            heartRateVariabilityTimestamp: measuredAt.addingTimeInterval(-30 * 60),
+            restingHeartRate: 60,
+            walkingHeartRateAverage: 82,
+            sleepRespiratoryRate: 15,
+            sleepDurationHours: 7,
+            currentMotionContext: .resting,
+            currentHeartRate: 65,
+            currentHeartRateTimestamp: measuredAt.addingTimeInterval(-2 * 60),
+            recentHeartRate: 65,
+            recentSteps: 0,
+            recentActiveEnergyKilocalories: 0,
+            recentExerciseMinutes: 0,
+            sourceBadges: [.sample]
+        )
+    }
+
     private func heartSample(day: Date, hour: Int, minute: Int, bpm: Double, calendar: Calendar) -> HeartRateSample {
         let end = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day)!
         return HeartRateSample(

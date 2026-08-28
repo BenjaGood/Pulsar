@@ -6,6 +6,7 @@
 import Combine
 import Foundation
 import HealthKit
+import OSLog
 
 struct GymWorkoutSetFocusTarget: Identifiable, Equatable {
     let id = UUID()
@@ -28,11 +29,55 @@ enum GymSetToggleOutcome: Equatable {
 }
 
 @MainActor
-final class GymWorkoutSessionViewModel: ObservableObject {
-    @Published private(set) var session: PulsarGymWorkoutSession
-    @Published private(set) var elapsedSeconds: Int = 0
+final class GymWorkoutSessionClock: ObservableObject {
+    @Published private(set) var elapsedSeconds: Int
     @Published private(set) var restCountdownSeconds: Int?
     @Published private(set) var restTotalSeconds: Int?
+
+    init(
+        elapsedSeconds: Int = 0,
+        restCountdownSeconds: Int? = nil,
+        restTotalSeconds: Int? = nil
+    ) {
+        self.elapsedSeconds = elapsedSeconds
+        self.restCountdownSeconds = restCountdownSeconds
+        self.restTotalSeconds = restTotalSeconds
+    }
+
+    var restProgressFraction: Double {
+        guard let restCountdownSeconds, let restTotalSeconds, restTotalSeconds > 0 else { return 0 }
+        return 1 - (Double(restCountdownSeconds) / Double(restTotalSeconds))
+    }
+
+    func updateElapsedSeconds(_ seconds: Int) {
+        elapsedSeconds = max(0, seconds)
+    }
+
+    func startRest(totalSeconds: Int) {
+        let seconds = max(0, totalSeconds)
+        restTotalSeconds = seconds
+        restCountdownSeconds = seconds
+    }
+
+    func updateRestCountdown(_ seconds: Int) {
+        restCountdownSeconds = max(0, seconds)
+    }
+
+    func clearRest() {
+        restCountdownSeconds = nil
+        restTotalSeconds = nil
+    }
+}
+
+@MainActor
+final class GymWorkoutSessionViewModel: ObservableObject {
+    @Published private(set) var session: PulsarGymWorkoutSession {
+        didSet {
+            if oldValue.exercises != session.exercises {
+                orderedExercises = session.exercises.sorted { $0.orderIndex < $1.orderIndex }
+            }
+        }
+    }
     @Published private(set) var restContext: GymRestContext?
     @Published private(set) var focusTarget: GymWorkoutSetFocusTarget?
     @Published private(set) var highlightedSetID: UUID?
@@ -49,6 +94,9 @@ final class GymWorkoutSessionViewModel: ObservableObject {
     @Published private(set) var adaptiveWorkoutCoaching: AdaptiveWorkoutCoaching?
     @Published private(set) var isFinishing = false
 
+    let clock: GymWorkoutSessionClock
+    private(set) var orderedExercises: [PulsarGymWorkoutExerciseSession]
+
     private let historyStore: PulsarGymWorkoutHistoryStore
     private let healthKitManager: GymHealthKitWorkoutManager
     private let watchSyncStore: PulsarWatchConnectivitySyncStore
@@ -64,6 +112,7 @@ final class GymWorkoutSessionViewModel: ObservableObject {
     private var lastAdaptiveCoachingID: String?
     private var lastAdaptiveCoachingAt: Date?
     private var restEndsAt: Date?
+    private var lastRestStateSyncAt = Date.distantPast
     private var pendingRestFocusTarget: GymWorkoutSetFocusTarget?
     private var didStartWorkoutSystems = false
     private var lastElapsedOnlyStateSyncAt = Date.distantPast
@@ -80,24 +129,26 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         adaptiveStrainPlan: AdaptiveStrainPlan? = nil,
         sessionID: UUID? = nil
     ) {
-        let resolvedHistoryStore = historyStore ?? PulsarGymWorkoutHistoryStore()
+        let resolvedHistoryStore = historyStore ?? .shared
         let displayUnit = workoutWeightUnit ?? routine.exercises.first?.weightUnit ?? .kilograms
         let snapshots = StrengthProgressAnalyticsService.performanceSnapshots(
             for: routine,
             sessions: resolvedHistoryStore.sessions,
             displayUnit: displayUnit
         )
-        let preparedRoutine = StrengthProgressAnalyticsService.routineWithLatestPerformanceOverlay(
+        let preparedRoutine = StrengthProgressAnalyticsService.applyingPerformanceSnapshots(
             routine,
-            sessions: resolvedHistoryStore.sessions,
-            displayUnit: displayUnit
+            snapshots: snapshots
         )
 
-        if let sessionID {
-            self.session = PulsarGymWorkoutSession(id: sessionID, routine: preparedRoutine)
+        let preparedSession = if let sessionID {
+            PulsarGymWorkoutSession(id: sessionID, routine: preparedRoutine)
         } else {
-            self.session = PulsarGymWorkoutSession(routine: preparedRoutine)
+            PulsarGymWorkoutSession(routine: preparedRoutine)
         }
+        self.session = preparedSession
+        self.orderedExercises = preparedSession.exercises.sorted { $0.orderIndex < $1.orderIndex }
+        self.clock = GymWorkoutSessionClock(elapsedSeconds: preparedSession.elapsedSeconds)
         self.historyStore = resolvedHistoryStore
         self.healthKitManager = healthKitManager ?? GymHealthKitWorkoutManager()
         self.watchSyncStore = watchSyncStore ?? .shared
@@ -155,9 +206,20 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         return Double(completedSetsCount) / Double(totalSetsCount)
     }
 
+    var elapsedSeconds: Int {
+        clock.elapsedSeconds
+    }
+
+    var restCountdownSeconds: Int? {
+        clock.restCountdownSeconds
+    }
+
+    var restTotalSeconds: Int? {
+        clock.restTotalSeconds
+    }
+
     var restProgressFraction: Double {
-        guard let restCountdownSeconds, let restTotalSeconds, restTotalSeconds > 0 else { return 0 }
-        return 1 - (Double(restCountdownSeconds) / Double(restTotalSeconds))
+        clock.restProgressFraction
     }
 
     func previousPerformance(for exercise: PulsarGymWorkoutExerciseSession) -> RoutinePerformanceSnapshot? {
@@ -234,7 +296,7 @@ final class GymWorkoutSessionViewModel: ObservableObject {
                 source: "iPhoneGymHealthKitStarted"
             )
             PulsarWorkoutLifecycleLogger.log(
-                .workoutWatchSyncSucceeded,
+                .workoutHealthKitSessionCreated,
                 sessionID: session.id,
                 workoutType: session.workoutKind.rawValue,
                 source: "iPhoneGymHealthKitStarted"
@@ -405,8 +467,8 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         guard let restEndsAt else { return }
         let remaining = max(0, Int(ceil(restEndsAt.timeIntervalSinceNow)))
         if remaining > 0 {
-            restCountdownSeconds = remaining
-            publishState(reason: "gymRestRefreshed")
+            clock.updateRestCountdown(remaining)
+            publishRestTickIfNeeded(reason: "gymRestRefreshed")
         } else {
             finishRest(reason: "gymRestFinishedAfterResume")
         }
@@ -474,8 +536,7 @@ final class GymWorkoutSessionViewModel: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard let self else { return }
-                self.elapsedSeconds = Int(Date().timeIntervalSince(self.session.startedAt))
-                self.session.elapsedSeconds = self.elapsedSeconds
+                self.clock.updateElapsedSeconds(Int(Date().timeIntervalSince(self.session.startedAt)))
                 self.publishElapsedTick()
             }
         }
@@ -493,22 +554,26 @@ final class GymWorkoutSessionViewModel: ObservableObject {
             }
             return
         }
-        restTotalSeconds = seconds
-        restCountdownSeconds = seconds
+        clock.startRest(totalSeconds: seconds)
         restContext = context
         restEndsAt = Date().addingTimeInterval(Double(seconds))
         pendingRestFocusTarget = targetAfterRest
+        lastRestStateSyncAt = Date()
         publishState(reason: "gymRestStarted")
 
         restTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled else { return }
                 guard let self else { return }
+                let signpostState = PulsarPerformanceSignposts.gym.beginInterval("rest_tick")
+                defer {
+                    PulsarPerformanceSignposts.gym.endInterval("rest_tick", signpostState)
+                }
                 let remaining = max(0, Int(ceil((self.restEndsAt ?? Date()).timeIntervalSinceNow)))
                 if remaining <= 0 { break }
-                self.restCountdownSeconds = remaining
-                self.publishState(reason: "gymRestTick")
+                self.clock.updateRestCountdown(remaining)
+                self.publishRestTickIfNeeded(reason: "gymRestTick")
             }
 
             guard !Task.isCancelled else { return }
@@ -528,11 +593,11 @@ final class GymWorkoutSessionViewModel: ObservableObject {
     private func clearRestState() {
         restTask?.cancel()
         restTask = nil
-        restCountdownSeconds = nil
-        restTotalSeconds = nil
+        clock.clearRest()
         restContext = nil
         restEndsAt = nil
         pendingRestFocusTarget = nil
+        lastRestStateSyncAt = .distantPast
     }
 
     private func handleCompletedSet(exerciseIndex: Int, setIndex: Int) -> GymSetToggleOutcome {
@@ -831,8 +896,19 @@ final class GymWorkoutSessionViewModel: ObservableObject {
         watchSyncStore.storeActiveGymState(state, broadcast: true, reason: "gymWorkoutElapsedTick")
     }
 
+    private func publishRestTickIfNeeded(reason: String) {
+        let now = Date()
+        guard now.timeIntervalSince(lastRestStateSyncAt) >= ActiveGymSyncCadencePolicy.reachableRestInterval else {
+            return
+        }
+        lastRestStateSyncAt = now
+        let state = activeState(isFinished: false)
+        watchSyncStore.storeActiveGymState(state, broadcast: true, reason: reason)
+        liveActivityManager.update(state: state)
+    }
+
     private func activeState(isFinished: Bool) -> ActiveGymWorkoutState {
-        let sortedExercises = session.exercises.sorted { $0.orderIndex < $1.orderIndex }
+        let sortedExercises = orderedExercises
         let currentTarget = currentActionTarget(in: sortedExercises)
         let currentExerciseIndex = currentTarget?.exerciseIndex ?? sortedExercises.firstIndex { !$0.isCompleted } ?? max(sortedExercises.count - 1, 0)
         let currentExercise = sortedExercises.indices.contains(currentExerciseIndex) ? sortedExercises[currentExerciseIndex] : nil

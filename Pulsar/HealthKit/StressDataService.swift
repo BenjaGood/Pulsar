@@ -222,7 +222,7 @@ struct StressDataService: StressSummaryProviding {
             sleepInterruptions: interruptions,
             bedtimeConsistency: sleep.sleepConsistency > 0 ? sleep.sleepConsistency : nil,
             bedtimeMinutesFromMidnight: sleep.sleepStart.map { minutesFromMidnight($0, calendar: calendar) },
-            recentWorkoutLoad: strain.rawLoad > 0 ? strain.rawLoad : strain.activeEnergyKilocalories.map { max(0, $0 / 8) },
+            recentWorkoutLoad: strain.activeEnergyKilocalories.map { max(0, $0 / 8) } ?? (strain.rawLoad > 0 ? strain.rawLoad : nil),
             strainScore: strain.score > 0 ? Double(strain.score) : nil,
             currentMotionContext: context.context,
             currentHeartRate: recentHeartRate.value,

@@ -7,6 +7,8 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var isShowingLaunch = true
+    @StateObject private var syncStore = PulsarWatchConnectivitySyncStore.shared
+    @EnvironmentObject private var runManager: WatchRunSessionManager
 
     var body: some View {
         ZStack {
@@ -24,6 +26,29 @@ struct ContentView: View {
                 .zIndex(1)
                 .allowsHitTesting(false)
             }
+        }
+        .task {
+            syncStore.hydrateReceivedApplicationContext(reason: "watchLaunchOverlayHydration")
+            dismissLaunchOverlayForActiveWorkoutIfNeeded()
+        }
+        .onChange(of: runManager.snapshot.phase) { _, _ in
+            dismissLaunchOverlayForActiveWorkoutIfNeeded()
+        }
+        .onChange(of: syncStore.activeWorkoutState) { _, _ in
+            dismissLaunchOverlayForActiveWorkoutIfNeeded()
+        }
+        .onChange(of: syncStore.activeGymState) { _, _ in
+            dismissLaunchOverlayForActiveWorkoutIfNeeded()
+        }
+    }
+
+    private func dismissLaunchOverlayForActiveWorkoutIfNeeded() {
+        let hasActiveRun = runManager.snapshot.phase.isWatchActiveWorkoutPhase ||
+            (syncStore.activeWorkoutState?.phase.isLive == true)
+        let hasActiveGym = syncStore.activeGymState.map(syncStore.isRoutableActiveGymState) == true
+        guard isShowingLaunch, hasActiveRun || hasActiveGym else { return }
+        withAnimation(.easeOut(duration: 0.12)) {
+            isShowingLaunch = false
         }
     }
 }
@@ -65,15 +90,26 @@ struct WatchHomeView: View {
         .task {
             syncStore.hydrateReceivedApplicationContext(reason: "watchHomeAppearedHydration")
             syncStore.pruneStaleActiveWorkoutState(reason: "watchHomeAppeared")
-            syncStore.sendWatchHeartbeat(reason: "watchHomeAppeared")
-            syncStore.requestSavedGymRoutinesRefresh(reason: "watchHomeAppeared")
+            let hasLiveWorkout = runManager.snapshot.phase.isWatchActiveWorkoutPhase ||
+                (syncStore.activeGymState.map(syncStore.isRoutableActiveGymState) == true)
+            if !hasLiveWorkout {
+                syncStore.sendWatchHeartbeat(reason: "watchHomeAppeared")
+                syncStore.requestSavedGymRoutinesRefresh(reason: "watchHomeAppeared")
+            }
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
+            PulsarWorkoutStartupTrace.diag(
+                "[Scene] watch scenePhase=active \(PulsarWorkoutStartupTrace.threadTag())"
+            )
             syncStore.hydrateReceivedApplicationContext(reason: "watchAppBecameActiveHydration")
             syncStore.pruneStaleActiveWorkoutState(reason: "watchAppBecameActive")
-            syncStore.sendWatchHeartbeat(reason: "watchAppBecameActive")
-            syncStore.requestSavedGymRoutinesRefresh(reason: "watchAppBecameActive")
+            let hasLiveWorkout = runManager.snapshot.phase.isWatchActiveWorkoutPhase ||
+                (syncStore.activeGymState.map(syncStore.isRoutableActiveGymState) == true)
+            if !hasLiveWorkout {
+                syncStore.sendWatchHeartbeat(reason: "watchAppBecameActive")
+                syncStore.requestSavedGymRoutinesRefresh(reason: "watchAppBecameActive")
+            }
         }
         .onChange(of: syncStore.activeWorkoutState) { _, state in
             guard let state,

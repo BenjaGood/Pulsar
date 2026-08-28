@@ -335,6 +335,16 @@ enum StrengthProgressAnalyticsService {
             displayUnit: displayUnit,
             now: now
         )
+        return applyingPerformanceSnapshots(
+            routine,
+            snapshots: snapshots
+        )
+    }
+
+    static func applyingPerformanceSnapshots(
+        _ routine: PulsarRoutine,
+        snapshots: [String: RoutinePerformanceSnapshot]
+    ) -> PulsarRoutine {
         guard !snapshots.isEmpty else { return routine }
 
         var nextRoutine = routine

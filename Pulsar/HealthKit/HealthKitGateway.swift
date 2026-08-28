@@ -6,6 +6,7 @@
 import CoreLocation
 import Foundation
 import HealthKit
+import OSLog
 
 struct HealthKitProfilePayload {
     var heightCentimeters: Double?
@@ -18,6 +19,20 @@ struct HealthKitAnchoredChanges {
     var samples: [HKSample]
     var deletedObjects: [HKDeletedObject]
     var newAnchor: HKQueryAnchor?
+}
+
+struct HealthKitWeeklyActivityFetchOptions: Equatable, Sendable {
+    var includesHeartRate: Bool
+    var includesRoutes: Bool
+
+    static let dashboard = HealthKitWeeklyActivityFetchOptions(
+        includesHeartRate: false,
+        includesRoutes: false
+    )
+    static let details = HealthKitWeeklyActivityFetchOptions(
+        includesHeartRate: true,
+        includesRoutes: true
+    )
 }
 
 actor HealthKitGateway {
@@ -135,6 +150,26 @@ actor HealthKitGateway {
         }
     }
 
+    func fetchQuantitySamples(
+        identifier: HKQuantityTypeIdentifier,
+        unit: HKUnit,
+        start: Date,
+        end: Date
+    ) async -> [(date: Date, value: Double)] {
+        guard let type = HKObjectType.quantityType(forIdentifier: identifier) else { return [] }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: true)
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { [unit] _, samples, _ in
+                let values = (samples as? [HKQuantitySample] ?? []).map {
+                    (date: $0.endDate, value: $0.quantity.doubleValue(for: unit))
+                }
+                continuation.resume(returning: values)
+            }
+            store.execute(query)
+        }
+    }
+
     func fetchActivity(date: Date, calendar: Calendar) async -> DailyActivityInput {
         let interval = calendar.dateInterval(of: .day, for: date) ?? DateInterval(start: date, duration: 86_400)
         return await fetchActivity(start: interval.start, end: interval.end)
@@ -162,6 +197,7 @@ actor HealthKitGateway {
     }
 
     func fetchWorkouts(start: Date, end: Date) async -> [WorkoutLoadInput] {
+        let perfToken = PulsarPerformanceDiagnostics.begin("healthKit.workoutLoad")
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
         let workouts: [HKWorkout] = await withCheckedContinuation { continuation in
@@ -184,6 +220,7 @@ actor HealthKitGateway {
             )
             results.append(
                 WorkoutLoadInput(
+                    id: workout.uuid,
                     type: gymMetadata?.categoryName ?? workout.workoutActivityType.displayName,
                     start: workout.startDate,
                     end: workout.endDate,
@@ -194,15 +231,29 @@ actor HealthKitGateway {
                 )
             )
         }
+        PulsarPerformanceDiagnostics.end(perfToken, sampleCount: results.count)
         return results
     }
 
-    func fetchWeeklyActivities(start: Date, end: Date, includesHeartRate: Bool = true) async -> [WeeklyActivity] {
+    func fetchWeeklyActivities(
+        start: Date,
+        end: Date,
+        includesHeartRate: Bool = true,
+        includesRoutes: Bool = true
+    ) async -> [WeeklyActivity] {
+        let options = HealthKitWeeklyActivityFetchOptions(
+            includesHeartRate: includesHeartRate,
+            includesRoutes: includesRoutes
+        )
+        let signpostState = PulsarPerformanceSignposts.fitness.beginInterval("hk_weekly")
+        defer {
+            PulsarPerformanceSignposts.fitness.endInterval("hk_weekly", signpostState)
+        }
         let workouts = await fetchWorkoutSamples(start: start, end: end, ascending: false)
         var activities: [WeeklyActivity] = []
 
         for workout in workouts {
-            let heartRateSamples = includesHeartRate ? await fetchHeartRateSamples(for: workout) : []
+            let heartRateSamples = options.includesHeartRate ? await fetchHeartRateSamples(for: workout) : []
             let heartRates = heartRateSamples.map(\.bpm).filter { $0 > 0 }
             let gymMetadata = pulsarGymMetadata(for: workout)
             let pulsarMetadata = pulsarWorkoutMetadata(for: workout)
@@ -212,7 +263,7 @@ actor HealthKitGateway {
             let workoutType = gymMetadata?.categoryName ?? metadataOutdoorKind?.displayName ?? workout.workoutActivityType.fitnessDisplayName
             let displayName = gymMetadata?.displayName ?? metadataOutdoorKind?.displayName ?? workout.workoutActivityType.fitnessDisplayName
             let provenance = provenance(for: workout)
-            let route = gymMetadata == nil && Self.isRouteActivity(displayActivityType)
+            let route = options.includesRoutes && gymMetadata == nil && Self.isRouteActivity(displayActivityType)
                 ? await PulsarHealthKitWorkoutRouteImporter.route(for: workout, healthStore: store)
                 : nil
             let routeSplits = Self.splitEstimates(from: route)
@@ -311,8 +362,11 @@ actor HealthKitGateway {
 
     func fetchHeartRateSamples(start: Date, end: Date) async -> [HeartRateSample] {
         guard let type = HKObjectType.quantityType(forIdentifier: .heartRate) else { return [] }
+        let perfToken = PulsarPerformanceDiagnostics.begin("healthKit.heartRateMapping")
         let samples = await fetchQuantitySamples(type: type, start: start, end: end)
-        return heartRateSamples(from: samples)
+        let mapped = heartRateSamples(from: samples)
+        PulsarPerformanceDiagnostics.end(perfToken, sampleCount: mapped.count)
+        return mapped
     }
 
     private func fetchHeartRateSamples(for workout: HKWorkout) async -> [HeartRateSample] {
@@ -334,6 +388,7 @@ actor HealthKitGateway {
         let unit = HKUnit.count().unitDivided(by: .minute())
         return samples.map { sample in
             HeartRateSample(
+                id: sample.uuid,
                 start: sample.startDate,
                 end: sample.endDate,
                 bpm: sample.quantity.doubleValue(for: unit),
@@ -730,6 +785,7 @@ extension HealthKitGateway {
             .basalEnergyBurned,
             .distanceWalkingRunning,
             .distanceCycling,
+            .bodyFatPercentage,
             .bodyMass,
             .height
         ]
@@ -758,6 +814,7 @@ extension HealthKitGateway {
             .basalEnergyBurned,
             .distanceWalkingRunning,
             .distanceCycling,
+            .bodyFatPercentage,
             .bodyMass,
             .height
         ]

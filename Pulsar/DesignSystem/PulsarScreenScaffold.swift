@@ -5,6 +5,15 @@
 
 import SwiftUI
 
+enum PulsarTabLayout {
+    static let horizontalPadding: CGFloat = 22
+    static let sectionSpacing: CGFloat = 14
+    static let primaryCardCornerRadius: CGFloat = 30
+    static let primaryCardShadowOpacity = 0.055
+    static let primaryCardShadowRadius: CGFloat = 22
+    static let primaryCardShadowY: CGFloat = 12
+}
+
 struct PulsarScreenHeaderBlur {
     var height: CGFloat = 56
     var fadeStart: CGFloat = 8
@@ -20,21 +29,24 @@ struct PulsarScreenScaffold<Background: View, Content: View>: View {
     private let topPadding: CGFloat?
     private let spacing: CGFloat
     private let headerBlur: PulsarScreenHeaderBlur?
+    private let headerConfiguration: PulsarScreenHeaderConfiguration?
+    private let expandedHeaderContent: AnyView?
     private let reservesBottomChrome: Bool
     private let onRefresh: (() async -> Void)?
-    private let onScrollOffsetChange: ((CGFloat) -> Void)?
     private let background: Background
     private let content: Content
 
+    @State private var expandedHeaderHeight: CGFloat = 0
+    @State private var collapsingHeaderProgressModel = PulsarCollapsingHeaderProgressModel()
+
     init(
         layoutStore: PulsarBottomChromeLayoutStore,
-        horizontalPadding: CGFloat = 22,
+        horizontalPadding: CGFloat = PulsarTabLayout.horizontalPadding,
         topPadding: CGFloat? = nil,
-        spacing: CGFloat = 14,
+        spacing: CGFloat = PulsarTabLayout.sectionSpacing,
         headerBlur: PulsarScreenHeaderBlur? = nil,
         reservesBottomChrome: Bool = true,
         onRefresh: (() async -> Void)? = nil,
-        onScrollOffsetChange: ((CGFloat) -> Void)? = nil,
         @ViewBuilder background: () -> Background,
         @ViewBuilder content: () -> Content
     ) {
@@ -43,9 +55,35 @@ struct PulsarScreenScaffold<Background: View, Content: View>: View {
         self.topPadding = topPadding
         self.spacing = spacing
         self.headerBlur = headerBlur
+        self.headerConfiguration = nil
+        self.expandedHeaderContent = nil
         self.reservesBottomChrome = reservesBottomChrome
         self.onRefresh = onRefresh
-        self.onScrollOffsetChange = onScrollOffsetChange
+        self.background = background()
+        self.content = content()
+    }
+
+    init<ExpandedHeader: View>(
+        layoutStore: PulsarBottomChromeLayoutStore,
+        header: PulsarScreenHeaderConfiguration,
+        horizontalPadding: CGFloat = PulsarTabLayout.horizontalPadding,
+        topPadding: CGFloat? = nil,
+        spacing: CGFloat = PulsarTabLayout.sectionSpacing,
+        reservesBottomChrome: Bool = true,
+        onRefresh: (() async -> Void)? = nil,
+        @ViewBuilder background: () -> Background,
+        @ViewBuilder expandedHeader: () -> ExpandedHeader,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.layoutStore = layoutStore
+        self.horizontalPadding = horizontalPadding
+        self.topPadding = topPadding
+        self.spacing = spacing
+        self.headerBlur = nil
+        self.headerConfiguration = header
+        self.expandedHeaderContent = AnyView(expandedHeader())
+        self.reservesBottomChrome = reservesBottomChrome
+        self.onRefresh = onRefresh
         self.background = background()
         self.content = content()
     }
@@ -54,13 +92,14 @@ struct PulsarScreenScaffold<Background: View, Content: View>: View {
         GeometryReader { proxy in
             let resolvedTopPadding = topPadding ?? Self.topChromeClearance(for: proxy.safeAreaInsets.top)
 
-            ZStack {
+            ZStack(alignment: .top) {
                 background
                     .ignoresSafeArea()
 
                 configuredScroll(
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: spacing) {
+                            expandedHeaderSection
                             content
                         }
                         .padding(.horizontal, horizontalPadding)
@@ -74,26 +113,48 @@ struct PulsarScreenScaffold<Background: View, Content: View>: View {
                     .scrollContentBackground(.hidden)
                     .ignoresSafeArea(edges: .bottom)
                 )
+
+                if let headerConfiguration {
+                    PulsarCollapsingHeaderBarHost(
+                        configuration: headerConfiguration,
+                        safeAreaTop: proxy.safeAreaInsets.top,
+                        progressModel: collapsingHeaderProgressModel
+                    )
+                }
             }
         }
     }
 
     @ViewBuilder
+    private var expandedHeaderSection: some View {
+        if let expandedHeaderContent {
+            expandedHeaderContent
+                .onGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.size.height
+                } action: { _, height in
+                    guard abs(expandedHeaderHeight - height) > 0.5 else { return }
+                    expandedHeaderHeight = height
+                }
+        }
+    }
+
+    @ViewBuilder
     private func configuredScroll<ScrollContent: View>(_ scroll: ScrollContent) -> some View {
-        let offsetAwareScroll = applyScrollOffsetReporting(scroll)
-        let blurredScroll = applyHeaderBlur(offsetAwareScroll)
+        let headerAwareScroll = applyCollapsingHeaderProgress(scroll)
+        let blurredScroll = applyHeaderBlur(headerAwareScroll)
         applyRefresh(blurredScroll)
     }
 
     @ViewBuilder
-    private func applyScrollOffsetReporting<ScrollContent: View>(_ scroll: ScrollContent) -> some View {
-        if let onScrollOffsetChange {
+    private func applyCollapsingHeaderProgress<ScrollContent: View>(
+        _ scroll: ScrollContent
+    ) -> some View {
+        if headerConfiguration != nil {
             scroll
-                .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                    max(0, geometry.contentOffset.y + geometry.contentInsets.top)
-                } action: { _, offset in
-                    onScrollOffsetChange(offset)
-                }
+                .pulsarCollapsingHeaderProgress(
+                    expandedHeaderHeight: expandedHeaderHeight,
+                    progressModel: collapsingHeaderProgressModel
+                )
         } else {
             scroll
         }

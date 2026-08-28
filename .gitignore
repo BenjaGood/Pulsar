@@ -15,6 +15,9 @@ DerivedData/
 .swiftpm/
 Package.resolved
 
+# Local media that exceeds GitHub's 100MB limit
+Pulsar/Resources/Orion/orion_monochrome_alpha.mov
+
 # Local OAuth/developer credentials
 .env
 .env.local
@@ -23,5 +26,6 @@ Package.resolved
 .codex/*.local.toml
 Config/Oura.local.xcconfig
 Config/Orion.local.xcconfig
+Config/FoodCommunity.local.xcconfig
 Backend/OuraOAuthServer/.env
 Backend/OrionProxyServer/.env

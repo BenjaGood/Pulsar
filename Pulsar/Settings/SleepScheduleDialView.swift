@@ -1,9 +1,10 @@
 import SwiftUI
-import UIKit
 
 struct SleepScheduleDialView: View {
     @Binding var schedule: SleepSchedule
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @State private var lastBedtimeHapticBucket: Int?
     @State private var lastWakeHapticBucket: Int?
 
@@ -13,7 +14,7 @@ struct SleepScheduleDialView: View {
     var body: some View {
         GeometryReader { proxy in
             let size = min(proxy.size.width, proxy.size.height)
-            let ringWidth = max(26, size * 0.125)
+            let ringWidth = max(24, size * 0.105)
             let ringRadius = size / 2 - ringWidth / 2 - 14
             let center = CGPoint(x: size / 2, y: size / 2)
 
@@ -28,7 +29,8 @@ struct SleepScheduleDialView: View {
                 handle(
                     title: "Bedtime",
                     symbol: "moon.stars.fill",
-                    tint: Color.indigo,
+                    tint: SettingsMonochromeDesign.primary,
+                    currentMinutes: schedule.bedtimeMinutesFromMidnight,
                     point: point(for: schedule.bedtimeMinutesFromMidnight, radius: ringRadius, center: center),
                     ringRadius: ringRadius,
                     center: center,
@@ -39,7 +41,8 @@ struct SleepScheduleDialView: View {
                 handle(
                     title: "Wake",
                     symbol: "sun.max.fill",
-                    tint: Color.cyan,
+                    tint: SettingsMonochromeDesign.primary,
+                    currentMinutes: schedule.wakeTimeMinutesFromMidnight,
                     point: point(for: schedule.wakeTimeMinutesFromMidnight, radius: ringRadius, center: center),
                     ringRadius: ringRadius,
                     center: center,
@@ -53,9 +56,15 @@ struct SleepScheduleDialView: View {
         }
         .aspectRatio(1, contentMode: .fit)
         .padding(10)
-        .accessibilityElement(children: .ignore)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Sleep schedule dial")
-        .accessibilityValue("\(durationText(minutes: schedule.targetSleepDurationMinutes)), bedtime \(timeText(minutesFromMidnight: schedule.bedtimeMinutesFromMidnight)), wake \(timeText(minutesFromMidnight: schedule.wakeTimeMinutesFromMidnight))")
+        .accessibilityValue(durationText(minutes: schedule.targetSleepDurationMinutes))
+        .sensoryFeedback(.selection, trigger: lastBedtimeHapticBucket) { _, newValue in
+            newValue != nil
+        }
+        .sensoryFeedback(.selection, trigger: lastWakeHapticBucket) { _, newValue in
+            newValue != nil
+        }
     }
 
     private func dialBackdrop(size: CGFloat) -> some View {
@@ -63,33 +72,29 @@ struct SleepScheduleDialView: View {
             Circle()
                 .fill(
                     RadialGradient(
-                        colors: [
-                            Color.white.opacity(0.16),
-                            Color.white.opacity(0.04),
-                            Color.black.opacity(0.18)
-                        ],
+                        colors: backdropColors,
                         center: .center,
-                        startRadius: size * 0.06,
-                        endRadius: size * 0.58
+                        startRadius: size * 0.08,
+                        endRadius: size * 0.55
                     )
                 )
             Circle()
                 .fill(
                     AngularGradient(
                         colors: [
-                            Color.indigo.opacity(0.30),
-                            Color.blue.opacity(0.18),
-                            Color.yellow.opacity(0.14),
-                            Color.orange.opacity(0.10),
-                            Color.indigo.opacity(0.30)
+                            Color.black.opacity(colorScheme == .dark ? 0.18 : 0.07),
+                            Color.black.opacity(colorScheme == .dark ? 0.10 : 0.035),
+                            Color.white.opacity(colorScheme == .dark ? 0.04 : 0.12),
+                            Color.black.opacity(colorScheme == .dark ? 0.18 : 0.07)
                         ],
                         center: .center
                     )
                 )
-                .blur(radius: 10)
+                .blur(radius: 18)
             Circle()
-                .stroke(.white.opacity(0.12), lineWidth: 1)
+                .stroke(.primary.opacity(0.035), lineWidth: 0.75)
         }
+        .shadow(color: SettingsMonochromeDesign.shadow, radius: 18, y: 8)
     }
 
     private func dialTicks(radius: CGFloat, ringWidth: CGFloat) -> some View {
@@ -97,8 +102,8 @@ struct SleepScheduleDialView: View {
             let isMajor = tick.isMultiple(of: 12)
             let isMedium = tick.isMultiple(of: 6)
             Capsule(style: .continuous)
-                .fill(.white.opacity(isMajor ? 0.42 : (isMedium ? 0.22 : 0.12)))
-                .frame(width: isMajor ? 3 : 2, height: isMajor ? 16 : (isMedium ? 10 : 6))
+                .fill(.primary.opacity(isMajor ? 0.24 : (isMedium ? 0.15 : 0.09)))
+                .frame(width: isMajor ? 2.5 : 1.5, height: isMajor ? 14 : (isMedium ? 9 : 5))
                 .offset(y: -(radius + ringWidth * 0.58))
                 .rotationEffect(.degrees(Double(tick) / 48 * 360))
         }
@@ -111,21 +116,22 @@ struct SleepScheduleDialView: View {
             referenceLabel("12", angle: .degrees(90), radius: radius)
             referenceLabel("18", angle: .degrees(180), radius: radius)
 
-            referenceSymbol("moon.stars.fill", angle: .degrees(-54), radius: radius - 18, tint: .indigo)
-            referenceSymbol("sun.max.fill", angle: .degrees(126), radius: radius - 18, tint: .yellow)
+            referenceSymbol("moon.stars.fill", angle: .degrees(-54), radius: radius - 18, tint: .black)
+            referenceSymbol("sun.max.fill", angle: .degrees(126), radius: radius - 18, tint: .black)
         }
     }
 
     private func referenceLabel(_ text: String, angle: Angle, radius: CGFloat) -> some View {
         Text(text)
-            .pulsarTextStyle(.overline)
+            .font(.system(size: 12, weight: .regular))
             .foregroundStyle(.secondary)
             .offset(x: CGFloat(cos(angle.radians)) * radius, y: CGFloat(sin(angle.radians)) * radius)
     }
 
     private func referenceSymbol(_ symbol: String, angle: Angle, radius: CGFloat, tint: Color) -> some View {
         Image(systemName: symbol)
-            .pulsarTextStyle(.captionEmphasis)
+            .font(.system(size: 12))
+            .bold()
             .foregroundStyle(tint.opacity(0.82))
             .offset(x: CGFloat(cos(angle.radians)) * radius, y: CGFloat(sin(angle.radians)) * radius)
     }
@@ -135,9 +141,9 @@ struct SleepScheduleDialView: View {
             .stroke(
                 LinearGradient(
                     colors: [
-                        .white.opacity(0.12),
-                        .white.opacity(0.04),
-                        .black.opacity(0.08)
+                        .primary.opacity(colorScheme == .dark ? 0.13 : 0.055),
+                        .primary.opacity(colorScheme == .dark ? 0.08 : 0.025),
+                        .primary.opacity(colorScheme == .dark ? 0.06 : 0.02)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -145,10 +151,6 @@ struct SleepScheduleDialView: View {
                 lineWidth: ringWidth
             )
             .frame(width: radius * 2, height: radius * 2)
-            .overlay {
-                Circle()
-                    .stroke(.white.opacity(0.08), lineWidth: 1)
-            }
     }
 
     private func dialArc(ringWidth: CGFloat) -> some View {
@@ -158,22 +160,23 @@ struct SleepScheduleDialView: View {
             .stroke(
                 AngularGradient(
                     colors: [
-                        Color.indigo.opacity(0.80),
-                        Color.cyan.opacity(0.94),
-                        Color.white.opacity(0.95)
+                        Color.black,
+                        Color.black.opacity(0.88),
+                        Color.black.opacity(0.72),
+                        Color.black.opacity(0.92)
                     ],
                     center: .center
                 ),
                 style: StrokeStyle(lineWidth: ringWidth, lineCap: .round, lineJoin: .round)
             )
-            .shadow(color: Color.indigo.opacity(0.20), radius: 10, y: 4)
-            .shadow(color: Color.cyan.opacity(0.12), radius: 14, y: 8)
+            .shadow(color: SettingsMonochromeDesign.shadow, radius: 10, y: 4)
     }
 
     private func handle(
         title: String,
         symbol: String,
         tint: Color,
+        currentMinutes: Int,
         point: CGPoint,
         ringRadius: CGFloat,
         center: CGPoint,
@@ -182,49 +185,72 @@ struct SleepScheduleDialView: View {
     ) -> some View {
         ZStack {
             Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [tint.opacity(0.96), .white.opacity(0.92)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(.background.opacity(0.88))
             Circle()
-                .stroke(.white.opacity(0.62), lineWidth: 1.2)
+                .stroke(tint.opacity(0.20), lineWidth: 0.75)
             Image(systemName: symbol)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Color.black.opacity(0.72))
+                .font(.system(size: 16))
+                .bold()
+                .foregroundStyle(tint)
         }
-        .frame(width: 28, height: 28)
-        .shadow(color: tint.opacity(0.22), radius: 10, y: 4)
+        .frame(width: 46, height: 46)
+        .pulsarLiquidGlass(
+            cornerRadius: 23,
+            tint: .white.opacity(0.08),
+            interactive: true,
+            isClear: true
+        )
+        .shadow(color: SettingsMonochromeDesign.shadow, radius: 9, y: 4)
         .position(point)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.22), value: point)
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { value in
                     let minutes = snappedMinutes(for: value.location, center: center)
                     onMinutesChanged(minutes)
-                    triggerHapticIfNeeded(for: minutes, lastBucket: lastBucket)
+                    updateHapticBucketIfNeeded(for: minutes, lastBucket: lastBucket)
                 }
                 .onEnded { _ in
                     lastBucket.wrappedValue = nil
                 }
         )
         .accessibilityLabel(title)
+        .accessibilityValue(timeText(minutesFromMidnight: currentMinutes))
+        .accessibilityAdjustableAction { direction in
+            let adjustment: Int
+            switch direction {
+            case .increment:
+                adjustment = snapIntervalMinutes
+            case .decrement:
+                adjustment = -snapIntervalMinutes
+            @unknown default:
+                return
+            }
+            onMinutesChanged((currentMinutes + adjustment + 24 * 60) % (24 * 60))
+        }
     }
 
     private func dialCenter(size: CGFloat) -> some View {
         VStack(spacing: 5) {
             Text("Target Sleep")
-                .pulsarTextStyle(.captionEmphasis)
+                .font(.system(size: max(11, size * 0.032), weight: .medium))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
             Text(durationText(minutes: schedule.targetSleepDurationMinutes))
-                .font(.system(size: size * 0.12, weight: .semibold, design: .rounded))
+                .font(.system(size: size * 0.13, weight: .semibold, design: .rounded))
                 .monospacedDigit()
+                .lineLimit(1)
                 .minimumScaleFactor(0.72)
+                .fixedSize(horizontal: true, vertical: false)
+                .contentTransition(.numericText())
             Text(durationStatusText(minutes: schedule.targetSleepDurationMinutes))
-                .pulsarTextStyle(.metadata)
-                .foregroundStyle(schedule.targetSleepDurationMinutes >= Int(PulsarSharedSleepCalculator.defaultTargetSleepHours * 60) ? .cyan : .secondary)
+                .font(.system(size: max(12, size * 0.035), weight: .regular))
+                .foregroundStyle(
+                    schedule.targetSleepDurationMinutes
+                        >= Int(PulsarSharedSleepCalculator.defaultTargetSleepHours * 60)
+                        ? SettingsMonochromeDesign.primary
+                        : SettingsMonochromeDesign.secondary
+                )
                 .multilineTextAlignment(.center)
         }
         .padding(.horizontal, 28)
@@ -253,20 +279,19 @@ struct SleepScheduleDialView: View {
         return remainder >= 0 ? remainder : remainder + dayMinutes
     }
 
-    private func triggerHapticIfNeeded(for minutes: Int, lastBucket: Binding<Int?>) {
+    private func updateHapticBucketIfNeeded(for minutes: Int, lastBucket: Binding<Int?>) {
         let bucket = minutes / hapticIntervalMinutes
         guard lastBucket.wrappedValue != bucket else { return }
         lastBucket.wrappedValue = bucket
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
     private func durationText(minutes: Int) -> String {
         let hours = minutes / 60
         let remainder = minutes % 60
         if remainder == 0 {
-            return "\(hours) hr"
+            return "\(hours)h"
         }
-        return "\(hours) hr \(remainder)m"
+        return "\(hours)h \(remainder)m"
     }
 
     private func durationStatusText(minutes: Int) -> String {
@@ -275,8 +300,24 @@ struct SleepScheduleDialView: View {
 
     private func timeText(minutesFromMidnight: Int) -> String {
         let components = DateComponents(hour: minutesFromMidnight / 60, minute: minutesFromMidnight % 60)
-        let date = Calendar.current.date(from: components) ?? Date()
+        let date = Calendar.current.date(from: components) ?? .now
         return date.formatted(date: .omitted, time: .shortened)
+    }
+
+    private var backdropColors: [Color] {
+        if colorScheme == .dark {
+            [
+                Color.white.opacity(0.075),
+                Color.black.opacity(0.055),
+                Color.black.opacity(0.11)
+            ]
+        } else {
+            [
+                Color.white.opacity(0.94),
+                Color.black.opacity(0.025),
+                Color.black.opacity(0.04)
+            ]
+        }
     }
 }
 
@@ -292,15 +333,10 @@ private struct SleepScheduleDialPreviewContainer: View {
         SleepScheduleDialView(schedule: $schedule)
             .frame(width: 360, height: 360)
             .padding()
-            .background(PulsarSectionBackground())
+            .background(PulsarSettingsBackground())
     }
 }
 
 #Preview("Sleep Dial Light") {
     SleepScheduleDialPreviewContainer()
-}
-
-#Preview("Sleep Dial Dark") {
-    SleepScheduleDialPreviewContainer()
-        .preferredColorScheme(.dark)
 }

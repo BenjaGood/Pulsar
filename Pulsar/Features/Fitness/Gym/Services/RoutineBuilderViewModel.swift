@@ -140,6 +140,57 @@ final class RoutineBuilderViewModel: ObservableObject {
         normalizeOrder()
     }
 
+    /// Moves a routine entry by its stable row identity. A member of a superset or
+    /// circuit moves its complete group so linked workout progression remains contiguous.
+    @discardableResult
+    func moveRoutineExercise(id: UUID, to destinationIndex: Int) -> Bool {
+        let orderedExercises = routineExercises.sorted { $0.order < $1.order }
+        guard orderedExercises.contains(where: { $0.id == id }) else { return false }
+
+        let movingIDs = Set(supersetGroup(containing: id)?.exerciseIds ?? [id])
+        let movingExercises = orderedExercises.filter { movingIDs.contains($0.id) }
+        let movingIndexes = orderedExercises.indices.filter { movingIDs.contains(orderedExercises[$0].id) }
+        guard !movingExercises.isEmpty, !movingIndexes.isEmpty else { return false }
+
+        let boundedDestination = min(max(0, destinationIndex), orderedExercises.count)
+        let removedBeforeDestination = movingIndexes.filter { $0 < boundedDestination }.count
+        let remainingExercises = orderedExercises.filter { !movingIDs.contains($0.id) }
+        let insertionIndex = min(
+            max(0, boundedDestination - removedBeforeDestination),
+            remainingExercises.count
+        )
+
+        var reorderedExercises = remainingExercises
+        reorderedExercises.insert(contentsOf: movingExercises, at: insertionIndex)
+        guard reorderedExercises.map(\.id) != orderedExercises.map(\.id) else { return false }
+
+        routineExercises = reorderedExercises.enumerated().map { index, routineExercise in
+            var next = routineExercise
+            next.order = index
+            return next
+        }
+        syncSupersetMetadata()
+        return true
+    }
+
+    @discardableResult
+    func moveRoutineExerciseUp(id: UUID) -> Bool {
+        let orderedExercises = routineExercises.sorted { $0.order < $1.order }
+        guard let firstIndex = orderedExercises.firstIndex(where: { $0.id == id }) else { return false }
+        let movingIDs = Set(supersetGroup(containing: id)?.exerciseIds ?? [id])
+        let blockStart = orderedExercises.firstIndex { movingIDs.contains($0.id) } ?? firstIndex
+        return moveRoutineExercise(id: id, to: max(0, blockStart - 1))
+    }
+
+    @discardableResult
+    func moveRoutineExerciseDown(id: UUID) -> Bool {
+        let orderedExercises = routineExercises.sorted { $0.order < $1.order }
+        guard let lastIndex = orderedExercises.lastIndex(where: { $0.id == id }) else { return false }
+        let movingIDs = Set(supersetGroup(containing: id)?.exerciseIds ?? [id])
+        let blockEnd = orderedExercises.lastIndex { movingIDs.contains($0.id) } ?? lastIndex
+        return moveRoutineExercise(id: id, to: min(orderedExercises.count, blockEnd + 2))
+    }
+
     func updatePlan(
         for routineExerciseID: UUID,
         plannedSets: Int? = nil,

@@ -30,188 +30,211 @@ struct PulsarSettingsView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    NavigationLink { ProfileDetailsView(store: store, onSave: onProfileUpdated) } label: {
-                        ProfileSummaryCard(profile: store.profile)
-                    }
-                    .buttonStyle(.plain)
+                PulsarGlassEffectGroup(spacing: 18) {
+                    VStack(alignment: .leading, spacing: 24) {
+                        NavigationLink {
+                            ProfileDetailsView(store: store, onSave: onProfileUpdated)
+                        } label: {
+                            SettingsProfileCard(profile: store.profile)
+                        }
+                        .buttonStyle(.plain)
 
-                    SettingsSectionCard(title: "Personal") {
-                        NavigationLink { ProfileDetailsView(store: store, onSave: onProfileUpdated) } label: {
-                            SettingsNavigationRow(title: "Profile", subtitle: "Name, birthday, and biological sex", symbol: "person.crop.circle", tint: .blue)
+                        SettingsSectionCard(title: "Personal") {
+                            NavigationLink {
+                                ProfileDetailsView(store: store, onSave: onProfileUpdated)
+                            } label: {
+                                SettingsNavigationRow(
+                                    title: "Profile",
+                                    subtitle: "Personal information",
+                                    symbol: "person.fill",
+                                    tint: .black
+                                )
+                            }
+                            SettingsDivider()
+                            NavigationLink {
+                                MeasurementsView(store: store, onSave: onProfileUpdated)
+                            } label: {
+                                SettingsNavigationRow(
+                                    title: "Measurements",
+                                    subtitle: "Height, weight, units",
+                                    symbol: "ruler",
+                                    tint: .black,
+                                    badge: store.profile.preferredUnits.rawValue
+                                )
+                            }
+                            SettingsDivider()
+                            NavigationLink {
+                                PerformanceSettingsView(store: store, onSave: onProfileUpdated)
+                            } label: {
+                                SettingsNavigationRow(
+                                    title: "Performance",
+                                    subtitle: "Heart rate, HRV, training",
+                                    symbol: "waveform.path.ecg",
+                                    tint: .black
+                                )
+                            }
+                            SettingsDivider()
+                            NavigationLink {
+                                SleepPreferencesView(store: store, onSave: onProfileUpdated)
+                            } label: {
+                                SettingsNavigationRow(
+                                    title: "Sleep",
+                                    subtitle: "Schedule, goal, and alarm",
+                                    symbol: "moon.zzz.fill",
+                                    tint: .black
+                                )
+                            }
                         }
-                        SettingsDivider()
-                        NavigationLink { MeasurementsView(store: store, onSave: onProfileUpdated) } label: {
-                            SettingsNavigationRow(title: "Measurements", subtitle: "Height, weight, units, and sources", symbol: "ruler", tint: .green, badge: store.profile.preferredUnits.rawValue)
-                        }
-                        SettingsDivider()
-                        NavigationLink { PerformanceSettingsView(store: store, onSave: onProfileUpdated) } label: {
-                            SettingsNavigationRow(title: "Performance Settings", subtitle: "Heart-rate zones, HRV, and training level", symbol: "speedometer", tint: .orange)
-                        }
-                        SettingsDivider()
-                        NavigationLink { SleepPreferencesView(store: store, onSave: onProfileUpdated) } label: {
-                            SettingsNavigationRow(title: "Sleep Preferences", subtitle: "Sleep schedule, goal days, and alarm", symbol: "moon.zzz.fill", tint: .indigo)
-                        }
-                    }
 
-                    SettingsSectionCard(title: "Devices & Data") {
-                        NavigationLink { DevicesView(store: store, healthKitStore: healthKitStore, onSave: onProfileUpdated) } label: {
-                            SettingsNavigationRow(title: "Devices", subtitle: "Compatible sources through Apple Health", symbol: "applewatch", tint: .purple, badge: healthKitStore.permissionState.title)
+                        SettingsSectionCard(title: "Devices & Data") {
+                            NavigationLink {
+                                HealthSettingsView(
+                                    healthKitStore: healthKitStore,
+                                    onAuthorizationUpdated: onHealthAuthorizationUpdated
+                                )
+                            } label: {
+                                SettingsNavigationRow(
+                                    title: "Health",
+                                    subtitle: "Apple Health integration",
+                                    symbol: "heart",
+                                    tint: .black,
+                                    status: connectionStatus
+                                )
+                            }
+                            SettingsDivider()
+                            NavigationLink {
+                                DataPrivacyView(
+                                    store: store,
+                                    healthKitStore: healthKitStore,
+                                    onReset: onProfileUpdated
+                                )
+                            } label: {
+                                SettingsNavigationRow(
+                                    title: "Data & Privacy",
+                                    subtitle: "Storage, permissions, reset",
+                                    symbol: "lock.fill",
+                                    tint: .black
+                                )
+                            }
+                            SettingsDivider()
+                            NavigationLink {
+                                HealthPermissionsView(
+                                    healthKitStore: healthKitStore,
+                                    onAuthorizationUpdated: onHealthAuthorizationUpdated
+                                )
+                            } label: {
+                                SettingsNavigationRow(
+                                    title: "Permissions",
+                                    subtitle: "Manage health permissions",
+                                    symbol: "shield.lefthalf.filled",
+                                    tint: .black
+                                )
+                            }
                         }
-                        SettingsDivider()
-                        NavigationLink { DataSourcesView(healthKitStore: healthKitStore) } label: {
-                            SettingsNavigationRow(title: "Data Sources", subtitle: "HealthKit sample types Pulsar can read", symbol: "list.bullet.rectangle", tint: .teal)
-                        }
-                        SettingsDivider()
-                        NavigationLink { HealthPermissionsView(healthKitStore: healthKitStore, onAuthorizationUpdated: onHealthAuthorizationUpdated) } label: {
-                            SettingsNavigationRow(title: "Health Permissions", subtitle: "Connect Pulsar to Apple Health", symbol: "heart.text.square.fill", tint: .pink, badge: healthKitStore.permissionState.title)
-                        }
-                        SettingsDivider()
-                        NavigationLink { DataPrivacyView(store: store, healthKitStore: healthKitStore, onReset: onProfileUpdated) } label: {
-                            SettingsNavigationRow(title: "Data & Privacy", subtitle: "Local storage, HealthKit usage, and reset controls", symbol: "lock.shield.fill", tint: .gray)
-                        }
-                    }
 
-                    SettingsSectionCard(title: "App") {
-                        NavigationLink { HomeBackgroundSettingsView(store: backgroundSettingsStore) } label: {
-                            SettingsNavigationRow(
-                                title: "Home Background",
-                                subtitle: "Static time-of-day Liquid Glass scene",
-                                symbol: "sparkles",
-                                tint: .cyan,
-                                badge: backgroundSettingsStore.mode.shortTitle
-                            )
+                        SettingsSectionCard(title: "App") {
+                            NavigationLink {
+                                HomeBackgroundSettingsView(store: backgroundSettingsStore)
+                            } label: {
+                                SettingsNavigationRow(
+                                    title: "Appearance",
+                                    subtitle: "Home background and theme",
+                                    symbol: "photo.on.rectangle.angled",
+                                    tint: .black,
+                                    badge: backgroundSettingsStore.mode.shortTitle
+                                )
+                            }
+                            SettingsDivider()
+                            NavigationLink {
+                                NotificationsSettingsView()
+                            } label: {
+                                SettingsNavigationRow(
+                                    title: "Notifications",
+                                    subtitle: "Workouts, stress, sleep, and more",
+                                    symbol: "bell",
+                                    tint: .black
+                                )
+                            }
+                            SettingsDivider()
+                            NavigationLink {
+                                GymSettingsView(
+                                    gymSettingsStore: gymSettingsStore,
+                                    appUnits: store.profile.preferredUnits
+                                )
+                            } label: {
+                                SettingsNavigationRow(
+                                    title: "Gym Unit",
+                                    subtitle: "Weight unit for lifting",
+                                    symbol: "dumbbell.fill",
+                                    tint: .black,
+                                    badge: gymUnitTitle
+                                )
+                            }
+                            SettingsDivider()
+                            NavigationLink {
+                                MeasurementsView(store: store, onSave: onProfileUpdated)
+                            } label: {
+                                SettingsNavigationRow(
+                                    title: "Units",
+                                    subtitle: "App and measurement units",
+                                    symbol: "scalemass.fill",
+                                    tint: .black,
+                                    badge: store.profile.preferredUnits.rawValue
+                                )
+                            }
+                            SettingsDivider()
+                            NavigationLink {
+                                FoodDataSourcesView()
+                            } label: {
+                                SettingsNavigationRow(
+                                    title: "Food Data Sources",
+                                    subtitle: "Attribution and database licenses",
+                                    symbol: "books.vertical.fill",
+                                    tint: .black
+                                )
+                            }
                         }
-                        SettingsDivider()
-                        NavigationLink { NotificationsSettingsView() } label: {
-                            SettingsNavigationRow(title: "Notifications", subtitle: "Workout, stress, wind-down, and sleep insights", symbol: "bell.badge.fill", tint: .red)
-                        }
-                        SettingsDivider()
-                        NavigationLink { GymSettingsView(gymSettingsStore: gymSettingsStore, appUnits: store.profile.preferredUnits) } label: {
-                            SettingsNavigationRow(
-                                title: "Gym Weight Unit",
-                                subtitle: "Use pounds or kilograms for lifting, independent from your app units.",
-                                symbol: "dumbbell.fill",
-                                tint: .purple,
-                                badge: gymSettingsStore.weightUnitPreference.shortTitle
-                            )
-                        }
-                        SettingsDivider()
-                        SettingsNavigationRow(title: "Units", subtitle: "Managed in Measurements", symbol: "slider.horizontal.3", tint: .mint, badge: store.profile.preferredUnits.rawValue)
+
+                        PulsarSettingsFooter()
                     }
                 }
-                .padding(.horizontal, 18)
+                .padding(.horizontal, 24)
                 .padding(.top, 12)
-                .padding(.bottom, 30)
+                .padding(.bottom, 22)
             }
-            .background(PulsarSectionBackground())
+            .scrollIndicators(.hidden)
+            .background(PulsarSettingsBackground())
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                        .fontWeight(.semibold)
-                }
-            }
-        }
-    }
-}
-
-private struct GymSettingsView: View {
-    @ObservedObject var gymSettingsStore: GymSettingsStore
-    var appUnits: UnitPreference
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 18) {
-                HelperCard(
-                    symbol: "dumbbell.fill",
-                    title: "Lifting Units",
-                    message: "Gym weights can use pounds or kilograms without changing body weight, distance, or other app measurements.",
-                    tint: .purple
-                )
-
-                SettingsSectionCard(title: "Weights") {
-                    VStack(spacing: 0) {
-                        ForEach(GymWeightUnitPreference.allCases) { preference in
-                            Button {
-                                gymSettingsStore.setWeightUnitPreference(preference)
-                            } label: {
-                                HStack(spacing: 14) {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(preference.title)
-                                            .pulsarTextStyle(.bodyEmphasis)
-                                            .foregroundStyle(.primary)
-                                        if preference == .followApp {
-                                            Text("Currently resolves to \(preference.resolvedUnit(appUnits: appUnits).displayName)")
-                                                .pulsarTextStyle(.metadata)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-
-                                    Spacer(minLength: 12)
-
-                                    if gymSettingsStore.weightUnitPreference == preference {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .pulsarTextStyle(.cardTitle)
-                                            .foregroundStyle(.purple)
-                                    }
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 13)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-
-                            if preference != GymWeightUnitPreference.allCases.last {
-                                SettingsDivider()
-                            }
-                        }
+                    Button(action: dismissSettings) {
+                        Text("Done")
+                            .bold()
+                            .foregroundStyle(SettingsMonochromeDesign.primary)
                     }
+                    .buttonStyle(SettingsOutlineButtonStyle())
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 12)
-            .padding(.bottom, 30)
         }
-        .background(PulsarSectionBackground())
-        .navigationTitle("Gym")
-        .navigationBarTitleDisplayMode(.large)
-    }
-}
-
-private struct ProfileSummaryCard: View {
-    var profile: UserProfile
-
-    var body: some View {
-        HStack(spacing: 16) {
-            AvatarView(profile: profile, size: 64)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(displayName)
-                    .pulsarTextStyle(.sectionHeader)
-                    .foregroundStyle(.primary)
-                Text("Personal details for better insights")
-                    .pulsarTextStyle(.label)
-                    .foregroundStyle(.secondary)
-                Text("Pulsar Profile")
-                    .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(.tint)
-            }
-
-            Spacer()
-            Image(systemName: "chevron.right")
-                .pulsarTextStyle(.captionEmphasis)
-                .foregroundStyle(.tertiary)
-        }
-        .padding(18)
-        .pulsarLiquidGlass(cornerRadius: 30)
+        .tint(SettingsMonochromeDesign.primary)
+        .toggleStyle(SettingsMonochromeToggleStyle())
+        .preferredColorScheme(.light)
     }
 
-    private var displayName: String {
-        let trimmed = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Set up your profile" : trimmed
+    private var gymUnitTitle: String {
+        gymSettingsStore
+            .resolvedWeightUnit(appUnits: store.profile.preferredUnits)
+            .displayName
+    }
+
+    private var connectionStatus: String? {
+        healthKitStore.permissionState == .connected ? "Connected" : nil
+    }
+
+    private func dismissSettings() {
+        dismiss()
     }
 }
 

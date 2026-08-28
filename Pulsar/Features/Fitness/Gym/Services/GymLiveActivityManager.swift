@@ -14,14 +14,25 @@ final class GymLiveActivityManager {
     private static let elapsedOnlyUpdateInterval: TimeInterval = 10
 
     func startIfPossible(state: ActiveGymWorkoutState) {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            PulsarWorkoutStartupTrace.diag(
+                "[LiveActivity] start skipped disabled session=\(state.sessionId.uuidString)"
+            )
+            return
+        }
         guard activity == nil else {
+            PulsarWorkoutStartupTrace.diag(
+                "[LiveActivity] start skipped alreadyRunning session=\(state.sessionId.uuidString)"
+            )
             update(state: state)
             return
         }
 
         if let existingActivity = Activity<PulsarGymLiveActivityAttributes>.activities.first(where: { $0.attributes.sessionId == state.sessionId }) {
             activity = existingActivity
+            PulsarWorkoutStartupTrace.diag(
+                "[LiveActivity] start reusedExisting session=\(state.sessionId.uuidString)"
+            )
             update(state: state)
             return
         }
@@ -34,6 +45,13 @@ final class GymLiveActivityManager {
         )
         if activity != nil {
             remember(contentState)
+            PulsarWorkoutStartupTrace.diag(
+                "[LiveActivity] start requested session=\(state.sessionId.uuidString) success=true"
+            )
+        } else {
+            PulsarWorkoutStartupTrace.diag(
+                "[LiveActivity] start requested session=\(state.sessionId.uuidString) success=false"
+            )
         }
     }
 
@@ -71,6 +89,9 @@ final class GymLiveActivityManager {
                 continue
             }
 
+            PulsarWorkoutStartupTrace.diag(
+                "[LiveActivity] endStale session=\(activity.attributes.sessionId.uuidString) keeping=\(activeSessionId?.uuidString ?? "none")"
+            )
             let content = ActivityContent(
                 state: finishedContentState(from: activeState),
                 staleDate: nil

@@ -5,56 +5,115 @@
 
 import Foundation
 import HealthKit
+import OSLog
 
 actor PulsarRunHistoryStore {
+    static let shared = PulsarRunHistoryStore()
+
     private let defaults: UserDefaults
     private let cacheKey = "pulsar.running.history.v1"
+    private let routeFileStore: PulsarRunRouteFileStore
+    private var compactRunsCache: [PulsarRunSummary]?
+    private var hydratedRunsCache: [PulsarRunSummary]?
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        routeFileStore: PulsarRunRouteFileStore = .shared
+    ) {
         self.defaults = defaults
+        self.routeFileStore = routeFileStore
     }
 
-    func save(_ summary: PulsarRunSummary) {
-        var runs = loadCachedRuns()
-        if let existingIndex = runs.firstIndex(where: { isSameWorkout($0, summary) }) {
-            let merged = runs[existingIndex].merged(with: summary)
+    func save(_ summary: PulsarRunSummary) async {
+        var runs = await loadCachedRuns()
+        let summaryWithDiskRoute = await routeFileStore.hydrate(summary)
+        await routeFileStore.save(
+            route: summaryWithDiskRoute.route,
+            sessionId: summaryWithDiskRoute.pulsarWorkoutSessionId,
+            workoutUUID: summaryWithDiskRoute.workoutUUID
+        )
+        if let existingIndex = runs.firstIndex(where: { isSameWorkout($0, summaryWithDiskRoute) }) {
+            let merged = runs[existingIndex].merged(with: summaryWithDiskRoute)
             runs.remove(at: existingIndex)
             runs.insert(merged, at: 0)
-            PulsarSyncDebugLogger.log("Run Activity Log updated session=\(merged.pulsarWorkoutSessionId?.uuidString ?? "none") type=\(merged.workoutKind.rawValue) workoutUUID=\(merged.workoutUUID?.uuidString ?? "none")")
+            PulsarSyncDebugLogger.log("Run Activity Log updated session=\(merged.pulsarWorkoutSessionId?.uuidString ?? "none") type=\(merged.workoutKind.rawValue) workoutUUID=\(merged.workoutUUID?.uuidString ?? "none") routePoints=\(merged.route.count)")
         } else {
-            runs.insert(summary, at: 0)
-            PulsarSyncDebugLogger.log("Run Activity Log created session=\(summary.pulsarWorkoutSessionId?.uuidString ?? "none") type=\(summary.workoutKind.rawValue) workoutUUID=\(summary.workoutUUID?.uuidString ?? "none")")
+            runs.insert(summaryWithDiskRoute, at: 0)
+            PulsarSyncDebugLogger.log("Run Activity Log created session=\(summaryWithDiskRoute.pulsarWorkoutSessionId?.uuidString ?? "none") type=\(summaryWithDiskRoute.workoutKind.rawValue) workoutUUID=\(summaryWithDiskRoute.workoutUUID?.uuidString ?? "none") routePoints=\(summaryWithDiskRoute.route.count)")
         }
         runs = Array(runs.prefix(80))
-        persist(runs)
+        await persist(runs)
     }
 
     func loadRuns(healthStore: HKHealthStore) async -> [PulsarRunSummary] {
-        let localRuns = loadCachedRuns()
+        let localRuns = await loadCachedRuns()
         let healthRuns = await fetchHealthKitRuns(healthStore: healthStore)
         var merged = localRuns
 
         for run in healthRuns {
             if let existingIndex = merged.firstIndex(where: { isSameWorkout($0, run) }) {
                 merged[existingIndex] = merged[existingIndex].merged(with: run)
-                PulsarSyncDebugLogger.log("Run HealthKit import merged session=\(run.pulsarWorkoutSessionId?.uuidString ?? "none") type=\(run.workoutKind.rawValue) workoutUUID=\(run.workoutUUID?.uuidString ?? "none")")
+                PulsarSyncDebugLogger.log("Run HealthKit import merged session=\(run.pulsarWorkoutSessionId?.uuidString ?? "none") type=\(run.workoutKind.rawValue) workoutUUID=\(run.workoutUUID?.uuidString ?? "none") routePoints=\(merged[existingIndex].route.count)")
             } else {
                 merged.append(run)
-                PulsarSyncDebugLogger.log("Run HealthKit import appended session=\(run.pulsarWorkoutSessionId?.uuidString ?? "none") type=\(run.workoutKind.rawValue) workoutUUID=\(run.workoutUUID?.uuidString ?? "none")")
+                PulsarSyncDebugLogger.log("Run HealthKit import appended session=\(run.pulsarWorkoutSessionId?.uuidString ?? "none") type=\(run.workoutKind.rawValue) workoutUUID=\(run.workoutUUID?.uuidString ?? "none") routePoints=\(run.route.count)")
             }
         }
 
         let sorted = Array(merged.sorted { $0.startedAt > $1.startedAt }.prefix(80))
         if sorted != localRuns {
-            persist(sorted)
+            await persist(sorted)
         }
         return sorted
     }
 
-    func loadCachedRuns() -> [PulsarRunSummary] {
+    func loadCachedRuns() async -> [PulsarRunSummary] {
+        await loadCachedRuns(hydratingRoutes: true)
+    }
+
+    func loadCachedRuns(hydratingRoutes: Bool) async -> [PulsarRunSummary] {
+        guard hydratingRoutes else {
+            return loadCompactRuns()
+        }
+        if let hydratedRunsCache {
+            return hydratedRunsCache
+        }
+        let signpostState = PulsarPerformanceSignposts.fitness.beginInterval("runs_hydrate")
+        defer {
+            PulsarPerformanceSignposts.fitness.endInterval("runs_hydrate", signpostState)
+        }
+        let runs = loadCompactRuns()
+        var hydrated: [PulsarRunSummary] = []
+        hydrated.reserveCapacity(runs.count)
+        for run in runs {
+            let withDiskRoute = await routeFileStore.hydrate(run)
+            hydrated.append(withDiskRoute)
+        }
+        hydratedRunsCache = hydrated
+        return hydrated
+    }
+
+    /// Returns only the dates needed to mark weeks with workouts. This path never
+    /// reads route sidecars, so paging the week selector stays independent of GPS payload size.
+    func loadCachedRunStartDates(start: Date, end: Date) async -> [Date] {
+        loadCompactRuns()
+            .lazy
+            .filter { $0.startedAt >= start && $0.startedAt < end }
+            .map(\.startedAt)
+    }
+
+    private func loadCompactRuns() -> [PulsarRunSummary] {
+        if let compactRunsCache {
+            return compactRunsCache
+        }
         guard let data = defaults.data(forKey: cacheKey),
-              let runs = try? JSONDecoder().decode([PulsarRunSummary].self, from: data) else { return [] }
-        return runs
+              let runs = try? JSONDecoder().decode([PulsarRunSummary].self, from: data) else {
+            compactRunsCache = []
+            return []
+        }
+        let retainedRuns = Array(runs.sorted { $0.startedAt > $1.startedAt }.prefix(80))
+        compactRunsCache = retainedRuns
+        return retainedRuns
     }
 
     private func fetchHealthKitRuns(healthStore: HKHealthStore) async -> [PulsarRunSummary] {
@@ -240,9 +299,41 @@ actor PulsarRunHistoryStore {
         return history
     }
 
-    private func persist(_ runs: [PulsarRunSummary]) {
-        if let data = try? JSONEncoder().encode(runs) {
+    private func persist(_ runs: [PulsarRunSummary]) async {
+        for run in runs where run.route.count > 1 {
+            await routeFileStore.save(
+                route: run.route,
+                sessionId: run.pulsarWorkoutSessionId,
+                workoutUUID: run.workoutUUID
+            )
+        }
+        // Keep UserDefaults lean: persist summaries with routes stripped when oversized,
+        // relying on the on-disk route sidecar for restoration.
+        let compactRuns = runs.map { run -> PulsarRunSummary in
+            guard run.route.count > 250 else { return run }
+            var compact = run
+            // Keep UserDefaults lean; the on-disk sidecar is the source of truth.
+            compact.route = []
+            return compact
+        }
+        do {
+            let data = try JSONEncoder().encode(compactRuns)
             defaults.set(data, forKey: cacheKey)
+            compactRunsCache = compactRuns
+            hydratedRunsCache = runs
+        } catch {
+            PulsarSyncDebugLogger.log("Run Activity Log persist failed error=\(error.localizedDescription)")
+            let routeStrippedRuns = compactRuns.map { run -> PulsarRunSummary in
+                var stripped = run
+                stripped.route = []
+                return stripped
+            }
+            if let data = try? JSONEncoder().encode(routeStrippedRuns) {
+                defaults.set(data, forKey: cacheKey)
+                compactRunsCache = routeStrippedRuns
+                hydratedRunsCache = runs
+                PulsarSyncDebugLogger.log("Run Activity Log persist fell back to route-stripped summaries")
+            }
         }
     }
 
@@ -269,8 +360,8 @@ private extension PulsarRunSummary {
         if incoming.workoutKind == .other, workoutKind != .other {
             merged.workoutKind = workoutKind
         }
-        merged.route = incoming.route.isEmpty ? route : incoming.route
-        merged.splits = incoming.splits.isEmpty ? splits : incoming.splits
+        merged.route = PulsarWorkoutRouteMerge.preferredRoute(route, incoming.route)
+        merged.splits = PulsarWorkoutRouteMerge.preferredSplits(splits, incoming.splits)
         merged.activeEnergyKilocalories = incoming.activeEnergyKilocalories ?? activeEnergyKilocalories
         merged.averageHeartRate = incoming.averageHeartRate ?? averageHeartRate
         merged.maxHeartRate = incoming.maxHeartRate ?? maxHeartRate

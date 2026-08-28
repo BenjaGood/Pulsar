@@ -8,6 +8,7 @@ import Foundation
 struct OrionConfiguration: Equatable, Sendable {
     var backendBaseURL: URL?
     var chatPath: String
+    var nutritionExplainPath: String
     var mockMode: Bool
     var timeoutSeconds: TimeInterval
 
@@ -16,11 +17,13 @@ struct OrionConfiguration: Equatable, Sendable {
     init(
         backendBaseURL: URL? = nil,
         chatPath: String = "/orion/chat",
+        nutritionExplainPath: String = "/api/orion/nutrition-explain",
         mockMode: Bool = false,
         timeoutSeconds: TimeInterval = 30
     ) {
         self.backendBaseURL = backendBaseURL
         self.chatPath = chatPath.isEmpty ? "/orion/chat" : chatPath
+        self.nutritionExplainPath = nutritionExplainPath.isEmpty ? "/api/orion/nutrition-explain" : nutritionExplainPath
         self.mockMode = mockMode
         self.timeoutSeconds = timeoutSeconds
     }
@@ -28,6 +31,11 @@ struct OrionConfiguration: Equatable, Sendable {
     var chatEndpoint: URL? {
         guard let backendBaseURL else { return nil }
         return Self.endpoint(baseURL: backendBaseURL, path: chatPath)
+    }
+
+    var nutritionExplainEndpoint: URL? {
+        guard let backendBaseURL else { return nil }
+        return Self.endpoint(baseURL: backendBaseURL, path: nutritionExplainPath)
     }
 
     var isConfigured: Bool {
@@ -43,6 +51,7 @@ struct OrionConfiguration: Equatable, Sendable {
         OrionConfiguration(
             backendBaseURL: urlValue(named: "OrionBackendBaseURL", bundle: bundle),
             chatPath: stringValue(named: "OrionChatPath", bundle: bundle) ?? "/orion/chat",
+            nutritionExplainPath: stringValue(named: "OrionNutritionExplainPath", bundle: bundle) ?? "/api/orion/nutrition-explain",
             mockMode: defaults.bool(forKey: OrionDefaultsKeys.mockMode) || boolValue(named: "OrionMockMode", bundle: bundle)
         )
     }

@@ -76,17 +76,23 @@ final class SleepDetailsViewModel: ObservableObject {
     }
 
     var dateSubtitle: String {
-        if calendar.isDateInToday(wakeUpDate) { return "Last night" }
+        if calendar.isDateInToday(wakeUpDate) { return "Last Night" }
         return wakeUpDate.formatted(.dateTime.weekday(.wide).month(.wide).day())
     }
 
     var statusText: String {
         guard summary.totalSleepMinutes > 0 else { return "No sleep data" }
-        if summary.sleepEfficiency < 0.78 || summary.awakenings >= 4 { return "Fragmented sleep" }
-        if sleepDebtMinutes > 30 { return "Light sleep deficit" }
-        if summary.score >= 85 { return "Excellent recovery" }
-        if summary.sleepConsistency >= 0.75 { return "Consistent night" }
-        return "Steady night"
+        if summary.sleepEfficiency < 0.78 || summary.awakenings >= 4 { return "Fragmented Sleep" }
+        if sleepDebtMinutes > 30 { return "Light Sleep Deficit" }
+        if summary.score >= 85 { return "Excellent Recovery" }
+        if summary.sleepConsistency >= 0.75 { return "Consistent Night" }
+        return "Steady Night"
+    }
+
+    var rhythmBadgeText: String {
+        summary.sleepEfficiency < 0.78 || summary.awakenings >= 4
+            ? "Fragmented Sleep"
+            : "Restful Rhythm"
     }
 
     var metricTiles: [SleepMetricTileModel] {
@@ -104,6 +110,19 @@ final class SleepDetailsViewModel: ObservableObject {
             SleepMetricTileModel(title: "Consistency", value: consistencyText, subtitle: nil),
             SleepMetricTileModel(title: "Sleep Debt", value: sleepDebtText, subtitle: "Against target")
         ]
+    }
+
+    var keyMetricTiles: [SleepMetricTileModel] {
+        [
+            SleepMetricTileModel(title: "Efficiency", value: efficiencyText, subtitle: "Sleep / in bed"),
+            SleepMetricTileModel(title: "Awakenings", value: awakeningsText, subtitle: "During sleep"),
+            SleepMetricTileModel(title: "Sleep Start", value: sleepStartText, subtitle: nil),
+            SleepMetricTileModel(title: "Wake Time", value: wakeTimeText, subtitle: nil)
+        ]
+    }
+
+    var sleepBalanceRows: [StageMetric] {
+        stageBreakdownRows.filter { $0.stage != .inBed }
     }
 
     var stageBreakdownRows: [StageMetric] {

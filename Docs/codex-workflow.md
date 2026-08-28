@@ -48,3 +48,9 @@ Good Pulsar implementation prompts include:
 - OpenAI API keys, model selection, tool routing, web search, and provider policy stay server-side.
 - Keep mock/simulator behavior available for local development.
 - Treat medical and fitness guidance as trend explanation and coaching support, not diagnosis.
+
+## Supabase Boundary
+
+- Supabase is used only by `Pulsar/Features/Food/Barcode` for the shared food catalog and community contributions.
+- All personal Pulsar state remains local/iCloud: HealthKit, workouts, sleep, recovery, profile, personal meals, settings, and WatchConnectivity state.
+- Review Supabase payloads for accidental personal data before merging food-community changes.

@@ -76,6 +76,19 @@ struct OuraSyncServiceTests {
         #expect(client.endDates.count == 1)
     }
 
+    @Test func endpointCapabilityCacheRemembersOnlyExplicitlyUnavailablePaths() {
+        let cache = OuraEndpointCapabilityCache()
+
+        #expect(cache.unavailableReason(for: "daily_resilience") == nil)
+        cache.rememberUnavailable(
+            path: "daily_resilience",
+            reason: "Token is not authorized access stress scope."
+        )
+
+        #expect(cache.unavailableReason(for: "daily_resilience")?.contains("stress scope") == true)
+        #expect(cache.unavailableReason(for: "daily_stress") == nil)
+    }
+
     private func validToken() -> OuraStoredToken {
         OuraStoredToken(
             accessToken: "access",

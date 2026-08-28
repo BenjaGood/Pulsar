@@ -247,6 +247,64 @@ const MEAL_SCAN_RESPONSE_SCHEMA = {
   required: ["result"]
 };
 
+const NUTRITION_EXPLANATION_RESPONSE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    explanation: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        summary: { type: "string" },
+        assessment: { type: "string", enum: ["plausible", "needsReview", "insufficientData"] },
+        calorieTargetRationale: { type: "string" },
+        macroRationale: { type: "string" },
+        activityObservations: { type: "string" },
+        primaryDrivers: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 8
+        },
+        workoutPlanSummary: { type: "string" },
+        healthDataConsistency: { type: "string" },
+        questionsToImproveAccuracy: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 6
+        },
+        practicalRecommendations: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 6
+        },
+        reassessmentPlan: { type: "string" },
+        dataLimitations: { type: "string" },
+        suggestedReassessmentDate: { type: "string" },
+        safetyNote: { type: "string" },
+        limitations: { type: "string" }
+      },
+      required: [
+        "summary",
+        "assessment",
+        "calorieTargetRationale",
+        "macroRationale",
+        "activityObservations",
+        "primaryDrivers",
+        "workoutPlanSummary",
+        "healthDataConsistency",
+        "questionsToImproveAccuracy",
+        "practicalRecommendations",
+        "reassessmentPlan",
+        "dataLimitations",
+        "suggestedReassessmentDate",
+        "safetyNote",
+        "limitations"
+      ]
+    }
+  },
+  required: ["explanation"]
+};
+
 const ORION_INSTRUCTIONS = `
 You are Orion, Pulsar's intelligence assistant.
 Use the summarized Pulsar context supplied by the app to answer questions about workouts,
@@ -265,6 +323,20 @@ Never invent hidden ingredients or claim access to raw depth maps; only compact 
 Use generic labels when evidence is ambiguous, such as "ground meat/protein, type uncertain", "mixed salad", "sauce/dressing, type uncertain", or "starch, type uncertain".
 Do not label meat as chicken, beef, pork, fish, turkey, shrimp, tofu, egg, or cheese unless the image shows distinctive visual evidence for that exact food.
 Set metadata.needsUserReview to true whenever the food identity, portion size, or nutrition estimate is uncertain.
+`.trim();
+
+const NUTRITION_EXPLANATION_INSTRUCTIONS = `
+You explain a deterministic nutrition calculation produced by Pulsar.
+Use only the supplied validated input summary, workout plan, precomputed evidence, and result. Never change, invent, or recommend replacement calorie or macro numbers.
+Flag mismatches between the manual workout plan and aggregated HealthKit evidence.
+Ask the user to correct inputs when confidence is low.
+Explain why a result changed from any previous saved target included in the payload.
+Distinguish observed activity from a future workout plan.
+Recommend reassessment instead of claiming precision.
+Do not diagnose, prescribe treatment, or imply that HealthKit energy is ground truth.
+Give practical food-pattern guidance compatible with the supplied dietary preference and exclusions.
+Be explicit about missing data and recommend qualified clinical care for pregnancy, breastfeeding, medical conditions, eating-disorder concerns, or therapeutic diets.
+Return only JSON matching the requested schema.
 `.trim();
 
 const SPECIFIC_PROTEIN_RULES = [
@@ -519,6 +591,43 @@ function openAIMealScanRequestBody(body, imageDataURL) {
   return payload;
 }
 
+function openAINutritionExplanationRequestBody(body) {
+  const payload = {
+    model: OPENAI_MODEL,
+    input: [
+      {
+        role: "developer",
+        content: NUTRITION_EXPLANATION_INSTRUCTIONS
+      },
+      {
+        role: "user",
+        content: [
+          "Explain this validated Pulsar nutrition result without changing any calculated target.",
+          "The payload contains only aggregated activity and user-confirmed calculation inputs, not raw HealthKit samples.",
+          "",
+          compactJSONString({ input: body.input, result: body.result })
+        ].join("\n")
+      }
+    ],
+    store: false,
+    text: {
+      format: {
+        type: "json_schema",
+        name: "orion_nutrition_explanation",
+        strict: true,
+        schema: NUTRITION_EXPLANATION_RESPONSE_SCHEMA
+      }
+    }
+  };
+  if (supportsGPT5TextControls(OPENAI_MODEL)) {
+    payload.text.verbosity = OPENAI_TEXT_VERBOSITY;
+  }
+  if (supportsReasoningEffort(OPENAI_MODEL)) {
+    payload.reasoning = { effort: OPENAI_REASONING_EFFORT || "low" };
+  }
+  return payload;
+}
+
 function supportsGPT5TextControls(model) {
   return model.startsWith("gpt-5");
 }
@@ -610,6 +719,27 @@ async function requestOpenAI(body) {
     reply,
     model: result.body.model || OPENAI_MODEL
   };
+}
+
+async function requestOpenAINutritionExplanation(body) {
+  const result = await requestOpenAIResponse(openAINutritionExplanationRequestBody(body));
+  if (!result.ok) return result;
+  const text = extractOpenAIText(result.body);
+  if (!text) return { ok: false, status: 502, message: "OpenAI returned an empty nutrition explanation." };
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed?.explanation) {
+      return { ok: false, status: 502, message: "OpenAI nutrition JSON did not include an explanation." };
+    }
+    return {
+      ok: true,
+      id: result.body.id || randomUUID(),
+      explanation: parsed.explanation,
+      model: result.body.model || OPENAI_MODEL
+    };
+  } catch {
+    return { ok: false, status: 502, message: "OpenAI nutrition explanation was not valid JSON." };
+  }
 }
 
 function parseMealScanResult(text) {
@@ -919,6 +1049,42 @@ async function handleMealScan(request, response) {
   });
 }
 
+async function handleNutritionExplain(request, response) {
+  const missing = missingConfiguration();
+  if (missing.length) {
+    sendJSON(response, 500, {
+      error: "orion_backend_not_configured",
+      error_description: `Missing ${missing.join(", ")}.`,
+      message: "Orion nutrition explanation is unavailable because the server is not configured."
+    });
+    return;
+  }
+  const body = await readJSON(request);
+  if (!body?.input || typeof body.input !== "object" || !body?.result || typeof body.result !== "object") {
+    sendJSON(response, 400, {
+      error: "invalid_request",
+      error_description: "input and result objects are required.",
+      message: "Orion nutrition explanation requires a validated calculation payload."
+    });
+    return;
+  }
+  const result = await requestOpenAINutritionExplanation(body);
+  if (!result.ok) {
+    sendJSON(response, result.status, {
+      error: "orion_openai_request_failed",
+      error_description: result.message,
+      message: result.message
+    });
+    return;
+  }
+  sendJSON(response, 200, {
+    id: result.id,
+    created_at: new Date().toISOString(),
+    explanation: result.explanation,
+    model: result.model
+  });
+}
+
 async function handleRequest(request, response) {
   const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
   const path = url.pathname;
@@ -940,6 +1106,11 @@ async function handleRequest(request, response) {
 
   if (request.method === "POST" && (path === "/orion/meal-scan" || path === "/api/orion/meal-scan")) {
     await handleMealScan(request, response);
+    return;
+  }
+
+  if (request.method === "POST" && (path === "/orion/nutrition-explain" || path === "/api/orion/nutrition-explain")) {
+    await handleNutritionExplain(request, response);
     return;
   }
 

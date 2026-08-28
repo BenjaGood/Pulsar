@@ -51,9 +51,9 @@ final class MealScannerARCaptureController {
 }
 
 enum MealScannerDepthGrid {
-    static let columns = 7
-    static let rows = 5
-    static let cellCount = columns * rows
+    nonisolated static let columns = 7
+    nonisolated static let rows = 5
+    nonisolated static let cellCount = columns * rows
 }
 
 struct MealScannerDepthPoint: Hashable {
@@ -151,6 +151,16 @@ struct MealScannerLiveFrameFeedback: Equatable {
 
     var isCaptureReady: Bool {
         isTrackingReady && isLightingReady
+    }
+
+    var approximateSubjectDistance: Double? {
+        let centerDepths = depthPoints.lazy
+            .filter { abs($0.x) < 0.48 && abs($0.y) < 0.48 }
+            .map(\.z)
+        let total = centerDepths.reduce(0, +)
+        let count = centerDepths.count
+        guard count > 0 else { return nil }
+        return total / Double(count)
     }
 
     var depthTitle: String {

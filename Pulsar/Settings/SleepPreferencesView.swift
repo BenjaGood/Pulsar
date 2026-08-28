@@ -1,11 +1,12 @@
 import SwiftUI
-import UIKit
 import UserNotifications
 
 struct SleepPreferencesView: View {
     @ObservedObject var store: ProfileStore
     var onSave: (() -> Void)? = nil
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dismiss) private var dismiss
     @State private var draft: UserProfile
     @State private var activePicker: SleepTimePickerTarget?
     @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
@@ -29,82 +30,58 @@ struct SleepPreferencesView: View {
     }
 
     var body: some View {
-        SettingsDetailScaffold(title: "Sleep", hasChanges: draft != store.profile, save: save) {
-            VStack(spacing: 20) {
-                SleepPersonalizationHeaderCard()
+        ScrollView(.vertical, showsIndicators: false) {
+            SleepPreferencesContent(
+                draft: $draft,
+                notificationStatus: notificationStatus,
+                isCheckingAlarmPermission: isCheckingAlarmPermission,
+                showPermissionCard: showPermissionCard,
+                formattedTime: { minutes in formattedTime(minutes) },
+                onEditTime: { activePicker = $0 },
+                onToggleAlarm: { isEnabled in handleAlarmToggle(isEnabled) },
+                openSettings: { openAppSettings() }
+            )
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .background(PulsarSettingsBackground())
+        .navigationBarBackButtonHidden()
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Back", systemImage: "chevron.left", action: dismissSleepSettings)
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.glass(.clear))
+                    .buttonBorderShape(.circle)
+                    .controlSize(.large)
+                    .tint(.primary)
+            }
 
-                SleepPreferenceSection(title: "Sleep Schedule") {
-                    VStack(spacing: 18) {
-                        HStack(spacing: 10) {
-                            SleepScheduleSummaryPill(title: "Bedtime", value: formattedTime(draft.sleepSchedule.bedtimeMinutesFromMidnight), tint: .indigo)
-                            SleepScheduleSummaryPill(title: "Wake", value: formattedTime(draft.sleepSchedule.wakeTimeMinutesFromMidnight), tint: .cyan)
-                        }
-
-                        SleepScheduleDialView(schedule: $draft.sleepSchedule)
-                            .frame(maxWidth: 420)
-
-                        Text("Drag the handles for a fast adjustment, or tap the rows below for exact times.")
-                            .pulsarTextStyle(.metadata)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 10)
-
-                        VStack(spacing: 0) {
-                            SleepActionRow(
-                                title: "Bedtime",
-                                value: formattedTime(draft.sleepSchedule.bedtimeMinutesFromMidnight),
-                                subtitle: "Used for sleep consistency and recovery context"
-                            ) {
-                                activePicker = .bedtime
-                            }
-                            Divider()
-                                .padding(.leading, 16)
-                            SleepActionRow(
-                                title: "Wake Time",
-                                value: formattedTime(draft.sleepSchedule.wakeTimeMinutesFromMidnight),
-                                subtitle: draft.sleepSchedule.alarmUsesWakeTime ? "Linked to your sleep alarm" : "Used for sleep performance and wake context"
-                            ) {
-                                activePicker = .wake
-                            }
-                        }
-                        .background(
-                            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                .fill(.white.opacity(0.06))
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: save) {
+                    Text("Save")
+                        .bold()
+                        .foregroundStyle(
+                            hasChanges
+                                ? SettingsMonochromeDesign.primary
+                                : SettingsMonochromeDesign.disabled
                         )
-                    }
+                        .animation(.easeInOut(duration: 0.2), value: hasChanges)
                 }
-
-                SleepPreferenceSection(title: "Sleep Goal Days", footer: "Custom day selection is coming soon.") {
-                    HStack(spacing: 10) {
-                        SleepGoalDayChip(title: "Every day", isSelected: draft.sleepGoalDays == .everyDay, isDisabled: false) {
-                            draft.sleepGoalDays = .everyDay
-                        }
-                        SleepGoalDayChip(title: "Weekdays", isSelected: draft.sleepGoalDays == .weekdays, isDisabled: false) {
-                            draft.sleepGoalDays = .weekdays
-                        }
-                        SleepGoalDayChip(title: "Custom", isSelected: draft.sleepGoalDays == .custom, isDisabled: true, badge: "Soon") { }
-                    }
-                }
-
-                if draft.sleepSchedule.alarmEnabled {
-                    AlarmStatusCard(schedule: draft.sleepSchedule, sleepGoalDays: draft.sleepGoalDays, formattedTime: formattedTime)
-                }
-
-                AlarmSettingsCard(
-                    schedule: $draft.sleepSchedule,
-                    sleepGoalDays: draft.sleepGoalDays,
-                    notificationStatus: notificationStatus,
-                    isCheckingPermission: isCheckingAlarmPermission,
-                    formattedTime: formattedTime,
-                    onToggleAlarm: handleAlarmToggle(_:),
-                    onEditAlarmTime: { activePicker = .alarm }
-                )
-
-                if showPermissionCard, notificationStatus == .denied {
-                    NotificationPermissionCard(openSettings: openAppSettings)
-                }
+                .buttonStyle(SettingsOutlineButtonStyle())
+                .controlSize(.large)
+                .disabled(!hasChanges)
             }
         }
+        .animation(
+            reduceMotion ? nil : .smooth(duration: 0.34),
+            value: draft.sleepSchedule.alarmEnabled
+        )
+        .animation(
+            reduceMotion ? nil : .smooth(duration: 0.34),
+            value: showPermissionCard
+        )
         .task {
             await refreshNotificationStatus()
         }
@@ -112,10 +89,23 @@ struct SleepPreferencesView: View {
             SleepTimePickerSheet(
                 title: target.title,
                 selection: timeBinding(for: target),
+                showsWakeTimeReset: target == .alarm && !draft.sleepSchedule.alarmUsesWakeTime,
+                resetToWakeTime: { resetAlarmToWakeTime() },
                 done: { activePicker = nil }
             )
-            .presentationDetents([.height(330)])
+            .presentationDetents([.height(360)])
         }
+        .tint(SettingsMonochromeDesign.primary)
+        .toggleStyle(SettingsMonochromeToggleStyle())
+        .preferredColorScheme(.light)
+    }
+
+    private var hasChanges: Bool {
+        draft != store.profile
+    }
+
+    private func dismissSleepSettings() {
+        dismiss()
     }
 
     private func save() {
@@ -153,6 +143,10 @@ struct SleepPreferencesView: View {
         }
     }
 
+    private func resetAlarmToWakeTime() {
+        draft.sleepSchedule.resetAlarmToWakeTime()
+    }
+
     private func openAppSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
@@ -187,7 +181,12 @@ struct SleepPreferencesView: View {
     }
 
     private func date(for minutesFromMidnight: Int) -> Date {
-        calendar.date(from: DateComponents(hour: minutesFromMidnight / 60, minute: minutesFromMidnight % 60)) ?? Date()
+        calendar.date(
+            from: DateComponents(
+                hour: minutesFromMidnight / 60,
+                minute: minutesFromMidnight % 60
+            )
+        ) ?? .now
     }
 
     private func minutes(from date: Date) -> Int {
@@ -196,12 +195,11 @@ struct SleepPreferencesView: View {
     }
 
     private func formattedTime(_ minutesFromMidnight: Int) -> String {
-        let date = date(for: minutesFromMidnight)
-        return date.formatted(date: .omitted, time: .shortened)
+        date(for: minutesFromMidnight).formatted(date: .omitted, time: .shortened)
     }
 }
 
-private enum SleepTimePickerTarget: String, Identifiable {
+enum SleepTimePickerTarget: String, Identifiable {
     case bedtime
     case wake
     case alarm
@@ -217,385 +215,40 @@ private enum SleepTimePickerTarget: String, Identifiable {
     }
 }
 
-private struct SleepPersonalizationHeaderCard: View {
-    var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            SettingsIcon(symbol: "moon.zzz.fill", tint: .indigo)
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Sleep Personalization")
-                    .pulsarTextStyle(.sectionHeader)
-                Text("Used for sleep consistency, sleep performance, and recovery insights.")
-                    .pulsarTextStyle(.metadata)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(18)
-        .pulsarLiquidGlass(cornerRadius: 30)
-    }
-}
-
-private struct SleepPreferenceSection<Content: View>: View {
-    var title: String
-    var footer: String? = nil
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title.uppercased())
-                .pulsarTextStyle(.captionEmphasis)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 4)
-
-            VStack(spacing: 0) {
-                content
-            }
-            .padding(18)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .pulsarLiquidGlass(cornerRadius: 30)
-
-            if let footer {
-                Text(footer)
-                    .pulsarTextStyle(.metadata)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-            }
-        }
-    }
-}
-
-private struct SleepScheduleSummaryPill: View {
-    var title: String
-    var value: String
-    var tint: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .pulsarTextStyle(.captionEmphasis)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .pulsarTextStyle(.cardTitle)
-                .monospacedDigit()
-                .foregroundStyle(.primary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(tint.opacity(0.12))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(tint.opacity(0.16), lineWidth: 1)
-        }
-    }
-}
-
-private struct SleepActionRow: View {
-    var title: String
-    var value: String
-    var subtitle: String
-    var action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .pulsarTextStyle(.bodyEmphasis)
-                        .foregroundStyle(.primary)
-                    Text(subtitle)
-                        .pulsarTextStyle(.metadata)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 12)
-                Text(value)
-                    .pulsarTextStyle(.bodyEmphasis)
-                    .monospacedDigit()
-                    .foregroundStyle(.primary)
-                Image(systemName: "chevron.right")
-                    .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 13)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct SleepGoalDayChip: View {
-    var title: String
-    var isSelected: Bool
-    var isDisabled: Bool
-    var badge: String? = nil
-    var action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 5) {
-                Text(title)
-                    .pulsarTextStyle(.label)
-                if let badge {
-                    Text(badge)
-                        .pulsarTextStyle(.overline)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(.white.opacity(0.10), in: Capsule())
-                }
-            }
-            .foregroundStyle(isSelected ? .white : .primary)
-            .frame(maxWidth: .infinity, minHeight: 64)
-            .background(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(isSelected ? AnyShapeStyle(LinearGradient(colors: [Color.indigo, Color.cyan], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(isDisabled ? 0.05 : 0.08)))
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(isSelected ? .white.opacity(0.18) : .white.opacity(0.10), lineWidth: 1)
-            }
-            .opacity(isDisabled ? 0.65 : 1)
-        }
-        .buttonStyle(.plain)
-        .disabled(isDisabled)
-    }
-}
-
-private struct AlarmStatusCard: View {
-    var schedule: SleepSchedule
-    var sleepGoalDays: SleepGoalDays
-    var formattedTime: (Int) -> String
-
-    var body: some View {
-        SleepPreferenceSection(title: "Alarm Active") {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Alarm On")
-                            .pulsarTextStyle(.sectionHeader)
-                        Text(formattedTime(schedule.resolvedAlarmTimeMinutesFromMidnight))
-                            .pulsarTextStyle(.metricMedium)
-                            .monospacedDigit()
-                    }
-                    Spacer(minLength: 10)
-                    Image(systemName: "alarm.fill")
-                        .pulsarTextStyle(.title)
-                        .foregroundStyle(.orange)
-                        .frame(width: 48, height: 48)
-                        .background(.orange.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-
-                HStack(spacing: 10) {
-                    AlarmDetailPill(title: "Sound", value: schedule.alarmSoundName)
-                    AlarmDetailPill(title: "Haptics", value: schedule.alarmHapticsEnabled ? "On" : "Off")
-                    AlarmDetailPill(title: "Days", value: sleepGoalDays.rawValue)
-                }
-            }
-        }
-    }
-}
-
-private struct AlarmDetailPill: View {
-    var title: String
-    var value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .pulsarTextStyle(.captionEmphasis)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .pulsarTextStyle(.label)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-}
-
-private struct AlarmSettingsCard: View {
-    @Binding var schedule: SleepSchedule
-    var sleepGoalDays: SleepGoalDays
-    var notificationStatus: UNAuthorizationStatus
-    var isCheckingPermission: Bool
-    var formattedTime: (Int) -> String
-    var onToggleAlarm: (Bool) -> Void
-    var onEditAlarmTime: () -> Void
-
-    var body: some View {
-        SleepPreferenceSection(
-            title: "Alarm",
-            footer: notificationStatus == .denied ? "Allow notifications to use Pulsar alarms." : nil
-        ) {
-            VStack(spacing: 0) {
-                toggleRow(
-                    title: "Sleep Alarm",
-                    subtitle: "A minimal wellness wake reminder for iPhone and Apple Watch"
-                )
-                Divider()
-                    .padding(.leading, 16)
-                SleepActionRow(
-                    title: "Alarm Time",
-                    value: formattedTime(schedule.resolvedAlarmTimeMinutesFromMidnight),
-                    subtitle: schedule.alarmUsesWakeTime ? "Matches your wake time until you customize it" : "Custom alarm time"
-                ) {
-                    guard schedule.alarmEnabled else { return }
-                    onEditAlarmTime()
-                }
-                .opacity(schedule.alarmEnabled ? 1 : 0.55)
-                if schedule.alarmEnabled, !schedule.alarmUsesWakeTime {
-                    HStack {
-                        Button("Match Wake Time") {
-                            schedule.resetAlarmToWakeTime()
-                        }
-                        .pulsarTextStyle(.metadata)
-                        .foregroundStyle(.cyan)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 12)
-                }
-                Divider()
-                    .padding(.leading, 16)
-                SettingsValueRow(title: "Sound", value: schedule.alarmSoundName, subtitle: "More sound choices coming soon")
-                Divider()
-                    .padding(.leading, 16)
-                toggleRow(
-                    title: "Haptics",
-                    subtitle: "Saved with your alarm profile for synced watch display",
-                    binding: Binding(
-                        get: { schedule.alarmHapticsEnabled },
-                        set: { schedule.alarmHapticsEnabled = $0 }
-                    ),
-                    isEnabled: schedule.alarmEnabled
-                )
-                Divider()
-                    .padding(.leading, 16)
-                toggleRow(
-                    title: "Snooze",
-                    subtitle: "Keep a gentle backup reminder available",
-                    binding: Binding(
-                        get: { schedule.snoozeEnabled },
-                        set: { schedule.snoozeEnabled = $0 }
-                    ),
-                    isEnabled: schedule.alarmEnabled
-                )
-                Divider()
-                    .padding(.leading, 16)
-                smartWakeRow
-            }
-        }
-    }
-
-    private func toggleRow(
-        title: String,
-        subtitle: String,
-        binding: Binding<Bool>? = nil,
-        isEnabled: Bool = true
-    ) -> some View {
-        let resolvedBinding = binding ?? Binding(
-            get: { schedule.alarmEnabled },
-            set: { onToggleAlarm($0) }
-        )
-
-        return HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .pulsarTextStyle(.bodyEmphasis)
-                Text(subtitle)
-                    .pulsarTextStyle(.metadata)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 12)
-            if isCheckingPermission && title == "Sleep Alarm" {
-                ProgressView()
-                    .controlSize(.small)
-                    .padding(.trailing, 4)
-            }
-            Toggle("", isOn: resolvedBinding)
-                .labelsHidden()
-                .disabled(!isEnabled || isCheckingPermission)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
-        .opacity(isEnabled ? 1 : 0.6)
-    }
-
-    private var smartWakeRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Wake Window")
-                        .pulsarTextStyle(.bodyEmphasis)
-                    Text("Pulsar will use sleep data to help wake you at a better moment.")
-                        .pulsarTextStyle(.metadata)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 10)
-                Text("Coming soon")
-                    .pulsarTextStyle(.captionEmphasis)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.white.opacity(0.10), in: Capsule())
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
-        .opacity(schedule.alarmEnabled ? 1 : 0.65)
-    }
-}
-
-private struct NotificationPermissionCard: View {
-    var openSettings: () -> Void
-
-    var body: some View {
-        SleepPreferenceSection(title: "Permission Needed") {
-            VStack(alignment: .leading, spacing: 12) {
-                Label("Allow notifications to use Pulsar alarms.", systemImage: "bell.badge.fill")
-                    .pulsarTextStyle(.cardTitle)
-                    .foregroundStyle(.primary)
-                Text("Pulsar only asks when you turn the alarm on. You can enable notifications in Settings whenever you’re ready.")
-                    .pulsarTextStyle(.metadata)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Open Settings", action: openSettings)
-                    .buttonStyle(.borderedProminent)
-                    .tint(.indigo)
-            }
-        }
-    }
-}
-
-private struct SleepTimePickerSheet: View {
+struct SleepTimePickerSheet: View {
     var title: String
     @Binding var selection: Date
+    var showsWakeTimeReset: Bool
+    var resetToWakeTime: () -> Void
     var done: () -> Void
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
+            VStack(spacing: 8) {
                 DatePicker(title, selection: $selection, displayedComponents: .hourAndMinute)
                     .datePickerStyle(.wheel)
                     .labelsHidden()
-                    .padding(.top, 16)
-                Spacer()
+
+                if showsWakeTimeReset {
+                    Button("Use Wake Time", action: resetToWakeTime)
+                        .buttonStyle(.bordered)
+                        .tint(SettingsMonochromeDesign.primary)
+                }
+
+                Spacer(minLength: 0)
             }
+            .padding(.top, 8)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done", action: done)
-                        .fontWeight(.semibold)
+                        .bold()
                 }
             }
         }
+        .tint(SettingsMonochromeDesign.primary)
+        .preferredColorScheme(.light)
     }
 }
 
@@ -603,59 +256,4 @@ private struct SleepTimePickerSheet: View {
     NavigationStack {
         SleepPreferencesView(store: SettingsPreviewStore.make())
     }
-}
-
-#Preview("Sleep Preferences Dark") {
-    NavigationStack {
-        SleepPreferencesView(store: SettingsPreviewStore.make())
-    }
-    .preferredColorScheme(.dark)
-}
-
-#Preview("Alarm Active Card") {
-    AlarmStatusCard(
-        schedule: SleepSchedule(
-            bedtimeMinutesFromMidnight: 22 * 60 + 30,
-            wakeTimeMinutesFromMidnight: 6 * 60 + 30,
-            alarmEnabled: true,
-            alarmUsesWakeTime: true
-        ),
-        sleepGoalDays: .everyDay,
-        formattedTime: { minutes in
-            let date = Calendar.current.date(from: DateComponents(hour: minutes / 60, minute: minutes % 60)) ?? Date()
-            return date.formatted(date: .omitted, time: .shortened)
-        }
-    )
-    .padding()
-    .background(PulsarSectionBackground())
-}
-
-private struct AlarmSettingsCardPreviewContainer: View {
-    @State var schedule = SleepSchedule(
-        bedtimeMinutesFromMidnight: 22 * 60 + 30,
-        wakeTimeMinutesFromMidnight: 6 * 60 + 30,
-        alarmEnabled: false,
-        alarmUsesWakeTime: true
-    )
-
-    var body: some View {
-        AlarmSettingsCard(
-            schedule: $schedule,
-            sleepGoalDays: .everyDay,
-            notificationStatus: .authorized,
-            isCheckingPermission: false,
-            formattedTime: { minutes in
-                let date = Calendar.current.date(from: DateComponents(hour: minutes / 60, minute: minutes % 60)) ?? Date()
-                return date.formatted(date: .omitted, time: .shortened)
-            },
-            onToggleAlarm: { _ in },
-            onEditAlarmTime: { }
-        )
-        .padding()
-        .background(PulsarSectionBackground())
-    }
-}
-
-#Preview("Alarm Disabled Card") {
-    AlarmSettingsCardPreviewContainer()
 }

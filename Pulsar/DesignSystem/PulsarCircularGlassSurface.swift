@@ -11,6 +11,7 @@ public struct PulsarCircularGlassSurface: View {
     var opacity: Double = 1
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.pulsarFitnessUsesMonochromeAppearance) private var usesFitnessMonochromeAppearance
 
     public init(
         cornerRadius: CGFloat,
@@ -25,7 +26,15 @@ public struct PulsarCircularGlassSurface: View {
     public var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
-        if #available(iOS 26.0, *) {
+        if usesFitnessMonochromeAppearance {
+            Color.clear
+                .background(.white.opacity(0.64 * opacity), in: shape)
+                .pulsarFitnessMonochromeSurface(
+                    cornerRadius: cornerRadius,
+                    isInteractive: true,
+                    shadowOpacity: 0.055 * opacity
+                )
+        } else if #available(iOS 26.0, *) {
             Color.clear
                 .background(.white.opacity((colorScheme == .dark ? 0.050 : 0.42) * opacity), in: shape)
                 .glassEffect(

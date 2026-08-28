@@ -15,7 +15,11 @@ final class ExerciseProgressViewModel: ObservableObject {
 
     private let historyStore: PulsarGymWorkoutHistoryStore
     private let calendar: Calendar
+    private let cacheFreshnessInterval: TimeInterval
+    private let nowProvider: @MainActor () -> Date
     private var didLoadSessions = false
+    private var loadedHistoryGeneration: HistoryGeneration?
+    private var lastHistoryRefreshAt: Date?
     private var cachedCountsKey: CountsCacheKey?
     private var cachedExerciseCountsByDay: [Date: Int] = [:]
     private var cachedDailySummaryKey: DailySummaryCacheKey?
@@ -24,17 +28,47 @@ final class ExerciseProgressViewModel: ObservableObject {
     init(
         historyStore: PulsarGymWorkoutHistoryStore? = nil,
         calendar: Calendar = .autoupdatingCurrent,
-        now: Date = .now
+        now: Date = .now,
+        cacheFreshnessInterval: TimeInterval = 90,
+        nowProvider: @escaping @MainActor () -> Date = { .now }
     ) {
-        self.historyStore = historyStore ?? PulsarGymWorkoutHistoryStore()
+        self.historyStore = historyStore ?? .shared
         self.calendar = calendar
+        self.cacheFreshnessInterval = cacheFreshnessInterval
+        self.nowProvider = nowProvider
         self.selectedDate = calendar.startOfDay(for: now)
     }
 
     func load(displayUnit: PulsarWeightUnit, selectedWeek: WeekPeriod) async {
-        reloadSessions()
+        refreshHistoryIfNeeded()
         alignSelectedDate(to: selectedWeek, displayUnit: displayUnit)
-        await refresh(displayUnit: displayUnit, selectedWeek: selectedWeek, reloadsHistory: false)
+        await updateDerivedState(
+            displayUnit: displayUnit,
+            selectedWeek: selectedWeek,
+            force: false
+        )
+    }
+
+    func refreshIfNeeded(displayUnit: PulsarWeightUnit, selectedWeek: WeekPeriod) async {
+        guard needsRefresh(displayUnit: displayUnit, selectedWeek: selectedWeek) else { return }
+
+        refreshHistoryIfNeeded()
+        await updateDerivedState(
+            displayUnit: displayUnit,
+            selectedWeek: selectedWeek,
+            force: false
+        )
+    }
+
+    func needsRefresh(displayUnit: PulsarWeightUnit, selectedWeek: WeekPeriod) -> Bool {
+        let needsDerivedRefresh = cachedCountsKey != CountsCacheKey(
+            weekID: selectedWeek.id,
+            displayUnit: displayUnit
+        ) || cachedDailySummaryKey != DailySummaryCacheKey(
+            date: selectedDate,
+            displayUnit: displayUnit
+        )
+        return !didLoadSessions || isHistoryStale || hasHistoryGenerationChanged || needsDerivedRefresh
     }
 
     func refresh(
@@ -44,15 +78,15 @@ final class ExerciseProgressViewModel: ObservableObject {
         reloadsHistory: Bool = true
     ) async {
         if reloadsHistory {
-            reloadSessions()
+            refreshHistoryIfNeeded(force: force)
         } else {
             ensureSessionsLoaded()
         }
-        isLoading = true
-        await Task.yield()
-        exerciseCountsByDay = cachedExerciseCounts(displayUnit: displayUnit, selectedWeek: selectedWeek, force: force)
-        dailySummaries = cachedDailySummary(displayUnit: displayUnit, force: force)
-        isLoading = false
+        await updateDerivedState(
+            displayUnit: displayUnit,
+            selectedWeek: selectedWeek,
+            force: force
+        )
     }
 
     func selectDate(_ date: Date, displayUnit: PulsarWeightUnit, selectedWeek: WeekPeriod) async {
@@ -78,7 +112,7 @@ final class ExerciseProgressViewModel: ObservableObject {
             return
         }
 
-        let today = calendar.startOfDay(for: Date())
+        let today = calendar.startOfDay(for: nowProvider())
         if range.contains(today) {
             selectedDate = today
             return
@@ -95,16 +129,76 @@ final class ExerciseProgressViewModel: ObservableObject {
 
     private func ensureSessionsLoaded() {
         guard !didLoadSessions else { return }
-        reloadSessions()
+        refreshHistoryIfNeeded(force: true)
     }
 
-    private func reloadSessions() {
-        historyStore.reload()
+    private func refreshHistoryIfNeeded(force: Bool = false) {
+        let generationBeforeReload = currentHistoryGeneration
+        let generationChanged = loadedHistoryGeneration != nil && loadedHistoryGeneration != generationBeforeReload
+        let shouldReloadStore = !didLoadSessions || force || isHistoryStale
+
+        if shouldReloadStore {
+            historyStore.reload()
+        }
+
+        let nextGeneration = currentHistoryGeneration
+        let shouldInvalidateCaches = !didLoadSessions || force || generationChanged || loadedHistoryGeneration != nextGeneration
         didLoadSessions = true
-        cachedCountsKey = nil
-        cachedExerciseCountsByDay = [:]
-        cachedDailySummaryKey = nil
-        cachedDailySummaries = []
+        loadedHistoryGeneration = nextGeneration
+        lastHistoryRefreshAt = nowProvider()
+
+        if shouldInvalidateCaches {
+            cachedCountsKey = nil
+            cachedExerciseCountsByDay = [:]
+            cachedDailySummaryKey = nil
+            cachedDailySummaries = []
+        }
+    }
+
+    private func updateDerivedState(
+        displayUnit: PulsarWeightUnit,
+        selectedWeek: WeekPeriod,
+        force: Bool
+    ) async {
+        let countsKey = CountsCacheKey(weekID: selectedWeek.id, displayUnit: displayUnit)
+        let summaryKey = DailySummaryCacheKey(date: selectedDate, displayUnit: displayUnit)
+        let needsUpdate = force || cachedCountsKey != countsKey || cachedDailySummaryKey != summaryKey
+        guard needsUpdate else { return }
+
+        isLoading = true
+        await Task.yield()
+        guard !Task.isCancelled else {
+            isLoading = false
+            return
+        }
+        exerciseCountsByDay = cachedExerciseCounts(
+            displayUnit: displayUnit,
+            selectedWeek: selectedWeek,
+            force: force
+        )
+        dailySummaries = cachedDailySummary(displayUnit: displayUnit, force: force)
+        isLoading = false
+    }
+
+    private var currentHistoryGeneration: HistoryGeneration {
+        let sessions = historyStore.sessions
+        return HistoryGeneration(
+            count: sessions.count,
+            newestID: sessions.first?.id,
+            newestFinishedAt: sessions.first?.finishedAt,
+            newestElapsedSeconds: sessions.first?.elapsedSeconds,
+            oldestID: sessions.last?.id
+        )
+    }
+
+    private var hasHistoryGenerationChanged: Bool {
+        guard let loadedHistoryGeneration else { return true }
+        return loadedHistoryGeneration != currentHistoryGeneration
+    }
+
+    private var isHistoryStale: Bool {
+        guard let lastHistoryRefreshAt else { return true }
+        return nowProvider().timeIntervalSince(lastHistoryRefreshAt) > cacheFreshnessInterval
     }
 
     private func cachedExerciseCounts(
@@ -155,6 +249,14 @@ final class ExerciseProgressViewModel: ObservableObject {
         var date: Date
         var displayUnit: PulsarWeightUnit
     }
+
+    private struct HistoryGeneration: Equatable {
+        var count: Int
+        var newestID: UUID?
+        var newestFinishedAt: Date?
+        var newestElapsedSeconds: Int?
+        var oldestID: UUID?
+    }
 }
 
 @MainActor
@@ -175,7 +277,7 @@ final class ExerciseProgressHistoryViewModel: ObservableObject {
     ) {
         self.target = target
         self.displayUnit = displayUnit
-        self.historyStore = historyStore ?? PulsarGymWorkoutHistoryStore()
+        self.historyStore = historyStore ?? .shared
         self.calendar = calendar
         self.history = .empty(target: target, displayUnit: displayUnit)
     }

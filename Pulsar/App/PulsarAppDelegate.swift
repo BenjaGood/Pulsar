@@ -15,6 +15,24 @@ final class PulsarAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificati
         return true
     }
 
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        PulsarWorkoutStartupTrace.lifecycle("applicationDidBecomeActive")
+        PulsarWorkoutStartupTrace.diag("[Scene] applicationDidBecomeActive")
+    }
+
+    func applicationWillResignActive(_ application: UIApplication) {
+        PulsarWorkoutStartupTrace.lifecycle("applicationWillResignActive")
+        PulsarWorkoutStartupTrace.diag("[Scene] applicationWillResignActive")
+    }
+
+    func applicationDidEnterBackground(_ application: UIApplication) {
+        PulsarWorkoutStartupTrace.lifecycle("applicationDidEnterBackground")
+    }
+
+    func applicationWillEnterForeground(_ application: UIApplication) {
+        PulsarWorkoutStartupTrace.lifecycle("applicationWillEnterForeground")
+    }
+
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,

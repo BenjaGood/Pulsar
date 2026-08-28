@@ -17,6 +17,7 @@ struct PulsarTabHeader: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .largeTitle) private var textBlockMinimumHeight = 62.0
 
     init(
         systemImage: String,
@@ -51,17 +52,21 @@ struct PulsarTabHeader: View {
                 Text(title)
                     .pulsarTextStyle(.displayLarge)
                     .foregroundStyle(primaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                    .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.72)
 
                 Text(subtitle)
                     .pulsarTextStyle(.label)
                     .foregroundStyle(secondaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Spacer(minLength: 12)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: textBlockMinimumHeight,
+                alignment: .leading
+            )
 
             if let onAdd {
                 Button(action: onAdd) {

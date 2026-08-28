@@ -25,21 +25,25 @@ struct GymWorkoutLaunchFlowView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var activeWorkoutManager: PulsarActiveWorkoutManager
     @EnvironmentObject private var completionPresentationStore: WorkoutCompletionPresentationStore
-    @StateObject private var routineStore = PulsarRoutineStore()
-    @StateObject private var historyStore = PulsarGymWorkoutHistoryStore()
+    @ObservedObject private var routineStore = PulsarRoutineStore.shared
+    private let historyStore = PulsarGymWorkoutHistoryStore.shared
     @StateObject private var gymSettingsStore = GymSettingsStore()
-    @ObservedObject private var watchSyncStore = PulsarWatchConnectivitySyncStore.shared
+    private let watchSyncStore = PulsarWatchConnectivitySyncStore.shared
     @State private var step: Step = .intro
     @State private var builderReturnTarget: BuilderReturnTarget = .choice
     @State private var watchFallbackPrompt: PulsarWatchRecorderFallbackPrompt?
     @State private var pendingWatchFallbackRoutine: PulsarRoutine?
     @State private var isGymStartInFlight = false
+    @State private var stepBeforeWatchLaunch: Step?
+    @StateObject private var crossDeviceStartController = GymCrossDeviceStartController()
 
     private let healthStore = HKHealthStore()
 
     var appUnitPreference: UnitPreference = .metric
+    var profile: UserProfile = .empty
 
     var body: some View {
+        let _ = PulsarWorkoutStartupTrace.count("[RenderRate] GymLaunchFlow")
         ZStack {
             switch step {
             case .intro:
@@ -101,19 +105,37 @@ struct GymWorkoutLaunchFlowView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.99)))
                 }
 
-            case .watchWorkoutSession(_):
+            case .watchWorkoutSession(let expectedSessionID):
                 GymWatchMirroredWorkoutView(
                     syncStore: watchSyncStore,
+                    expectedSessionID: expectedSessionID,
+                    profile: profile,
+                    diagnosticHost: "launchCover",
+                    crossDevicePhase: crossDeviceStartController.phase,
                     onMinimize: {
-                        activeWorkoutManager.minimizeWatchGymWorkout(sessionID: watchSyncStore.activeGymState?.sessionId ?? watchSyncStore.lastFinishedGymState?.sessionId)
+                        activeWorkoutManager.minimizeWatchGymWorkout(sessionID: expectedSessionID)
                         dismiss()
                     },
                     onSummaryDone: {
                         dismissWatchGymCompletion(
-                            sessionID: watchSyncStore.lastFinishedGymState?.sessionId ?? watchSyncStore.activeGymState?.sessionId ?? activeWorkoutManager.activeWorkout?.sessionID,
+                            sessionID: expectedSessionID,
                             source: "watchGymLaunchSummaryDone"
                         )
                         dismiss()
+                    },
+                    onRetry: {
+                        retryWatchGymStart()
+                    },
+                    onUseIPhoneOnly: {
+                        startPendingGymWorkoutOnIPhone()
+                    },
+                    onCancel: {
+                        crossDeviceStartController.cancel()
+                        activeWorkoutManager.endLaunchCoverOwnership(
+                            reason: "watchGymLaunchCancelled"
+                        )
+                        stepBeforeWatchLaunch = nil
+                        step = .routineChoice
                     }
                 )
                 .environmentObject(completionPresentationStore)
@@ -121,20 +143,47 @@ struct GymWorkoutLaunchFlowView: View {
             }
         }
         .background(GymGlassBackground().ignoresSafeArea())
-        .environment(\.colorScheme, .dark)
-        .preferredColorScheme(.dark)
+        .environment(\.colorScheme, .light)
+        .pulsarFitnessMonochromeAppearance()
         .animation(.smooth(duration: 0.36), value: step)
-        .alert(item: $watchFallbackPrompt) { prompt in
-            Alert(
-                title: Text(prompt.title),
-                message: Text(prompt.message),
-                primaryButton: .default(Text("Try Again")) {
-                    retryWatchGymStart()
-                },
-                secondaryButton: .default(Text("Use iPhone Only")) {
-                    startPendingGymWorkoutOnIPhone()
-                }
+        .onChange(of: crossDeviceStartController.currentRequest?.candidateSessionID) { _, sessionID in
+            guard GymLaunchWatchSessionPresentation.shouldFollowCrossDeviceStart(
+                isFallbackPromptVisible: watchFallbackPrompt != nil
+            ) else { return }
+            guard let sessionID else { return }
+            revealWatchWorkoutSessionIfNeeded(sessionID)
+        }
+        .onChange(of: crossDeviceStartController.phase) { _, phase in
+            if let sessionID = crossDeviceStartController.currentRequest?.candidateSessionID,
+               GymLaunchWatchSessionPresentation.shouldRevealWatchSession(
+                   phase: phase,
+                   isFallbackPromptVisible: watchFallbackPrompt != nil
+               ) {
+                revealWatchWorkoutSessionIfNeeded(sessionID)
+            }
+            guard case .watchWorkoutSession(let sessionID) = step, phase == .active else { return }
+            _ = activeWorkoutManager.reconcileVerifiedWatchGymWorkout(
+                sessionID: sessionID,
+                phase: "active",
+                reason: "GymCrossDeviceMirrorBecameLive"
             )
+        }
+        .alert(
+            watchFallbackPrompt?.title ?? "Apple Watch not connected",
+            isPresented: isWatchFallbackPromptPresented,
+            presenting: watchFallbackPrompt
+        ) { _ in
+            Button("Try Again") {
+                retryWatchGymStart()
+            }
+            Button("Use iPhone Only") {
+                startPendingGymWorkoutOnIPhone()
+            }
+            Button("Cancel", role: .cancel) {
+                cancelPendingWatchGymStart()
+            }
+        } message: { prompt in
+            Text(prompt.message)
         }
     }
 
@@ -184,20 +233,55 @@ struct GymWorkoutLaunchFlowView: View {
         guard !isGymStartInFlight else { return }
         isGymStartInFlight = true
         defer { isGymStartInFlight = false }
+        PulsarWorkoutStartupTrace.phone("Start tapped gym forceIPhone=\(forceIPhone) routine=\(routine.name)")
 
         if !forceIPhone {
             let workoutKind = PulsarGymWorkoutKind.inferred(
                 routineName: routine.name,
                 exerciseCount: routine.exercises.count
             )
-            let availability = await watchSyncStore.waitForReachableWatchRecorder(
+            let availability = await watchSyncStore.waitForWatchAppLaunchAvailability(
                 reason: "iPhoneGymStart.\(workoutKind.rawValue)"
             )
-            if availability.canStartOnWatch {
+            if availability.canAttemptWatchAppLaunch {
+                if PulsarGymCrossDeviceStartFeature.isEnabled {
+                    do {
+                        try await startGymWorkoutOnWatchUsingCrossDeviceFlow(
+                            routine,
+                            workoutKind: workoutKind,
+                            availability: availability
+                        )
+                        return
+                    } catch {
+                        revertWatchLaunchPresentationIfNeeded()
+                        activeWorkoutManager.endLaunchCoverOwnership(
+                            reason: "crossDeviceWatchStartFailed"
+                        )
+                        pendingWatchFallbackRoutine = routine
+                        let fallbackReason: PulsarWatchRecorderFallbackReason =
+                            (error as? GymCrossDeviceStartError) == .watchAcknowledgementTimedOut
+                            ? .mirroringTimedOut
+                            : .watchLaunchFailed
+                        watchFallbackPrompt = availability.fallbackPrompt(
+                            workoutName: workoutKind.displayName,
+                            reason: fallbackReason,
+                            errorMessage: error.localizedDescription
+                        )
+                        return
+                    }
+                }
                 do {
-                    try await startGymWorkoutOnWatch(routine, workoutKind: workoutKind, availability: availability)
+                    try await startGymWorkoutOnWatchLegacy(
+                        routine,
+                        workoutKind: workoutKind,
+                        availability: availability
+                    )
                     return
                 } catch {
+                    revertWatchLaunchPresentationIfNeeded()
+                    activeWorkoutManager.endLaunchCoverOwnership(
+                        reason: "legacyWatchStartFailed"
+                    )
                     pendingWatchFallbackRoutine = routine
                     watchFallbackPrompt = availability.fallbackPrompt(
                         workoutName: workoutKind.displayName,
@@ -218,15 +302,76 @@ struct GymWorkoutLaunchFlowView: View {
     }
 
     private func startGymWorkoutOnIPhone(_ routine: PulsarRoutine) {
-        activeWorkoutManager.startGymWorkout(
-            routine: routine,
-            workoutWeightUnit: gymSettingsStore.resolvedWeightUnit(appUnits: appUnitPreference),
-            historyStore: historyStore
-        )
         step = .workoutSession(routine)
+        let weightUnit = gymSettingsStore.resolvedWeightUnit(appUnits: appUnitPreference)
+        Task { @MainActor in
+            // Commit the lightweight preparing route before historical strength
+            // analytics constructs the live session model.
+            await Task.yield()
+            activeWorkoutManager.startGymWorkout(
+                routine: routine,
+                workoutWeightUnit: weightUnit,
+                historyStore: historyStore
+            )
+        }
     }
 
-    private func startGymWorkoutOnWatch(
+    private func startGymWorkoutOnWatchUsingCrossDeviceFlow(
+        _ routine: PulsarRoutine,
+        workoutKind: PulsarGymWorkoutKind,
+        availability: PulsarWatchRecorderAvailabilitySnapshot
+    ) async throws {
+        activeWorkoutManager.beginLaunchCoverOwnership(
+            reason: "crossDeviceWatchGymLaunchCover"
+        )
+        crossDeviceStartController.resetForNewFlow()
+        try await crossDeviceStartController.start(
+            routine: routine,
+            workoutKind: workoutKind,
+            availability: availability,
+            routineStore: routineStore
+        )
+
+        guard let request = crossDeviceStartController.currentRequest else {
+            throw GymCrossDeviceStartError.unknown
+        }
+
+        revealWatchWorkoutSessionIfNeeded(request.candidateSessionID)
+
+        let maximumVerificationPolls = Int((PulsarWorkoutStartCoordinator.watchAcknowledgementTimeout + 6) * 10)
+        for _ in 0..<maximumVerificationPolls {
+            if crossDeviceStartController.isVerifiedForPresentation {
+                break
+            }
+            if case .failed = crossDeviceStartController.phase {
+                throw crossDeviceStartController.lastError ?? GymCrossDeviceStartError.watchAcknowledgementTimedOut
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+
+        guard crossDeviceStartController.isVerifiedForPresentation else {
+            if PulsarWorkoutStartCoordinator.shared.phase.blocksNewWatchPrimaryIdentity {
+                PulsarWorkoutStartupTrace.phone(
+                    "Watch launch poll ended with remote state unknown \(PulsarWorkoutStartupTrace.identity(workoutID: request.candidateSessionID, requestID: request.requestID)) phase=\(PulsarWorkoutStartCoordinator.shared.phase.name)"
+                )
+                let waitingSessionID = PulsarWorkoutStartCoordinator.shared.currentTransaction?.authoritativeSessionID
+                    ?? request.candidateSessionID
+                revealWatchWorkoutSessionIfNeeded(waitingSessionID)
+                return
+            }
+            throw GymCrossDeviceStartError.watchAcknowledgementTimedOut
+        }
+
+        guard PulsarWorkoutStartCoordinator.shared.isCrossDeviceGymStartVerified else {
+            throw GymCrossDeviceStartError.watchAcknowledgementTimedOut
+        }
+
+        let authoritativeSessionID = PulsarWorkoutStartCoordinator.shared.currentTransaction?.authoritativeSessionID
+            ?? request.candidateSessionID
+        revealWatchWorkoutSessionIfNeeded(authoritativeSessionID)
+    }
+
+    private func startGymWorkoutOnWatchLegacy(
         _ routine: PulsarRoutine,
         workoutKind: PulsarGymWorkoutKind,
         availability: PulsarWatchRecorderAvailabilitySnapshot
@@ -239,6 +384,13 @@ struct GymWorkoutLaunchFlowView: View {
             workoutType: workoutKind.rawValue
         ) {
         case .granted:
+            activeWorkoutManager.beginLaunchCoverOwnership(
+                reason: "legacyWatchGymLaunchCover"
+            )
+            watchSyncStore.prepareForNewGymStart(
+                sessionID: sessionId,
+                reason: "iPhoneRequestedWatchGymStart"
+            )
             break
         case .duplicateStart, .alreadyActive:
             step = .watchWorkoutSession(sessionId)
@@ -255,68 +407,43 @@ struct GymWorkoutLaunchFlowView: View {
             healthKitStatusMessage: watchStartStatusMessage(for: availability)
         )
 
-        watchSyncStore.storeActiveGymState(state, broadcast: false, reason: "iPhoneRequestedWatchGymStart")
+        watchSyncStore.storeActiveGymState(state, broadcast: true, reason: "iPhoneRequestedWatchGymStart")
         PulsarWorkoutLifecycleLogger.log(
             .workoutWatchSyncRequested,
             sessionID: sessionId,
             workoutType: workoutKind.rawValue,
             source: "iPhoneRequestedWatchGymStart"
         )
-        await watchSyncStore.broadcastActiveStateAndAwaitDelivery(
-            state,
-            reason: "iPhoneRequestedWatchGymStart.prelaunch"
-        )
         let configuration = Self.gymWorkoutConfiguration
         PulsarSyncDebugLogger.log("Gym start selectedType=\(workoutKind.rawValue) hkType=\(configuration.activityType.rawValue) session=\(sessionId.uuidString) startedFrom=\(PulsarWorkoutStartedFrom.iPhoneRequestedWatchStart.rawValue) selectedRecorder=AppleWatch activation=\(availability.activationStateDescription) paired=\(availability.isPaired) rawInstalled=\(availability.rawIsWatchAppInstalled) rawReachable=\(availability.rawIsReachable) lastWatchSeenAt=\(availability.lastWatchSeenAt?.description ?? "none") derivedInstalled=\(availability.isWatchAppInstalled) derivedReachable=\(availability.derivedReachabilityDescription)")
 
         do {
+            let startedAt = Date()
+            PulsarWorkoutStartupTrace.diag(
+                "[StartWatchApp] begin kind=gym.legacy session=\(sessionId.uuidString) \(PulsarWorkoutStartupTrace.threadTag())"
+            )
             try await healthStore.startWatchApp(toHandle: configuration)
-            PulsarWorkoutLifecycleLogger.log(
-                .workoutWatchSyncSucceeded,
-                sessionID: sessionId,
-                workoutType: workoutKind.rawValue,
-                source: "iPhoneRequestedWatchGymStart"
+            PulsarWorkoutStartupTrace.diag(
+                "[StartWatchApp] completion kind=gym.legacy elapsedMs=\(PulsarWorkoutStartupTrace.elapsedMs(since: startedAt)) session=\(sessionId.uuidString) \(PulsarWorkoutStartupTrace.threadTag())"
             )
         } catch {
-            if shouldKeepQueuedWatchStart(for: availability) {
-                PulsarWorkoutLifecycleLogger.log(
-                    .workoutWatchSyncSucceeded,
-                    sessionID: sessionId,
-                    workoutType: workoutKind.rawValue,
-                    source: "iPhoneRequestedWatchGymStart.queued",
-                    detail: error.localizedDescription
-                )
-                PulsarSyncDebugLogger.log("Gym Watch start queued after launch failure type=\(workoutKind.rawValue) session=\(sessionId.uuidString) rawReachable=\(availability.rawIsReachable) derivedReachable=\(availability.derivedReachabilityDescription) error=\(error.localizedDescription)")
-            } else {
-                watchSyncStore.clearActiveGymState(reason: "iPhoneGymWatchLaunchFailed", broadcastEndedState: false)
-                PulsarWorkoutStartCoordinator.shared.markStartFailed(
-                    sessionID: sessionId,
-                    workoutType: workoutKind.rawValue,
-                    source: "iPhoneRequestedWatchGymStart",
-                    error: error.localizedDescription
-                )
-                PulsarWorkoutLifecycleLogger.log(
-                    .workoutWatchSyncFailed,
-                    sessionID: sessionId,
-                    workoutType: workoutKind.rawValue,
-                    source: "iPhoneRequestedWatchGymStart",
-                    detail: error.localizedDescription
-                )
-                throw error
-            }
+            watchSyncStore.clearActiveGymState(reason: "iPhoneGymWatchLaunchFailed", broadcastEndedState: false)
+            PulsarWorkoutStartCoordinator.shared.markStartFailed(
+                sessionID: sessionId,
+                workoutType: workoutKind.rawValue,
+                source: "iPhoneRequestedWatchGymStart",
+                error: error.localizedDescription
+            )
+            PulsarWorkoutLifecycleLogger.log(
+                .workoutWatchSyncFailed,
+                sessionID: sessionId,
+                workoutType: workoutKind.rawValue,
+                source: "iPhoneRequestedWatchGymStart",
+                detail: error.localizedDescription
+            )
+            throw error
         }
 
-        activeWorkoutManager.reconcileActiveWorkoutPresentation(
-            route: .watchGym,
-            sessionID: sessionId,
-            phase: "starting",
-            reason: "iPhoneRequestedWatchGymStart"
-        )
-        PulsarWorkoutStartCoordinator.shared.markActivated(
-            sessionID: sessionId,
-            workoutType: workoutKind.rawValue,
-            source: "iPhoneRequestedWatchGymStart"
-        )
         step = .watchWorkoutSession(sessionId)
     }
 
@@ -324,11 +451,15 @@ struct GymWorkoutLaunchFlowView: View {
         availability.rawIsReachable ? "Opening on Apple Watch..." : "Waiting for Apple Watch..."
     }
 
-    private func shouldKeepQueuedWatchStart(for availability: PulsarWatchRecorderAvailabilitySnapshot) -> Bool {
-        availability.isPaired &&
-            availability.isWatchAppInstalled &&
-            availability.hasRecentWatchHeartbeat &&
-            !availability.rawIsReachable
+    private var isWatchFallbackPromptPresented: Binding<Bool> {
+        Binding(
+            get: { watchFallbackPrompt != nil },
+            set: { isPresented in
+                if !isPresented {
+                    watchFallbackPrompt = nil
+                }
+            }
+        )
     }
 
     private func retryWatchGymStart() {
@@ -338,8 +469,25 @@ struct GymWorkoutLaunchFlowView: View {
 
     private func startPendingGymWorkoutOnIPhone() {
         guard let routine = pendingWatchFallbackRoutine else { return }
+        if PulsarGymCrossDeviceStartFeature.isEnabled {
+            crossDeviceStartController.chooseIPhoneOnlyFallback()
+        }
+        activeWorkoutManager.endLaunchCoverOwnership(
+            reason: "selectedIPhoneFallback"
+        )
         pendingWatchFallbackRoutine = nil
         Task { await beginGymWorkout(routine, forceIPhone: true) }
+    }
+
+    private func cancelPendingWatchGymStart() {
+        pendingWatchFallbackRoutine = nil
+        watchFallbackPrompt = nil
+        crossDeviceStartController.cancel()
+        revertWatchLaunchPresentationIfNeeded()
+        activeWorkoutManager.endLaunchCoverOwnership(
+            reason: "watchGymFallbackCancelled"
+        )
+        stepBeforeWatchLaunch = nil
     }
 
     private func dismissGymCompletion(sessionID: UUID?, source: String) {
@@ -450,8 +598,71 @@ struct GymWorkoutLaunchFlowView: View {
         )
     }
 
+    private func revealWatchWorkoutSessionIfNeeded(_ sessionID: UUID) {
+        if case .watchWorkoutSession(let current) = step, current == sessionID {
+            return
+        }
+        if case .watchWorkoutSession = step {
+            applyWatchWorkoutSessionStep(sessionID)
+            return
+        }
+        guard crossDeviceStartController.currentRequest?.candidateSessionID == sessionID
+            || PulsarWorkoutStartCoordinator.shared.currentTransaction?.authoritativeSessionID == sessionID else {
+            return
+        }
+        stepBeforeWatchLaunch = step
+        applyWatchWorkoutSessionStep(sessionID)
+    }
+
+    private func applyWatchWorkoutSessionStep(_ sessionID: UUID) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            step = .watchWorkoutSession(sessionID)
+        }
+        PulsarWorkoutStartupTrace.diag(
+            "[WorkoutUI] launchCoverPresentedWatchSession session=\(sessionID.uuidString) phase=\(crossDeviceStartController.phase.statusMessage) \(PulsarWorkoutStartupTrace.threadTag())"
+        )
+    }
+
+    private func revertWatchLaunchPresentationIfNeeded() {
+        guard case .watchWorkoutSession = step else { return }
+        let restored = stepBeforeWatchLaunch ?? .routineChoice
+        stepBeforeWatchLaunch = nil
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            step = restored
+        }
+    }
+
     private static var gymWorkoutConfiguration: HKWorkoutConfiguration {
         PulsarWorkoutCatalog.gymWorkoutConfiguration
+    }
+}
+
+enum GymLaunchWatchSessionPresentation {
+    static func shouldFollowCrossDeviceStart(
+        isFallbackPromptVisible: Bool
+    ) -> Bool {
+        !isFallbackPromptVisible
+    }
+
+    static func shouldRevealWatchSession(
+        phase: GymCrossDeviceStartPresentationPhase,
+        isFallbackPromptVisible: Bool = false
+    ) -> Bool {
+        guard shouldFollowCrossDeviceStart(isFallbackPromptVisible: isFallbackPromptVisible) else {
+            return false
+        }
+        switch phase {
+        case .idle, .cancelled:
+            return false
+        case .preparing, .launchingWatch, .waitingForWatchAcknowledgement,
+             .watchSessionRunning, .mirroring, .recovering, .checkingWatch,
+             .active, .failed:
+            return true
+        }
     }
 }
 
@@ -476,10 +687,10 @@ private struct GymWorkoutLaunchPreparingView: View {
                 .tint(.white)
             Text("Preparing \(routineName)")
                 .pulsarTextStyle(.sectionTitle)
-                .foregroundStyle(.white)
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
             Button("Retry Start", action: onRetry)
                 .pulsarTextStyle(.buttonTitle)
-                .foregroundStyle(.white.opacity(0.82))
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -492,398 +703,94 @@ struct GymRoutineChoiceView: View {
     var onStartEmptyWorkout: () -> Void
     var onCancel: () -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
+    @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 42
+    private let heroIconDiameter: CGFloat = 64
 
     var body: some View {
-        VStack(spacing: 24) {
-            Spacer(minLength: 54)
+        GeometryReader { proxy in
+            let metrics = GymSessionChoiceLayoutMetrics(availableHeight: proxy.size.height)
 
-            VStack(spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(.white.opacity(colorScheme == .dark ? 0.08 : 0.70))
-                        .frame(width: 72, height: 72)
-                        .overlay {
-                            Circle()
-                                .stroke(.white.opacity(colorScheme == .dark ? 0.18 : 0.88), lineWidth: 1)
-                        }
+            ScrollView {
+                PulsarGlassEffectGroup(spacing: 8) {
+                    VStack(spacing: 0) {
+                        Color.clear
+                            .frame(height: metrics.topSpacing)
+                            .accessibilityHidden(true)
 
-                    Image(systemName: "dumbbell.fill")
-                        .font(.system(size: 30, weight: .semibold))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.white, Color(red: 0.76, green: 0.69, blue: 1.0))
-                }
+                        GymSessionIconGlass(
+                            symbolName: "dumbbell.fill",
+                            diameter: heroIconDiameter,
+                            symbolSize: 24
+                        )
+                        .accessibilityHidden(true)
 
-                Text("Choose your gym session")
-                    .pulsarTextStyle(.screenTitle)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.white)
-                    .fixedSize(horizontal: false, vertical: true)
+                        Text("Choose your\ngym session")
+                            .font(.system(size: titleSize, weight: .regular, design: .serif))
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
+                            .multilineTextAlignment(.center)
+                            .lineSpacing(-4)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.80)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, metrics.titleSpacing)
 
-                Text("Start from a saved plan, build a new routine, or jump into open gym tracking.")
-                    .pulsarTextStyle(.screenSubtitle)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.white.opacity(0.62))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.horizontal, 14)
+                        Text("Start from a saved plan, build a new routine,\nor jump into open gym tracking.")
+                            .font(.subheadline)
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
+                            .multilineTextAlignment(.center)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 8)
+                            .padding(.top, metrics.subtitleSpacing)
 
-            VStack(spacing: 12) {
-                GymChoiceActionButton(
-                    title: "My Routines",
-                    subtitle: savedRoutineCount == 0 ? "Create and save your first lift plan" : "\(savedRoutineCount) saved \(savedRoutineCount == 1 ? "routine" : "routines") ready",
-                    symbolName: "rectangle.stack.fill",
-                    prominence: .secondary,
-                    action: onShowSavedRoutines
-                )
+                        VStack(spacing: 10) {
+                            GymSessionActionCard(
+                                title: "My Routines",
+                                subtitle: savedRoutineCount == 0 ? "Create and save your first lift plan" : "\(savedRoutineCount) saved \(savedRoutineCount == 1 ? "routine" : "routines") ready",
+                                symbolName: "rectangle.stack.fill",
+                                prominence: .secondary,
+                                action: onShowSavedRoutines
+                            )
 
-                GymChoiceActionButton(
-                    title: "Create Routine",
-                    subtitle: "Choose exercises from the Pulsar catalog",
-                    symbolName: "sparkles",
-                    prominence: .primary,
-                    action: onCreateRoutine
-                )
+                            GymSessionActionCard(
+                                title: "Create Routine",
+                                subtitle: "Choose exercises from the Pulsar catalog",
+                                symbolName: "sparkles",
+                                prominence: .primary,
+                                action: onCreateRoutine
+                            )
 
-                GymChoiceActionButton(
-                    title: "Start Free Workout",
-                    subtitle: "Track a freestyle gym session",
-                    symbolName: "timer",
-                    prominence: .secondary,
-                    action: onStartEmptyWorkout
-                )
-
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    onCancel()
-                } label: {
-                    Text("Cancel")
-                        .pulsarTextStyle(.buttonTitle)
-                        .foregroundStyle(.white.opacity(0.72))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(.white.opacity(0.055), in: Capsule(style: .continuous))
-                        .overlay {
-                            Capsule(style: .continuous)
-                                .stroke(.white.opacity(0.10), lineWidth: 1)
-                        }
-                }
-                .buttonStyle(.plain)
-            }
-
-            Spacer(minLength: 54)
-        }
-        .padding(.horizontal, 24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-private struct GymSavedRoutinesView: View {
-    @ObservedObject var routineStore: PulsarRoutineStore
-    @ObservedObject var historyStore: PulsarGymWorkoutHistoryStore
-    var onBack: () -> Void
-    var onCreateRoutine: () -> Void
-    var onStartRoutine: (PulsarRoutine) -> Void
-    var onEditRoutine: (PulsarRoutine) -> Void
-
-    @State private var routinePendingDeletion: PulsarRoutine?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            header
-
-            if routineStore.routines.isEmpty {
-                emptyState
-                    .frame(maxHeight: .infinity)
-            } else {
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 12) {
-                        ForEach(routineStore.routines) { routine in
-                            GymSavedRoutineCard(
-                                routine: routine,
-                                lastPerformed: lastPerformedDate(for: routine),
-                                onStart: {
-                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                    onStartRoutine(routine)
-                                },
-                                onEdit: {
-                                    onEditRoutine(routine)
-                                },
-                                onDuplicate: {
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                    _ = routineStore.duplicate(routine)
-                                },
-                                onDelete: {
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                    routinePendingDeletion = routine
-                                }
+                            GymSessionActionCard(
+                                title: "Start Free Workout",
+                                subtitle: "Track a freestyle gym session",
+                                symbolName: "timer",
+                                prominence: .secondary,
+                                action: onStartEmptyWorkout
                             )
                         }
+                        .padding(.top, metrics.cardsSpacing)
+
+                        Spacer(minLength: metrics.cancelSpacing)
+
+                        GymSessionCancelButton(action: onCancel)
+
+                        Color.clear
+                            .frame(height: metrics.bottomSpacing)
+                            .accessibilityHidden(true)
                     }
-                    .padding(.bottom, 24)
+                    .frame(maxWidth: .infinity, minHeight: proxy.size.height)
+                    .padding(.horizontal, 28)
                 }
             }
+            .scrollIndicators(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 20)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .confirmationDialog(
-            "Delete routine?",
-            isPresented: Binding(
-                get: { routinePendingDeletion != nil },
-                set: { if !$0 { routinePendingDeletion = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete Routine", role: .destructive) {
-                if let routinePendingDeletion {
-                    routineStore.delete(routinePendingDeletion)
-                }
-                routinePendingDeletion = nil
-            }
-            Button("Cancel", role: .cancel) {
-                routinePendingDeletion = nil
-            }
-        } message: {
-            Text("This only removes the saved routine. Completed workout history stays intact.")
-        }
-    }
-
-    private var header: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Button(action: onBack) {
-                Image(systemName: "chevron.left")
-                    .pulsarTextStyle(.label)
-                    .foregroundStyle(.white.opacity(0.78))
-                    .frame(width: 38, height: 38)
-                    .background(.white.opacity(0.08), in: Circle())
-                    .overlay {
-                        Circle().stroke(.white.opacity(0.11), lineWidth: 1)
-                    }
-            }
-            .buttonStyle(.plain)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text("My Routines")
-                    .pulsarTextStyle(.screenTitle)
-                    .foregroundStyle(.white)
-
-                Text("Saved lifting plans, ready when you are.")
-                    .pulsarTextStyle(.screenSubtitle)
-                    .foregroundStyle(.white.opacity(0.62))
-            }
-
-            Spacer(minLength: 0)
-
-            Button(action: onCreateRoutine) {
-                Image(systemName: "plus")
-                    .pulsarTextStyle(.label)
-                    .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
-                    .frame(width: 38, height: 38)
-                    .background(.white.opacity(0.96), in: Circle())
-            }
-            .buttonStyle(PulsarGymPressButtonStyle())
-            .accessibilityLabel("Create routine")
-        }
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(.white.opacity(0.10))
-                    .frame(width: 78, height: 78)
-                Text("🏋️")
-                    .font(.system(size: 36))
-            }
-
-            VStack(spacing: 6) {
-                Text("No saved routines yet")
-                    .pulsarTextStyle(.sectionTitle)
-                    .foregroundStyle(.white)
-                Text("Create your first routine and Pulsar will keep the plan here for faster gym starts.")
-                    .pulsarTextStyle(.screenSubtitle)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.white.opacity(0.62))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Button(action: onCreateRoutine) {
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                    Text("Create your first routine")
-                }
-                .pulsarTextStyle(.buttonTitle)
-                .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(
-                    LinearGradient(
-                        colors: [.white.opacity(0.98), Color(red: 0.84, green: 0.78, blue: 1.0)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    in: Capsule(style: .continuous)
-                )
-            }
-            .buttonStyle(PulsarGymPressButtonStyle())
-        }
-        .padding(22)
-        .frame(maxWidth: .infinity)
-        .background(.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .stroke(.white.opacity(0.12), lineWidth: 1)
-        }
-    }
-
-    private func lastPerformedDate(for routine: PulsarRoutine) -> Date? {
-        historyStore.sessions
-            .filter { $0.routineId == routine.id && $0.finishedAt != nil }
-            .map(\.startedAt)
-            .max()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemBackground).ignoresSafeArea())
     }
 }
 
-private struct GymSavedRoutineCard: View {
-    var routine: PulsarRoutine
-    var lastPerformed: Date?
-    var onStart: () -> Void
-    var onEdit: () -> Void
-    var onDuplicate: () -> Void
-    var onDelete: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 13) {
-                Text(routine.emoji)
-                    .font(.system(size: 28))
-                    .frame(width: 54, height: 54)
-                    .background(.white.opacity(0.11), in: Circle())
-                    .overlay {
-                        Circle().stroke(.white.opacity(0.14), lineWidth: 1)
-                    }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(routine.name)
-                        .pulsarTextStyle(.cardTitle)
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-
-                    Text(routineSubtitle)
-                        .pulsarTextStyle(.caption)
-                        .foregroundStyle(.white.opacity(0.58))
-                        .lineLimit(2)
-                }
-
-                Spacer(minLength: 0)
-
-                Menu {
-                    Button("Edit", systemImage: "pencil", action: onEdit)
-                    Button("Duplicate", systemImage: "plus.square.on.square", action: onDuplicate)
-                    Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .pulsarTextStyle(.label)
-                        .foregroundStyle(.white.opacity(0.72))
-                        .frame(width: 34, height: 34)
-                        .background(.white.opacity(0.08), in: Circle())
-                }
-            }
-
-            HStack(spacing: 8) {
-                GymSavedRoutineChip(symbol: "figure.strengthtraining.traditional", text: routine.exerciseCountText)
-                GymSavedRoutineChip(symbol: "clock.fill", text: estimatedDurationText)
-                if let lastPerformed {
-                    GymSavedRoutineChip(symbol: "calendar", text: "Last \(lastPerformed.formatted(date: .abbreviated, time: .omitted))")
-                }
-            }
-
-            HStack(spacing: 10) {
-                Button(action: onEdit) {
-                    Text("Edit")
-                        .pulsarTextStyle(.label)
-                        .foregroundStyle(.white.opacity(0.82))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(.white.opacity(0.08), in: Capsule(style: .continuous))
-                }
-                .buttonStyle(PulsarGymPressButtonStyle())
-
-                Button(action: onStart) {
-                    HStack(spacing: 7) {
-                        Text("Start")
-                        Image(systemName: "arrow.right")
-                    }
-                    .pulsarTextStyle(.label)
-                    .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
-                    .background(
-                        LinearGradient(
-                            colors: [.white.opacity(0.98), Color(red: 0.84, green: 0.78, blue: 1.0)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        in: Capsule(style: .continuous)
-                    )
-                }
-                .buttonStyle(PulsarGymPressButtonStyle())
-            }
-        }
-        .padding(15)
-        .background(cardBackground, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(.white.opacity(0.12), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.18), radius: 18, y: 10)
-    }
-
-    private var routineSubtitle: String {
-        let muscles = routine.mainMuscleGroupNames
-        return muscles.isEmpty ? "Custom gym routine" : muscles.joined(separator: " / ")
-    }
-
-    private var estimatedDurationText: String {
-        let minutes = max(1, Int((Double(routine.estimatedDurationSeconds) / 60).rounded()))
-        return "~\(minutes) min"
-    }
-
-    private var cardBackground: LinearGradient {
-        LinearGradient(
-            colors: [
-                .white.opacity(0.105),
-                Color(red: 0.58, green: 0.48, blue: 1.0).opacity(0.070),
-                .white.opacity(0.045)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-}
-
-private struct GymSavedRoutineChip: View {
-    var symbol: String
-    var text: String
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: symbol)
-                .pulsarTextStyle(.overline)
-            Text(text)
-                .pulsarTextStyle(.overline)
-                .lineLimit(1)
-        }
-        .foregroundStyle(.white.opacity(0.68))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(.white.opacity(0.070), in: Capsule(style: .continuous))
-    }
-}
-
-private struct GymChoiceActionButton: View {
+private struct GymSessionActionCard: View {
     enum Prominence {
         case primary
         case secondary
@@ -895,135 +802,223 @@ private struct GymChoiceActionButton: View {
     var prominence: Prominence
     var action: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    private let minimumHeight: CGFloat = 86
+    private let iconDiameter: CGFloat = 50
+
     var body: some View {
         Button {
             UIImpactFeedbackGenerator(style: prominence == .primary ? .medium : .light).impactOccurred()
             action()
         } label: {
-            HStack(spacing: 14) {
-                Image(systemName: symbolName)
-                    .pulsarTextStyle(.cardTitle)
-                    .frame(width: 42, height: 42)
-                    .background(iconBackground, in: Circle())
+            HStack(spacing: 13) {
+                GymSessionIconGlass(
+                    symbolName: symbolName,
+                    diameter: iconDiameter,
+                    symbolSize: 18,
+                    interactive: false
+                )
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .pulsarTextStyle(.buttonTitle)
-                        .foregroundStyle(titleColor)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.84)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                        .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.84)
 
                     Text(subtitle)
-                        .pulsarTextStyle(.caption)
-                        .foregroundStyle(subtitleColor)
-                        .lineLimit(2)
+                        .font(.subheadline)
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                 }
+                .layoutPriority(1)
 
                 Spacer(minLength: 6)
 
                 Image(systemName: "chevron.right")
-                    .pulsarTextStyle(.label)
-                    .foregroundStyle(chevronColor)
+                    .font(.subheadline.weight(.regular))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.tertiaryText)
             }
-            .padding(16)
-            .frame(maxWidth: .infinity)
-            .background(background, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .stroke(border, lineWidth: 1)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: minimumHeight, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .modifier(GymSessionCardGlassModifier(cornerRadius: 28))
+        }
+        .buttonStyle(GymSessionPressButtonStyle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(subtitle)
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+private struct GymSessionIconGlass: View {
+    var symbolName: String
+    var diameter: CGFloat
+    var symbolSize: CGFloat
+    var interactive = false
+
+    var body: some View {
+        Image(systemName: symbolName)
+            .font(.system(size: symbolSize, weight: .semibold))
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
+            .frame(width: diameter, height: diameter)
+            .modifier(GymSessionCircleGlassModifier(interactive: interactive))
+    }
+}
+
+private struct GymSessionCancelButton: View {
+    var action: () -> Void
+
+    private let diameter: CGFloat = 46
+
+    var body: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            action()
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: "xmark")
+                    .font(.system(.body, design: .default, weight: .medium))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
+                    .frame(width: diameter, height: diameter)
+                    .modifier(GymSessionCircleGlassModifier(interactive: true))
+
+                Text("Cancel")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
             }
-            .shadow(color: shadowColor, radius: prominence == .primary ? 24 : 14, y: 12)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(PulsarGymPressButtonStyle())
+        .buttonStyle(GymSessionPressButtonStyle())
+        .accessibilityLabel("Cancel")
+        .accessibilityHint("Dismisses the gym session picker")
     }
+}
 
-    private var background: LinearGradient {
-        switch prominence {
-        case .primary:
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.96),
-                    Color(red: 0.84, green: 0.78, blue: 1.0).opacity(0.92)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        case .secondary:
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.14),
-                    Color.white.opacity(0.06)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+private struct GymSessionChoiceLayoutMetrics {
+    let topSpacing: CGFloat
+    let titleSpacing: CGFloat
+    let subtitleSpacing: CGFloat
+    let cardsSpacing: CGFloat
+    let cancelSpacing: CGFloat
+    let bottomSpacing: CGFloat
+
+    init(availableHeight: CGFloat) {
+        let expansion = min(max((availableHeight - 700) / 160, 0), 1)
+        topSpacing = 18 + (14 * expansion)
+        titleSpacing = 14 + (6 * expansion)
+        subtitleSpacing = 6 + (3 * expansion)
+        cardsSpacing = 16 + (8 * expansion)
+        cancelSpacing = 16 + (18 * expansion)
+        bottomSpacing = 8 + (10 * expansion)
+    }
+}
+
+private struct GymSessionCardGlassModifier: ViewModifier {
+    var cornerRadius: CGFloat
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        if reduceTransparency {
+            content
+                .background(Color.white, in: shape)
+                .overlay {
+                    shape.strokeBorder(Color.black.opacity(0.10), lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.045), radius: 14, y: 6)
+        } else if #available(iOS 26.0, *) {
+            content
+                .background(Color.white.opacity(0.18), in: shape)
+                .overlay {
+                    shape.strokeBorder(
+                        LinearGradient(
+                            colors: [.white.opacity(0.96), .black.opacity(0.055)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.7
+                    )
+                }
+                .shadow(color: .black.opacity(0.032), radius: 14, y: 6)
+                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: cornerRadius))
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+                .overlay {
+                    shape.strokeBorder(Color.white.opacity(0.88), lineWidth: 0.8)
+                }
+                .shadow(color: .black.opacity(0.045), radius: 14, y: 6)
         }
     }
+}
 
-    private var border: LinearGradient {
-        LinearGradient(
-            colors: prominence == .primary
-                ? [.white.opacity(0.86), Color(red: 0.70, green: 0.62, blue: 1.0).opacity(0.32)]
-                : [.white.opacity(0.18), .white.opacity(0.08)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+private struct GymSessionCircleGlassModifier: ViewModifier {
+    var interactive: Bool
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content
+                .background(Color.white, in: Circle())
+                .overlay {
+                    Circle().strokeBorder(Color.black.opacity(0.10), lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.035), radius: 9, y: 4)
+        } else if #available(iOS 26.0, *) {
+            content
+                .background(Color.white.opacity(0.16), in: Circle())
+                .overlay {
+                    Circle().strokeBorder(Color.white.opacity(0.90), lineWidth: 0.7)
+                }
+                .shadow(color: .black.opacity(0.025), radius: 9, y: 4)
+                .glassEffect(.regular.interactive(interactive), in: .circle)
+        } else {
+            content
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay {
+                    Circle().strokeBorder(Color.white.opacity(0.88), lineWidth: 0.8)
+                }
+                .shadow(color: .black.opacity(0.035), radius: 9, y: 4)
+        }
     }
+}
 
-    private var iconBackground: Color {
-        prominence == .primary
-            ? Color(red: 0.18, green: 0.14, blue: 0.30).opacity(0.10)
-            : Color(red: 0.74, green: 0.66, blue: 1.0).opacity(0.16)
-    }
+private struct GymSessionPressButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var titleColor: Color {
-        prominence == .primary
-            ? Color(red: 0.12, green: 0.08, blue: 0.20)
-            : .white.opacity(0.94)
-    }
-
-    private var subtitleColor: Color {
-        prominence == .primary
-            ? Color(red: 0.32, green: 0.26, blue: 0.42)
-            : .white.opacity(0.60)
-    }
-
-    private var chevronColor: Color {
-        prominence == .primary
-            ? Color(red: 0.22, green: 0.14, blue: 0.34).opacity(0.62)
-            : .white.opacity(0.44)
-    }
-
-    private var shadowColor: Color {
-        prominence == .primary
-            ? Color(red: 0.72, green: 0.62, blue: 1.0).opacity(0.34)
-            : .black.opacity(0.18)
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.992 : 1)
+            .opacity(configuration.isPressed ? 0.92 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: configuration.isPressed)
     }
 }
 
 struct GymGlassBackground: View {
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.05, green: 0.04, blue: 0.09),
-                    Color(red: 0.13, green: 0.06, blue: 0.17),
-                    Color(red: 0.02, green: 0.02, blue: 0.05)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            PulsarFitnessMonochromeBackground()
 
             VStack(spacing: 20) {
                 ForEach(0..<12, id: \.self) { index in
                     Capsule(style: .continuous)
-                        .fill(.white.opacity(index.isMultiple(of: 3) ? 0.035 : 0.018))
+                        .fill(.black.opacity(index.isMultiple(of: 3) ? 0.026 : 0.012))
                         .frame(height: 1)
                         .offset(x: index.isMultiple(of: 2) ? -26 : 34)
                 }
             }
             .rotationEffect(.degrees(-11))
-            .blendMode(.screen)
             .padding(.horizontal, -40)
         }
     }
@@ -1036,6 +1031,51 @@ struct PulsarGymPressButtonStyle: ButtonStyle {
             .brightness(configuration.isPressed ? 0.035 : 0)
             .animation(.spring(response: 0.26, dampingFraction: 0.76), value: configuration.isPressed)
     }
+}
+
+#Preview("Gym Session Picker - Small", traits: .fixedLayout(width: 375, height: 667)) {
+    GymRoutineChoiceView(
+        savedRoutineCount: 4,
+        onShowSavedRoutines: {},
+        onCreateRoutine: {},
+        onStartEmptyWorkout: {},
+        onCancel: {}
+    )
+    .pulsarFitnessMonochromeAppearance()
+}
+
+#Preview("Gym Session Picker - Standard", traits: .fixedLayout(width: 393, height: 852)) {
+    GymRoutineChoiceView(
+        savedRoutineCount: 4,
+        onShowSavedRoutines: {},
+        onCreateRoutine: {},
+        onStartEmptyWorkout: {},
+        onCancel: {}
+    )
+    .pulsarFitnessMonochromeAppearance()
+}
+
+#Preview("Gym Session Picker - Pro Max", traits: .fixedLayout(width: 430, height: 932)) {
+    GymRoutineChoiceView(
+        savedRoutineCount: 4,
+        onShowSavedRoutines: {},
+        onCreateRoutine: {},
+        onStartEmptyWorkout: {},
+        onCancel: {}
+    )
+    .pulsarFitnessMonochromeAppearance()
+}
+
+#Preview("Gym Session Picker - Accessibility", traits: .fixedLayout(width: 390, height: 844)) {
+    GymRoutineChoiceView(
+        savedRoutineCount: 12,
+        onShowSavedRoutines: {},
+        onCreateRoutine: {},
+        onStartEmptyWorkout: {},
+        onCancel: {}
+    )
+    .environment(\.dynamicTypeSize, .accessibility2)
+    .pulsarFitnessMonochromeAppearance()
 }
 
 #Preview {

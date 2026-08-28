@@ -61,6 +61,7 @@ struct WorkoutPickerSheet: View {
         .accessibilityAction(.escape) {
             dismiss()
         }
+        .pulsarFitnessMonochromeAppearance()
     }
 
     private var header: some View {
@@ -140,7 +141,7 @@ struct WorkoutPickerSheet: View {
         guard !trimmedSearchText.isEmpty else { return workouts }
 
         return workouts.filter { workout in
-            workout.name.localizedCaseInsensitiveContains(trimmedSearchText)
+            workout.name.localizedStandardContains(trimmedSearchText)
         }
     }
 

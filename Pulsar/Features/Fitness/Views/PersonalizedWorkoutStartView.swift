@@ -133,6 +133,7 @@ struct PersonalizedWorkoutStartView: View {
         .task {
             await runIntroIfNeeded()
         }
+        .pulsarFitnessMonochromeAppearance()
     }
 
     private var workoutTitleStack: some View {
@@ -142,7 +143,11 @@ struct PersonalizedWorkoutStartView: View {
                 .fontWidth(.expanded)
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [.white, .white.opacity(0.92), workoutTint.opacity(0.78)],
+                        colors: [
+                            PulsarFitnessMonochromeDesign.primaryText,
+                            PulsarFitnessMonochromeDesign.primaryText.opacity(0.88),
+                            PulsarFitnessMonochromeDesign.secondaryText
+                        ],
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -150,12 +155,11 @@ struct PersonalizedWorkoutStartView: View {
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .minimumScaleFactor(0.76)
-                .shadow(color: .white.opacity(0.12), radius: 10, y: 2)
-                .shadow(color: workoutTint.opacity(0.28), radius: 28, y: 14)
+                .shadow(color: .black.opacity(0.055), radius: 14, y: 7)
 
             Text(workoutSubtitle)
                 .pulsarTextStyle(.workoutSubtitle)
-                .foregroundStyle(.white.opacity(0.60))
+                .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
         }
     }
 
@@ -174,13 +178,13 @@ struct PersonalizedWorkoutStartView: View {
                 Text("Cancel")
                     .pulsarTextStyle(.label)
             }
-            .foregroundStyle(.white.opacity(0.78))
+            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(.ultraThinMaterial, in: Capsule(style: .continuous))
             .overlay {
                 Capsule(style: .continuous)
-                    .stroke(.white.opacity(0.16), lineWidth: 1)
+                    .stroke(.black.opacity(0.07), lineWidth: 0.7)
             }
         }
         .buttonStyle(.plain)
@@ -198,15 +202,15 @@ struct PersonalizedWorkoutStartView: View {
                 Image(systemName: "arrow.right")
                     .pulsarTextStyle(.cardTitle)
             }
-            .foregroundStyle(.white.opacity(0.94))
+            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 17)
             .background(
                 LinearGradient(
                     colors: [
-                        .white.opacity(0.20),
-                        workoutTint.opacity(0.30),
-                        .white.opacity(0.10)
+                        .white.opacity(0.94),
+                        .white.opacity(0.66),
+                        .black.opacity(0.025)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -218,15 +222,14 @@ struct PersonalizedWorkoutStartView: View {
                 Capsule(style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: [.white.opacity(0.48), workoutTint.opacity(0.34), .white.opacity(0.12)],
+                            colors: [.white.opacity(0.92), .black.opacity(0.045), .black.opacity(0.08)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
                         lineWidth: 1
                     )
             }
-            .shadow(color: workoutTint.opacity(0.26), radius: 24, y: 12)
-            .shadow(color: .black.opacity(0.26), radius: 20, y: 12)
+            .shadow(color: .black.opacity(0.08), radius: 20, y: 12)
         }
         .buttonStyle(WorkoutStartButtonStyle())
         .accessibilityHint("Begins the selected personalized workout")

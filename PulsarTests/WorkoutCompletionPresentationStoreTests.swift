@@ -29,6 +29,7 @@ struct WorkoutCompletionPresentationStoreTests {
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let sessionID = UUID()
         let store = WorkoutCompletionPresentationStore(defaults: defaults)
+        store.markEligibleForSummary(sessionID: sessionID)
         store.consume(sessionID: sessionID, reason: "test")
 
         store.markPending(
@@ -41,6 +42,84 @@ struct WorkoutCompletionPresentationStoreTests {
         )
 
         #expect(store.pendingPresentation == nil)
+    }
+
+    @Test func markPendingRequiresSummaryEligibility() throws {
+        let (suiteName, defaults) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let sessionID = UUID()
+        let store = WorkoutCompletionPresentationStore(defaults: defaults)
+
+        store.markPending(
+            WorkoutCompletionPresentation(
+                sessionID: sessionID,
+                kind: .gym(makeGymSummary(sessionID: sessionID)),
+                presentedAt: Date(),
+                source: .localFinish
+            )
+        )
+        #expect(store.pendingPresentation == nil)
+
+        store.markEligibleForSummary(sessionID: sessionID)
+        store.markPending(
+            WorkoutCompletionPresentation(
+                sessionID: sessionID,
+                kind: .gym(makeGymSummary(sessionID: sessionID)),
+                presentedAt: Date(),
+                source: .localFinish
+            )
+        )
+        #expect(store.pendingPresentation?.sessionID == sessionID)
+    }
+
+    @Test func watchSummaryEligibilityRequiresObservedActiveSession() throws {
+        let (suiteName, defaults) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let expectedSessionID = UUID()
+        let staleSessionID = UUID()
+        let store = WorkoutCompletionPresentationStore(defaults: defaults)
+
+        #expect(!store.isEligibleForSummary(sessionID: expectedSessionID))
+        #expect(!store.isEligibleForSummary(sessionID: staleSessionID))
+
+        store.markEligibleForSummary(sessionID: expectedSessionID)
+
+        #expect(store.isEligibleForSummary(sessionID: expectedSessionID))
+        #expect(!store.isEligibleForSummary(sessionID: staleSessionID))
+        let restored = WorkoutCompletionPresentationStore(defaults: defaults)
+        #expect(restored.isEligibleForSummary(sessionID: expectedSessionID))
+    }
+
+    @Test func consumingSummaryClearsEligibility() throws {
+        let (suiteName, defaults) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let sessionID = UUID()
+        let store = WorkoutCompletionPresentationStore(defaults: defaults)
+        store.markEligibleForSummary(sessionID: sessionID)
+
+        store.consume(sessionID: sessionID, reason: "test")
+
+        #expect(!store.isEligibleForSummary(sessionID: sessionID))
+    }
+
+    @Test func watchMirrorBlocksFinishedSummaryForMissingOrMismatchedActiveSession() {
+        let expectedSessionID = UUID()
+
+        #expect(!GymWatchMirroredWorkoutView.canPresentFinishedSummary(
+            expectedSessionID: expectedSessionID,
+            finishedSessionID: expectedSessionID,
+            isSummaryEligible: false
+        ))
+        #expect(!GymWatchMirroredWorkoutView.canPresentFinishedSummary(
+            expectedSessionID: expectedSessionID,
+            finishedSessionID: UUID(),
+            isSummaryEligible: true
+        ))
+        #expect(GymWatchMirroredWorkoutView.canPresentFinishedSummary(
+            expectedSessionID: expectedSessionID,
+            finishedSessionID: expectedSessionID,
+            isSummaryEligible: true
+        ))
     }
 
     @Test func gymMetricsIncludeFullWidthCalories() {

@@ -1,0 +1,6 @@
+// Copy to FoodCommunity.local.xcconfig for local configuration. The local file is git-ignored.
+// Use only the public Supabase URL and publishable key (or legacy anon JWT).
+// Never add a secret/service-role key.
+
+FOOD_COMMUNITY_SUPABASE_URL = https:/$()/YOUR_PROJECT.supabase.co
+FOOD_COMMUNITY_SUPABASE_ANON_KEY = sb_publishable_your_public_client_key

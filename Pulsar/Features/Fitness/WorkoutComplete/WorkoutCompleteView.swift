@@ -54,7 +54,7 @@ struct WorkoutCompleteView<Details: View>: View {
         self.metrics = WorkoutCompletionContentBuilder.metrics(for: summary)
         self.shareContent = .gym(summary)
         self.shareTitle = "Share"
-        self.accent = Color(red: 0.55, green: 1.0, blue: 0.64)
+        self.accent = PulsarFitnessMonochromeDesign.primaryText
         self.onDone = onDone
         self.details = details()
     }
@@ -141,7 +141,7 @@ struct WorkoutCompleteView<Details: View>: View {
             }
             .scrollIndicators(.hidden)
         }
-        .preferredColorScheme(.dark)
+        .pulsarFitnessMonochromeAppearance()
         .onAppear {
             guard !hasAppeared else { return }
             if !reduceMotion {
@@ -171,9 +171,9 @@ struct WorkoutCompleteView<Details: View>: View {
     private var completionBackdrop: some View {
         LinearGradient(
             colors: [
-                Color.black.opacity(0.90),
-                Color(red: 0.03, green: 0.10, blue: 0.16).opacity(0.86),
-                Color(red: 0.04, green: 0.01, blue: 0.08).opacity(0.92)
+                .white,
+                PulsarFitnessMonochromeDesign.background,
+                Color(red: 0.955, green: 0.956, blue: 0.960)
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -181,7 +181,7 @@ struct WorkoutCompleteView<Details: View>: View {
         .overlay {
             RadialGradient(
                 colors: [
-                    accent.opacity(reduceTransparency ? 0.10 : 0.25),
+                    .black.opacity(reduceTransparency ? 0.015 : 0.025),
                     Color.clear
                 ],
                 center: .top,
@@ -194,15 +194,15 @@ struct WorkoutCompleteView<Details: View>: View {
 
     private var containerBackground: some View {
         RoundedRectangle(cornerRadius: 34, style: .continuous)
-            .fill(Color.black.opacity(reduceTransparency ? 0.88 : 0.30))
+            .fill(Color.white.opacity(reduceTransparency ? 0.98 : 0.76))
             .overlay {
                 RoundedRectangle(cornerRadius: 34, style: .continuous)
                     .fill(
                         LinearGradient(
                             colors: [
-                                .white.opacity(reduceTransparency ? 0.06 : 0.16),
-                                accent.opacity(reduceTransparency ? 0.03 : 0.08),
-                                .black.opacity(reduceTransparency ? 0.12 : 0.28)
+                                .white.opacity(reduceTransparency ? 0.52 : 0.72),
+                                .white.opacity(0.18),
+                                .black.opacity(reduceTransparency ? 0.025 : 0.045)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -250,7 +250,7 @@ private struct WorkoutCompleteHeader: View {
             VStack(spacing: 8) {
                 Text(title)
                     .font(.system(size: titleSize, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.72)
@@ -262,26 +262,26 @@ private struct WorkoutCompleteHeader: View {
                         Text(workoutName)
                     }
                     .font(.system(size: workoutNameSize, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.78))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                     .minimumScaleFactor(0.74)
 
                     Label(sourceDeviceName, systemImage: sourceSystemImage)
                         .font(.system(size: metadataSize, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.58))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
 
                     if let startedAt {
                         Text(startedAt.formatted(.dateTime.weekday(.wide).month(.abbreviated).day().hour().minute()))
                             .font(.system(size: metadataSize, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.54))
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                             .multilineTextAlignment(.center)
                     }
 
                     if let heartRateSourceText {
                         Label(heartRateSourceText, systemImage: "heart.text.square.fill")
                             .font(.system(size: footnoteSize, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.54))
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                             .lineLimit(2)
                             .minimumScaleFactor(0.82)
                             .multilineTextAlignment(.center)
@@ -302,17 +302,17 @@ private struct WorkoutCompleteSuccessOrb: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(accent.opacity(0.20))
+                .fill(.black.opacity(0.045))
                 .frame(width: 104, height: 104)
                 .blur(radius: 16)
                 .scaleEffect(hasAppeared && !reduceMotion ? 1.10 : 0.78)
 
             Image(systemName: "checkmark")
                 .font(.system(size: 42, weight: .bold, design: .rounded))
-                .foregroundStyle(Color(red: 0.76, green: 1.0, blue: 0.80))
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                 .frame(width: 86, height: 86)
-                .background(PulsarCircularGlassSurface(cornerRadius: 43, tint: accent.opacity(0.75)))
-                .shadow(color: accent.opacity(0.55), radius: hasAppeared && !reduceMotion ? 24 : 12)
+                .background(PulsarCircularGlassSurface(cornerRadius: 43, tint: .black))
+                .shadow(color: .black.opacity(0.07), radius: hasAppeared && !reduceMotion ? 20 : 10)
         }
         .scaleEffect(hasAppeared || reduceMotion ? 1 : 0.80)
         .animation(reduceMotion ? nil : .spring(response: 0.48, dampingFraction: 0.72).delay(0.04), value: hasAppeared)
@@ -352,19 +352,19 @@ private struct WorkoutCompleteMetricCard: View {
 
     var body: some View {
         HStack(spacing: 13) {
-            PulsarGlassIconCircle(size: 52, tint: metric.tint, systemImage: metric.systemImage, symbolScale: 0.42)
+            PulsarGlassIconCircle(size: 52, tint: metric.fitnessIconStyle, systemImage: metric.systemImage, symbolScale: 0.42)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(metric.value)
                     .font(.system(size: valueSize, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.62)
 
                 Text(metric.title)
                     .font(.system(size: labelSize, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.64))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.74)
             }
@@ -376,10 +376,10 @@ private struct WorkoutCompleteMetricCard: View {
         .padding(.vertical, 14)
         .background {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color.black.opacity(0.20))
+                .fill(Color.white.opacity(0.76))
                 .overlay {
                     LinearGradient(
-                        colors: [.white.opacity(0.15), metric.tint.opacity(0.08), .black.opacity(0.18)],
+                        colors: [.white.opacity(0.88), .white.opacity(0.24), .black.opacity(0.035)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -388,9 +388,9 @@ private struct WorkoutCompleteMetricCard: View {
         }
         .overlay {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(.white.opacity(0.18), lineWidth: 1)
+                .stroke(.black.opacity(0.06), lineWidth: 0.7)
         }
-        .pulsarLiquidGlass(cornerRadius: 24, tint: metric.tint.opacity(0.08), interactive: false, isClear: true)
+        .pulsarLiquidGlass(cornerRadius: 24, interactive: false, isClear: true)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(metric.title)
         .accessibilityValue(metric.accessibilityValue)
@@ -409,7 +409,7 @@ private struct WorkoutCompleteActions: View {
             Button(action: onShare) {
                 Label(shareTitle, systemImage: "square.and.arrow.up")
                     .font(.system(size: buttonTitleSize, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 17)
                     .background {
@@ -417,9 +417,9 @@ private struct WorkoutCompleteActions: View {
                             .fill(
                                 LinearGradient(
                                     colors: [
-                                        .white.opacity(0.24),
-                                        accent.opacity(0.62),
-                                        Color(red: 0.34, green: 0.90, blue: 0.48).opacity(0.80)
+                                        .white.opacity(0.94),
+                                        .white.opacity(0.64),
+                                        .black.opacity(0.035)
                                     ],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
@@ -428,9 +428,9 @@ private struct WorkoutCompleteActions: View {
                     }
                     .overlay {
                         Capsule(style: .continuous)
-                            .stroke(.white.opacity(0.34), lineWidth: 1)
+                            .stroke(.black.opacity(0.07), lineWidth: 0.7)
                     }
-                    .shadow(color: accent.opacity(0.32), radius: 18, y: 8)
+                    .shadow(color: .black.opacity(0.07), radius: 18, y: 8)
             }
             .buttonStyle(PulsarGymPressButtonStyle())
             .accessibilityLabel(shareTitle)
@@ -439,18 +439,28 @@ private struct WorkoutCompleteActions: View {
                 Button(action: onDone) {
                     Text("Done")
                         .font(.system(size: buttonTitleSize, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.92))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 17)
-                        .background(.white.opacity(0.10), in: Capsule(style: .continuous))
+                        .background(.white.opacity(0.70), in: Capsule(style: .continuous))
                         .overlay {
                             Capsule(style: .continuous)
-                                .stroke(.white.opacity(0.16), lineWidth: 1)
+                                .stroke(.black.opacity(0.07), lineWidth: 0.7)
                         }
                     }
                 .buttonStyle(PulsarGymPressButtonStyle())
                 .accessibilityLabel("Done")
             }
         }
+    }
+}
+
+private extension WorkoutSummaryMetric {
+    var fitnessIconStyle: Color {
+        let normalizedTitle = title.lowercased()
+        let representsPhysiology =
+            normalizedTitle.contains("heart") ||
+            normalizedTitle.contains("calories")
+        return representsPhysiology ? tint : PulsarFitnessMonochromeDesign.primaryText
     }
 }

@@ -25,6 +25,11 @@ struct FuelCaptureSheet: View {
     @State private var saveAsPrivateFood: Bool
     @State private var selectedFood: PulsarFoodItem?
     @State private var draftFoodID: UUID
+    @State private var activeDestination: FuelCaptureDestination?
+    @State private var pendingFocus: FuelCaptureFocus?
+    @State private var shouldDismissAfterBarcode = false
+    @State private var foodSearchModel: FoodSearchModel
+    @FocusState private var focusedField: FuelCaptureFocus?
 
     init(
         store: PulsarNutritionStore,
@@ -53,6 +58,7 @@ struct FuelCaptureSheet: View {
         _saveAsPrivateFood = State(initialValue: entryFood?.source == .privateFood)
         _selectedFood = State(initialValue: entryFood)
         _draftFoodID = State(initialValue: entryFood?.id ?? UUID())
+        _foodSearchModel = State(initialValue: FoodSearchModel(repository: FoodProductRepository.live()))
     }
 
     var body: some View {
@@ -60,6 +66,7 @@ struct FuelCaptureSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if editingEntry == nil {
+                        foodEntryMethodsCard
                         quickAddCard
                     }
 
@@ -81,8 +88,43 @@ struct FuelCaptureSheet: View {
                     Button("Cancel") { dismiss() }
                 }
             }
+            .fullScreenCover(item: $activeDestination, onDismiss: barcodeFlowDismissed) { destination in
+                switch destination {
+                case .barcodeScanner:
+                    FoodBarcodeFlowView(
+                        addProductAction: addScannedProduct,
+                        manualEntryAction: requestManualEntry
+                    )
+                }
+            }
         }
         .presentationBackground(.regularMaterial)
+        .task(id: searchText) {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            await foodSearchModel.search(searchText)
+        }
+    }
+
+    private var foodEntryMethodsCard: some View {
+        PulsarNutritionGlassCard(cornerRadius: 24) {
+            VStack(alignment: .leading, spacing: 12) {
+                NutritionSectionHeader(title: "Add Food", subtitle: "Search, scan a package, or enter nutrition manually")
+
+                Button("Search Food", systemImage: "magnifyingglass", action: focusSearch)
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button("Scan Barcode", systemImage: "barcode.viewfinder", action: presentBarcodeScanner)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button("Manual Entry", systemImage: "square.and.pencil", action: focusManualEntry)
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
     }
 
     private var quickAddCard: some View {
@@ -97,10 +139,16 @@ struct FuelCaptureSheet: View {
                     .textFieldStyle(.roundedBorder)
                     .textInputAutocapitalization(.words)
                     .submitLabel(.search)
+                    .focused($focusedField, equals: .search)
 
                 quickFoodGroup(
                     title: searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Common" : "Matches",
                     foods: matchingFoods
+                )
+
+                OpenNutritionSearchResults(
+                    model: foodSearchModel,
+                    selectAction: applySearchProduct
                 )
 
                 if !recentEntries.isEmpty {
@@ -126,6 +174,7 @@ struct FuelCaptureSheet: View {
                     .textFieldStyle(.roundedBorder)
                     .textInputAutocapitalization(.words)
                     .submitLabel(.next)
+                    .focused($focusedField, equals: .foodName)
                     .onChange(of: foodName) { _, _ in
                         if selectedFood?.name != foodName {
                             selectedFood = nil
@@ -353,6 +402,11 @@ struct FuelCaptureSheet: View {
         saveAsPrivateFood = food.source == .privateFood
     }
 
+    private func applySearchProduct(_ product: FoodProduct) {
+        guard let food = product.pulsarFoodItem() else { return }
+        apply(food)
+    }
+
     private func apply(_ entry: PulsarNutritionEntry) {
         apply(entry.food)
         servingAmountText = PulsarNutritionFormatters.decimal(entry.servingMultiplier)
@@ -369,6 +423,49 @@ struct FuelCaptureSheet: View {
             loggedAt: loggedAt
         )
         dismiss()
+    }
+
+    private func focusSearch() {
+        focusedField = .search
+    }
+
+    private func presentBarcodeScanner() {
+        focusedField = nil
+        activeDestination = .barcodeScanner
+    }
+
+    private func focusManualEntry() {
+        focusedField = .foodName
+    }
+
+    private func requestManualEntry() {
+        pendingFocus = .foodName
+    }
+
+    private func addScannedProduct(_ product: FoodProduct, servingMultiplier: Double) {
+        guard let food = product.pulsarFoodItem() else { return }
+        store.logFood(
+            food,
+            servingMultiplier: servingMultiplier,
+            mealMoment: selectedCategory.baseMoment,
+            categoryID: selectedCategory.id,
+            confidence: product.verificationStatus.isTrusted ? 1 : 0.85,
+            source: .barcodeScanner,
+            loggedAt: loggedAt
+        )
+        shouldDismissAfterBarcode = true
+    }
+
+    private func barcodeFlowDismissed() {
+        if shouldDismissAfterBarcode {
+            shouldDismissAfterBarcode = false
+            dismiss()
+            return
+        }
+        if let pendingFocus {
+            focusedField = pendingFocus
+            self.pendingFocus = nil
+        }
     }
 
     private func confirm() {

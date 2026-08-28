@@ -105,6 +105,139 @@ struct GymRoutineExperienceTests {
         #expect(decoded.deletedRoutineIds == [deletedID])
     }
 
+    @Test func savedRoutineTransportPreservesNestedExerciseAndSetTemplates() throws {
+        let groupID = UUID()
+        let exercises = [
+            PulsarRoutineExercise(
+                exercise: Self.makeExercise(id: "bench", name: "Bench Press"),
+                order: 0,
+                plannedSets: 4,
+                plannedReps: 6,
+                plannedWeight: 82.5,
+                weightUnit: .kilograms,
+                plannedRestSeconds: 120,
+                notes: "Pause on chest",
+                supersetGroupId: groupID,
+                supersetOrder: 0
+            ),
+            PulsarRoutineExercise(
+                exercise: Self.makeExercise(id: "row", name: "Cable Row", primaryGroup: .back),
+                order: 1,
+                plannedSets: 3,
+                plannedReps: 10,
+                plannedWeight: 55,
+                plannedRestSeconds: 75,
+                supersetGroupId: groupID,
+                supersetOrder: 1
+            ),
+            PulsarRoutineExercise(
+                exercise: Self.makeExercise(id: "fly", name: "Cable Fly"),
+                order: 2,
+                plannedSets: 2,
+                plannedReps: 15,
+                plannedWeight: 20,
+                plannedRestSeconds: 45
+            )
+        ]
+        let routine = PulsarRoutine(
+            name: "Friday",
+            exercises: exercises,
+            supersetGroups: [
+                PulsarSupersetGroup(
+                    id: groupID,
+                    exerciseIds: Array(exercises.prefix(2).map(\.id)),
+                    sharedSetCount: 4,
+                    restTimeSeconds: 90
+                )
+            ]
+        )
+        let payload = SavedGymRoutinesSyncPayload(
+            revision: 11,
+            routines: [WatchGymRoutinePlan(routine: routine)]
+        )
+
+        let data = try #require(SavedGymRoutinesSyncCodec.encode(payload))
+        let decoded = try #require(SavedGymRoutinesSyncCodec.decode(data)).routines[0]
+
+        #expect(decoded.hasCompleteExerciseDefinition)
+        #expect(decoded.exercises.map(\.exerciseId) == ["bench", "row", "fly"])
+        #expect(decoded.exercises.map(\.orderIndex) == [0, 1, 2])
+        #expect(decoded.exercises.map(\.plannedSets) == [4, 3, 2])
+        #expect(decoded.exercises.map(\.plannedReps) == [6, 10, 15])
+        #expect(decoded.exercises.map(\.plannedWeight) == [82.5, 55, 20])
+        #expect(decoded.exercises.map(\.plannedRestSeconds) == [120, 75, 45])
+        #expect(decoded.exercises[0].supersetGroupId == groupID)
+        #expect(decoded.exercises[0].supersetSharedSetCount == 4)
+        #expect(decoded.totalSetCount == 9)
+    }
+
+    @Test func partialRoutineCatalogCannotReplaceCompleteCachedDefinition() {
+        let routine = PulsarRoutine(
+            name: "Friday",
+            exercises: [PulsarRoutineExercise(exercise: Self.makeExercise(), order: 0, plannedSets: 4)]
+        )
+        let complete = WatchGymRoutinePlan(routine: routine)
+        var partial = complete
+        partial.exercises = []
+
+        let merged = SavedGymRoutineDefinitionMerge.preservingCompleteDefinitions(
+            incoming: [partial],
+            current: [complete]
+        )
+
+        #expect(merged == [complete])
+    }
+
+    @Test func fridaySnapshotBuildsSameExerciseOrderAndSetsForActiveWorkout() throws {
+        let exercises = [
+            PulsarRoutineExercise(exercise: Self.makeExercise(id: "bench", name: "Bench"), order: 0, plannedSets: 4),
+            PulsarRoutineExercise(exercise: Self.makeExercise(id: "row", name: "Row", primaryGroup: .back), order: 1, plannedSets: 3),
+            PulsarRoutineExercise(exercise: Self.makeExercise(id: "fly", name: "Fly"), order: 2, plannedSets: 3),
+            PulsarRoutineExercise(exercise: Self.makeExercise(id: "press", name: "Press"), order: 3, plannedSets: 3),
+            PulsarRoutineExercise(exercise: Self.makeExercise(id: "raise", name: "Raise"), order: 4, plannedSets: 3),
+            PulsarRoutineExercise(exercise: Self.makeExercise(id: "extension", name: "Extension"), order: 5, plannedSets: 2)
+        ]
+        let routine = PulsarRoutine(name: "Friday", exercises: exercises)
+        let plan = WatchGymRoutinePlan(routine: routine)
+        let envelope = GymRoutineSnapshotEnvelope(
+            requestID: UUID(),
+            sessionID: UUID(),
+            routineID: routine.id,
+            revision: 12,
+            routinePlan: plan
+        )
+        let encoded = try #require(GymCrossDeviceCodec.encodeRoutineSnapshot(envelope))
+        let decoded = try #require(GymCrossDeviceCodec.decodeRoutineSnapshot(encoded))
+        let activeExercises = decoded.routinePlan.exercises
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .map(ActiveGymWorkoutExerciseState.init(routinePlan:))
+
+        #expect(decoded.routinePlan.hasCompleteExerciseDefinition)
+        #expect(activeExercises.map(\.exerciseId) == ["bench", "row", "fly", "press", "raise", "extension"])
+        #expect(activeExercises.map { $0.sets.count } == [4, 3, 3, 3, 3, 2])
+        #expect(activeExercises.reduce(0) { $0 + $1.sets.count } == 18)
+
+        var rehydrated = ActiveGymWorkoutExerciseState(routinePlan: decoded.routinePlan.exercises[0])
+        let originalSetID = activeExercises[0].sets[0].id
+        rehydrated = rehydrated.preservingLiveSetProgress(from: activeExercises[0])
+        #expect(rehydrated.sets[0].id == originalSetID)
+    }
+
+    @Test func malformedPresentExercisePayloadDoesNotDecodeAsNameOnlyRoutine() throws {
+        let routine = PulsarRoutine(
+            name: "Friday",
+            exercises: [PulsarRoutineExercise(exercise: Self.makeExercise(), order: 0)]
+        )
+        let encoded = try JSONEncoder().encode(routine)
+        var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object["exercises"] = "malformed"
+        let malformed = try JSONSerialization.data(withJSONObject: object)
+
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(PulsarRoutine.self, from: malformed)
+        }
+    }
+
     @Test func routineBuilderUsesGymPreferenceForNewLifts() {
         let exercise = Self.makeExercise()
         let viewModel = RoutineBuilderViewModel(defaultWeightUnit: .pounds)
@@ -128,6 +261,99 @@ struct GymRoutineExperienceTests {
 
         #expect(routineExercise.exercise.thumbnailURL == "images/bench-press.jpg")
         #expect(routineExercise.exercise.instructions == "Press with control.")
+    }
+
+    @Test func routineBuilderReordersStableEntriesAndCarriesOrderThroughSaveWorkoutAndWatch() throws {
+        let defaults = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: defaultsSuiteName(defaults)) }
+
+        let bench = Self.makeExercise()
+        let duplicateBench = Self.makeExercise()
+        let rowOne = PulsarRoutineExercise(
+            exercise: bench,
+            order: 0,
+            plannedSets: 5,
+            plannedReps: 5,
+            plannedWeight: 100,
+            weightUnit: .kilograms,
+            plannedRestSeconds: 150,
+            notes: "Heavy first"
+        )
+        let rowTwo = PulsarRoutineExercise(
+            exercise: duplicateBench,
+            order: 1,
+            plannedSets: 3,
+            plannedReps: 12,
+            plannedWeight: 60,
+            weightUnit: .pounds,
+            plannedRestSeconds: 75,
+            notes: "Back-off duplicate"
+        )
+        let rowThree = PulsarRoutineExercise(
+            exercise: Self.makeExercise(id: "free-exercise-db-test-row", name: "Cable Row", primaryGroup: .back, primaryMuscleName: "Back", equipmentName: "Cable"),
+            order: 2
+        )
+        let viewModel = RoutineBuilderViewModel(
+            routine: PulsarRoutine(name: "Reorder", exercises: [rowOne, rowTwo, rowThree])
+        )
+
+        #expect(viewModel.moveRoutineExercise(id: rowOne.id, to: 3))
+        #expect(viewModel.routineExercises.map(\.id) == [rowTwo.id, rowThree.id, rowOne.id])
+        #expect(viewModel.routineExercises.map(\.order) == [0, 1, 2])
+        let movedRow = try #require(viewModel.routineExercises.last)
+        #expect(movedRow.id == rowOne.id)
+        #expect(movedRow.exercise.id == rowOne.exercise.id)
+        #expect(movedRow.plannedSets == 5)
+        #expect(movedRow.plannedReps == 5)
+        #expect(movedRow.plannedWeight == 100)
+        #expect(movedRow.plannedRestSeconds == 150)
+        #expect(movedRow.notes == "Heavy first")
+
+        #expect(viewModel.moveRoutineExercise(id: rowOne.id, to: 0))
+        #expect(viewModel.routineExercises.map(\.id) == [rowOne.id, rowTwo.id, rowThree.id])
+        #expect(!viewModel.moveRoutineExercise(id: rowOne.id, to: 0))
+        #expect(!viewModel.moveRoutineExercise(id: UUID(), to: 1))
+
+        let store = PulsarRoutineStore(defaults: defaults)
+        let saved = viewModel.save(using: store)
+        let restored = try #require(PulsarRoutineStore(defaults: defaults).routines.first)
+        let session = PulsarGymWorkoutSession(routine: saved)
+        let watchPlan = WatchGymRoutinePlan(routine: saved)
+
+        #expect(restored.exercises.map(\.id) == [rowOne.id, rowTwo.id, rowThree.id])
+        #expect(session.exercises.map(\.routineExerciseId) == [rowOne.id, rowTwo.id, rowThree.id])
+        #expect(watchPlan.exercises.map(\.id) == [rowOne.id, rowTwo.id, rowThree.id])
+        #expect(watchPlan.exercises.map(\.orderIndex) == [0, 1, 2])
+    }
+
+    @Test func routineBuilderMovesSupersetsAsContiguousBlocks() throws {
+        let first = PulsarRoutineExercise(exercise: Self.makeExercise(id: "first", name: "First"), order: 0)
+        let groupedFirst = PulsarRoutineExercise(exercise: Self.makeExercise(id: "grouped-first", name: "Grouped First"), order: 1)
+        let groupedSecond = PulsarRoutineExercise(exercise: Self.makeExercise(id: "grouped-second", name: "Grouped Second"), order: 2)
+        let last = PulsarRoutineExercise(exercise: Self.makeExercise(id: "last", name: "Last"), order: 3)
+        let group = PulsarSupersetGroup(
+            exerciseIds: [groupedFirst.id, groupedSecond.id],
+            sharedSetCount: 4,
+            restTimeSeconds: 75
+        )
+        let routine = PulsarRoutine(
+            name: "Grouped",
+            exercises: [first, groupedFirst, groupedSecond, last],
+            supersetGroups: [group]
+        )
+        let viewModel = RoutineBuilderViewModel(routine: routine)
+
+        #expect(viewModel.moveRoutineExercise(id: groupedFirst.id, to: 4))
+        #expect(viewModel.routineExercises.map(\.id) == [first.id, last.id, groupedFirst.id, groupedSecond.id])
+        #expect(viewModel.routineExercises.map(\.order) == [0, 1, 2, 3])
+        let movedGroup = try #require(viewModel.supersetGroup(id: group.id))
+        #expect(movedGroup.exerciseIds == [groupedFirst.id, groupedSecond.id])
+        #expect(viewModel.routineExercises.filter { $0.supersetGroupId == group.id }.map(\.supersetOrder) == [0, 1])
+
+        #expect(viewModel.moveRoutineExerciseUp(id: groupedSecond.id))
+        #expect(viewModel.routineExercises.map(\.id) == [first.id, groupedFirst.id, groupedSecond.id, last.id])
+        #expect(viewModel.moveRoutineExerciseDown(id: groupedFirst.id))
+        #expect(viewModel.routineExercises.map(\.id) == [first.id, last.id, groupedFirst.id, groupedSecond.id])
     }
 
     @Test func routineSupersetConfigurationPersistsAndDuplicatesSafely() throws {

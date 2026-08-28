@@ -5,21 +5,36 @@
 
 import Combine
 import Foundation
+import OSLog
 
 @MainActor
 final class PulsarGymWorkoutHistoryStore: ObservableObject {
+    static let shared = PulsarGymWorkoutHistoryStore()
     static let didChangeNotification = Notification.Name("pulsar.gym.workoutHistoryDidChange")
+    /// Activity Log retains the 100 newest sessions. Existing larger v1 blobs are
+    /// sorted and pruned to this boundary the first time this store loads them.
+    static let retentionLimit = 100
+
+    private static let storageKey = "pulsar.gym.workoutSessions.v1"
 
     @Published private(set) var sessions: [PulsarGymWorkoutSession]
 
     private let defaults: UserDefaults
-    private let storageKey = "pulsar.gym.workoutSessions.v1"
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private var lastPersistedData: Data?
 
     init(defaults: UserDefaults = .standard) {
+        let signpostState = PulsarPerformanceSignposts.fitness.beginInterval("history_init")
         self.defaults = defaults
-        self.sessions = Self.loadSessions(defaults: defaults, storageKey: storageKey, decoder: decoder)
+        let storedData = defaults.data(forKey: Self.storageKey)
+        let loadedSessions = Self.loadSessions(data: storedData, decoder: decoder)
+        self.sessions = Self.retainedSessions(from: loadedSessions)
+        self.lastPersistedData = storedData
+        if sessions.count != loadedSessions.count {
+            persist()
+        }
+        PulsarPerformanceSignposts.fitness.endInterval("history_init", signpostState)
     }
 
     @discardableResult
@@ -40,14 +55,16 @@ final class PulsarGymWorkoutHistoryStore: ObservableObject {
 
         let wasExisting = sessions.contains { existing in
             existing.id == completedSession.id ||
-                (existing.healthKitWorkoutUUID != nil && existing.healthKitWorkoutUUID == completedSession.healthKitWorkoutUUID)
+                (existing.healthKitWorkoutUUID != nil && existing.healthKitWorkoutUUID == completedSession.healthKitWorkoutUUID) ||
+                (existing.crossDeviceRequestID != nil && existing.crossDeviceRequestID == completedSession.crossDeviceRequestID)
         }
         sessions.removeAll { existing in
             existing.id == completedSession.id ||
-                (existing.healthKitWorkoutUUID != nil && existing.healthKitWorkoutUUID == completedSession.healthKitWorkoutUUID)
+                (existing.healthKitWorkoutUUID != nil && existing.healthKitWorkoutUUID == completedSession.healthKitWorkoutUUID) ||
+                (existing.crossDeviceRequestID != nil && existing.crossDeviceRequestID == completedSession.crossDeviceRequestID)
         }
         sessions.insert(completedSession, at: 0)
-        sessions.sort { $0.startedAt > $1.startedAt }
+        sessions = Self.retainedSessions(from: sessions)
         persist()
         NotificationCenter.default.post(name: Self.didChangeNotification, object: completedSession)
         PulsarSyncDebugLogger.log("Gym Activity Log \(wasExisting ? "updated" : "created") session=\(completedSession.id.uuidString) type=\(completedSession.workoutKind.rawValue) workoutUUID=\(completedSession.healthKitWorkoutUUID?.uuidString ?? "none")")
@@ -55,7 +72,14 @@ final class PulsarGymWorkoutHistoryStore: ObservableObject {
     }
 
     func reload() {
-        sessions = Self.loadSessions(defaults: defaults, storageKey: storageKey, decoder: decoder)
+        let storedData = defaults.data(forKey: Self.storageKey)
+        guard storedData != lastPersistedData else { return }
+        let loadedSessions = Self.loadSessions(data: storedData, decoder: decoder)
+        sessions = Self.retainedSessions(from: loadedSessions)
+        lastPersistedData = storedData
+        if sessions.count != loadedSessions.count {
+            persist()
+        }
     }
 
     func session(id: UUID) -> PulsarGymWorkoutSession? {
@@ -75,14 +99,20 @@ final class PulsarGymWorkoutHistoryStore: ObservableObject {
 
     private func persist() {
         guard let data = try? encoder.encode(sessions) else { return }
-        defaults.set(data, forKey: storageKey)
+        guard data != lastPersistedData else { return }
+        defaults.set(data, forKey: Self.storageKey)
+        lastPersistedData = data
     }
 
-    private static func loadSessions(defaults: UserDefaults, storageKey: String, decoder: JSONDecoder) -> [PulsarGymWorkoutSession] {
-        guard let data = defaults.data(forKey: storageKey),
+    private static func loadSessions(data: Data?, decoder: JSONDecoder) -> [PulsarGymWorkoutSession] {
+        guard let data,
               let sessions = try? decoder.decode([PulsarGymWorkoutSession].self, from: data) else {
             return []
         }
         return sessions.sorted { $0.startedAt > $1.startedAt }
+    }
+
+    private static func retainedSessions(from sessions: [PulsarGymWorkoutSession]) -> [PulsarGymWorkoutSession] {
+        Array(sessions.sorted { $0.startedAt > $1.startedAt }.prefix(retentionLimit))
     }
 }

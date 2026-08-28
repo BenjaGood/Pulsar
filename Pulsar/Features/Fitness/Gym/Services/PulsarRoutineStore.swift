@@ -9,6 +9,8 @@ import WatchConnectivity
 
 @MainActor
 final class PulsarRoutineStore: ObservableObject {
+    static let shared = PulsarRoutineStore()
+
     @Published private(set) var routines: [PulsarRoutine]
     @Published private(set) var routinesRevision: Int
 
@@ -98,11 +100,27 @@ final class PulsarRoutineStore: ObservableObject {
 
     func syncRoutinesToWatch(reason: String = "routineStoreManualSync", broadcast: Bool = true) {
         let plans = routines.map(WatchGymRoutinePlan.init(routine:))
+        logRoutineSyncSummary(plans, reason: reason)
         PulsarWatchConnectivitySyncStore.shared.storeSavedGymRoutines(
             plans,
             revision: routinesRevision,
             broadcast: broadcast,
             reason: reason
+        )
+    }
+
+    func makeImmutableSnapshot(
+        for routine: PulsarRoutine,
+        request: GymWorkoutStartRequest
+    ) -> GymRoutineSnapshotEnvelope? {
+        let plan = WatchGymRoutinePlan(routine: routine)
+        return GymRoutineSnapshotEnvelope(
+            requestID: request.requestID,
+            sessionID: request.candidateSessionID,
+            routineID: routine.id,
+            revision: routinesRevision,
+            routinePlan: plan,
+            startRequest: request
         )
     }
 
@@ -120,6 +138,7 @@ final class PulsarRoutineStore: ObservableObject {
         broadcast: Bool
     ) {
         let plans = routines.map(WatchGymRoutinePlan.init(routine:))
+        logRoutineSyncSummary(plans, reason: reason)
         PulsarWatchConnectivitySyncStore.shared.storeSavedGymRoutines(
             plans,
             revision: routinesRevision,
@@ -127,6 +146,18 @@ final class PulsarRoutineStore: ObservableObject {
             broadcast: broadcast,
             reason: reason
         )
+    }
+
+    private func logRoutineSyncSummary(_ plans: [WatchGymRoutinePlan], reason: String) {
+        for plan in plans {
+            let exercises = plan.exercises
+                .sorted { $0.orderIndex < $1.orderIndex }
+                .map { "\($0.exerciseId ?? "embedded"):\($0.name)[sets=\($0.plannedSets),reps=\($0.plannedReps),rest=\($0.plannedRestSeconds)]" }
+                .joined(separator: ",")
+            PulsarSyncDebugLogger.log(
+                "[PulsarRoutineSync] source=iPhoneRepository reason=\(reason) routineID=\(plan.routineId.uuidString) name=\(plan.name) exerciseCount=\(plan.exercises.count) totalSetCount=\(plan.totalSetCount) exercises=\(exercises)"
+            )
+        }
     }
 
     private var shouldBroadcastOnLoad: Bool {

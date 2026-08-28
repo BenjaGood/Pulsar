@@ -17,12 +17,13 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
     @Published private(set) var summary: PulsarRunSummary?
     @Published private(set) var message: String?
     @Published private(set) var activeWorkoutKind: PulsarOutdoorWorkoutKind = .running
+    @Published private(set) var liveHeartRateZoneProfile = PulsarLiveHeartRateZoneProfile()
 
     private let healthStore = HKHealthStore()
     private let syncStore = PulsarWatchConnectivitySyncStore.shared
     private var workoutSession: HKWorkoutSession?
     private var workoutBuilder: HKLiveWorkoutBuilder?
-    private var routeBuilder: HKWorkoutRouteBuilder?
+    private let routeCapture = PulsarWorkoutRouteCapture()
     private var locationManager: CLLocationManager?
     private var tickTask: Task<Void, Never>?
     private var finishFallbackTask: Task<Void, Never>?
@@ -45,9 +46,33 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
     private var handledRemoteCommandIDs = Set<UUID>()
     private var handledCompanionStartSessionIDs = Set<UUID>()
     private var cancellables = Set<AnyCancellable>()
+    private var options = PulsarRunOptions.default
+    private var audioCueTracker = OutdoorWorkoutAudioCueMilestoneTracker()
+    private var pendingStartIdentity: PulsarRunSessionIdentity?
+    private var acknowledgedStartRequestIDs = Set<UUID>()
+    private var isMirroringAvailable = false
+    private var mirroringStart = PulsarMirroringStartController()
+    private var primarySessionGate = PulsarWatchPrimarySessionGate()
+    private var isCompanionLaunchInFlight = false
+
+    private var managerObjectToken: String {
+        String(describing: ObjectIdentifier(self))
+    }
+
+    private var primaryObjectToken: String {
+        workoutSession.map { String(describing: ObjectIdentifier($0)) }
+            ?? (primarySessionGate.isCreating ? "creating" : "none")
+    }
+
+    private func logDuplicateStartIgnored(source: String, reason: String) {
+        PulsarWorkoutStartupTrace.watch(
+            "duplicate start ignored existingPrimary=\(primaryObjectToken) source=\(source) reason=\(reason) requestID=\(pendingStartIdentity?.requestID?.uuidString ?? primarySessionGate.requestID?.uuidString ?? "none") workoutID=\(primarySessionGate.workoutID?.uuidString ?? snapshot.pulsarWorkoutSessionId?.uuidString ?? "none") manager=\(managerObjectToken)"
+        )
+    }
 
     private override init() {
         super.init()
+        PulsarWorkoutStartupTrace.watch("[RunManager] init manager=\(managerObjectToken)")
         syncStore.setRunTransportEnvelopeHandler { [weak self] envelope, reason in
             self?.handleRunTransportEnvelope(envelope, reason: "watchConnectivity.\(reason)")
         }
@@ -55,7 +80,7 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
             .compactMap { $0 }
             .sink { [weak self] state in
                 Task { @MainActor in
-                    await self?.startIfNeededWhenCompanionStateArrives(state)
+                    await self?.reconcileSynchronizedRunState(state)
                 }
             }
             .store(in: &cancellables)
@@ -68,6 +93,7 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
         }
         do {
             try await healthStore.requestAuthorization(toShare: Self.healthShareTypes, read: Self.healthReadTypes)
+            refreshLiveHeartRateZoneProfile()
             ensureLocationManager()
             if locationManager?.authorizationStatus == .notDetermined {
                 locationManager?.requestWhenInUseAuthorization()
@@ -83,10 +109,17 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
     }
 
     func startOutdoorWorkoutFromWatch(_ workoutKind: PulsarOutdoorWorkoutKind, options: PulsarRunOptions) async {
+        self.options = options
+        OutdoorWorkoutAudioCueSettings.persist(options)
         await requestAuthorization(for: workoutKind)
         guard message == nil else { return }
         do {
-            try await startWorkout(configuration: Self.outdoorWorkoutConfiguration(for: workoutKind), workoutKind: workoutKind)
+            try await startWorkout(
+                configuration: Self.outdoorWorkoutConfiguration(for: workoutKind),
+                workoutKind: workoutKind,
+                source: "watchUIStart"
+            )
+            sendEnvelope(.options(options))
         } catch {
             snapshot.phase = .failed
             message = error.localizedDescription
@@ -94,23 +127,41 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
     }
 
     func startRunFromCompanion(configuration: HKWorkoutConfiguration) async {
+        isCompanionLaunchInFlight = true
+        defer { isCompanionLaunchInFlight = false }
         let workoutKind = PulsarOutdoorWorkoutKind(
             activityType: configuration.activityType,
             locationType: configuration.locationType
         )
+        PulsarWorkoutStartupTrace.watch(
+            "start request workoutID=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? syncStore.activeWorkoutState?.sessionId.uuidString ?? "none") requestID=\(pendingStartIdentity?.requestID?.uuidString ?? "none") source=startWatchAppConfiguration activity=\(configuration.activityType.rawValue) manager=\(managerObjectToken) selectedType=\(workoutKind.rawValue)"
+        )
         if workoutSession != nil,
            snapshot.pulsarWorkoutSessionId == syncStore.activeWorkoutState?.sessionId {
+            logDuplicateStartIgnored(source: "startWatchAppConfiguration", reason: "HealthKit session already active")
             PulsarSyncDebugLogger.log("Watch run companion launch ignored because HealthKit session is already active session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none") type=\(workoutKind.rawValue)")
             return
         }
         await requestAuthorization(for: workoutKind)
         guard message == nil else { return }
+        if pendingStartIdentity?.requestID == nil {
+            _ = await waitForCompanionRequestedStart(workoutKind: workoutKind)
+        }
+        guard pendingStartIdentity?.requestID != nil else {
+            PulsarWatchPrimaryCreationAuthority.preventCreation(
+                source: .startWatchAppConfiguration,
+                workoutID: pendingStartIdentity?.sessionId ?? syncStore.activeWorkoutState?.sessionId,
+                requestID: nil,
+                reason: "companion startWatchAppConfiguration missing requestID"
+            )
+            return
+        }
         do {
-            let companionState = await waitForCompanionRequestedStart(workoutKind: workoutKind)
             try await startWorkout(
                 configuration: configuration,
                 workoutKind: workoutKind,
-                companionStateOverride: companionState
+                companionStateOverride: nil,
+                source: "startWatchAppConfiguration"
             )
         } catch {
             snapshot.phase = .failed
@@ -174,6 +225,7 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
 
     func reset() {
         cleanupRuntime()
+        primarySessionGate.reset()
         snapshot = .empty
         activeWorkoutKind = .running
         summary = nil
@@ -181,7 +233,12 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
     }
 
     func recoverActiveWorkoutSession(_ session: HKWorkoutSession) {
-        guard workoutSession == nil else {
+        let recoveredObject = String(describing: ObjectIdentifier(session))
+        PulsarWorkoutStartupTrace.watch(
+            "recovery decision source=handleActiveWorkoutRecovery object=\(recoveredObject) companionLaunchInFlight=\(isCompanionLaunchInFlight) isCreating=\(primarySessionGate.isCreating) hasPrimary=\(primarySessionGate.hasPrimarySession) existingPrimary=\(primaryObjectToken) manager=\(managerObjectToken)"
+        )
+        if isCompanionLaunchInFlight || primarySessionGate.isCreating || primarySessionGate.hasPrimarySession || workoutSession != nil {
+            logDuplicateStartIgnored(source: "recovery", reason: "startWatchApp or existing primary owns creation")
             PulsarSyncDebugLogger.log("Watch run recovery skipped because an active session is already attached session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none")")
             return
         }
@@ -198,7 +255,11 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
 
         workoutSession = session
         workoutBuilder = builder
-        routeBuilder = workoutKind.isOutdoorDistanceWorkout ? HKWorkoutRouteBuilder(healthStore: healthStore, device: nil) : nil
+        routeCapture.attach(
+            to: builder,
+            healthStore: healthStore,
+            enabled: workoutKind.isOutdoorDistanceWorkout
+        )
 
         let recoveredState = syncStore.activeWorkoutState.flatMap { state -> PulsarActiveWorkoutSyncState? in
             guard state.kind.outdoorWorkoutKind == workoutKind,
@@ -228,6 +289,8 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
             snapshot.maxHeartRate = recoveredState.maxHeartRate
             snapshot.activeEnergyKilocalories = recoveredState.activeEnergyKilocalories
             applySyncedRunMetrics(from: recoveredState, reason: "watchRunRecovery")
+            audioCueTracker.restore(distanceMeters: snapshot.distanceMeters)
+            options.audioCuesEnabled = OutdoorWorkoutAudioCueSettings.audioCuesEnabled
         }
         if recoveredPhase == .paused {
             pauseBeganAt = Date()
@@ -251,6 +314,10 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
             )
         }
         message = nil
+        primarySessionGate.markCreated(workoutID: sessionId, requestID: pendingStartIdentity?.requestID)
+        PulsarWorkoutStartupTrace.watch(
+            "[PrimaryReattach] manager=\(managerObjectToken) object=\(recoveredObject) workoutID=\(sessionId.uuidString) requestID=\(pendingStartIdentity?.requestID?.uuidString ?? "none") authority=healthKitRecovery configuration=\(configuration.activityType.rawValue) source=recovery timestamp=\(Date())"
+        )
         PulsarSyncDebugLogger.log("Watch run recovered active HealthKit workout session=\(sessionId.uuidString) type=\(workoutKind.rawValue) state=\(Self.describe(session.state))")
     }
 
@@ -351,21 +418,66 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
     private func startWorkout(
         configuration: HKWorkoutConfiguration,
         workoutKind: PulsarOutdoorWorkoutKind,
-        companionStateOverride: PulsarActiveWorkoutSyncState? = nil
+        companionStateOverride: PulsarActiveWorkoutSyncState? = nil,
+        source: String
     ) async throws {
-        reset()
-        let companionState = companionStateOverride ?? syncStore.activeWorkoutState
-        let adoptedCompanionState = companionState?.kind.outdoorWorkoutKind == workoutKind &&
+        let creationSource = PulsarWatchPrimaryCreationSource(rawValue: source) ?? .unknown
+        let requestedWorkoutID = pendingStartIdentity?.sessionId
+            ?? snapshot.pulsarWorkoutSessionId
+        let requestedRequestID = pendingStartIdentity?.requestID
+        switch PulsarWatchPrimaryCreationAuthority.decision(
+            source: creationSource,
+            workoutID: requestedWorkoutID,
+            requestID: requestedRequestID
+        ) {
+        case .reject(let reason):
+            PulsarWatchPrimaryCreationAuthority.preventCreation(
+                source: creationSource,
+                workoutID: requestedWorkoutID,
+                requestID: requestedRequestID,
+                reason: reason
+            )
+            return
+        case .allow:
+            break
+        }
+        switch primarySessionGate.decision(
+            requestedWorkoutID: requestedWorkoutID,
+            requestedRequestID: requestedRequestID
+        ) {
+        case .ignore(let reason, _):
+            logDuplicateStartIgnored(source: source, reason: reason)
+            return
+        case .create:
+            primarySessionGate.markCreating(workoutID: requestedWorkoutID, requestID: requestedRequestID)
+        }
+
+        PulsarWorkoutStartupTrace.watch(
+            "start request workoutID=\(requestedWorkoutID?.uuidString ?? "none") requestID=\(requestedRequestID?.uuidString ?? "none") source=\(source) manager=\(managerObjectToken) selectedType=\(workoutKind.rawValue)"
+        )
+
+        cleanupRuntime()
+        let companionState = companionStateOverride
+        let adoptedCompanionIdentity = pendingStartIdentity?.workoutKind == workoutKind &&
+            pendingStartIdentity?.startedFrom == .iPhoneRequestedWatchStart &&
+            pendingStartIdentity?.requestID != nil
+        let adoptedCompanionState = adoptedCompanionIdentity &&
+            companionState?.kind.outdoorWorkoutKind == workoutKind &&
             companionState?.startedFrom == .iPhoneRequestedWatchStart &&
-            companionState?.isEnded == false
-        let sessionId = adoptedCompanionState ? (companionState?.sessionId ?? UUID()) : UUID()
-        let startedFrom: PulsarWorkoutStartedFrom = adoptedCompanionState ? (companionState?.startedFrom ?? .iPhoneRequestedWatchStart) : .appleWatch
+            companionState?.isEnded == false &&
+            companionState?.sessionId == pendingStartIdentity?.sessionId
+        let sessionId = adoptedCompanionIdentity
+            ? (pendingStartIdentity?.sessionId ?? UUID())
+            : UUID()
+        let startedFrom: PulsarWorkoutStartedFrom = adoptedCompanionState || adoptedCompanionIdentity
+            ? .iPhoneRequestedWatchStart
+            : .appleWatch
         activeWorkoutStartedFrom = startedFrom
         activeWorkoutKind = workoutKind
         snapshot.pulsarWorkoutSessionId = sessionId
         snapshot.source = .appleWatch
         snapshot.workoutKind = workoutKind
-        snapshot.phase = .running
+        snapshot.phase = .connectingToWatch
         snapshot.startedAt = adoptedCompanionState ? companionState?.startedAt : Date()
         snapshot.distanceMeters = 0
         snapshot.elapsedTime = 0
@@ -381,35 +493,72 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
         PulsarSyncDebugLogger.log("Watch run start selectedType=\(workoutKind.rawValue) hkType=\(workoutKind.healthKitActivityType.rawValue) session=\(sessionId.uuidString) startedFrom=\(startedFrom.rawValue)")
         publishActiveWorkoutState(phase: .starting, updatedFrom: .appleWatch, reason: "watchRunStartPrepared")
 
-        let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
-        let builder = session.associatedWorkoutBuilder()
-        builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
-        session.delegate = self
-        builder.delegate = self
-        workoutSession = session
-        workoutBuilder = builder
-        routeBuilder = workoutKind.isOutdoorDistanceWorkout ? HKWorkoutRouteBuilder(healthStore: healthStore, device: nil) : nil
-
-        let start = snapshot.startedAt ?? Date()
-        startWorkoutSessionIfNeeded(session, at: start, reason: "watchRunHealthKitStart")
-        try await builder.beginCollection(at: start)
-        addMetadata(
-            workoutMetadata(startedFrom: startedFrom),
-            to: builder,
-            context: "Apple Watch outdoor workout"
-        )
         do {
-            try await session.startMirroringToCompanionDevice()
-            PulsarSyncDebugLogger.log("Watch run mirroring started session=\(sessionId.uuidString) type=\(workoutKind.rawValue)")
-        } catch {
-            PulsarSyncDebugLogger.log("Watch run mirroring failed session=\(sessionId.uuidString) type=\(workoutKind.rawValue) error=\(error.localizedDescription)")
-        }
+            let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
+            let builder = session.associatedWorkoutBuilder()
+            builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+            session.delegate = self
+            builder.delegate = self
+            workoutSession = session
+            workoutBuilder = builder
+            primarySessionGate.markCreated(workoutID: sessionId, requestID: requestedRequestID)
+            let primaryObject = String(describing: ObjectIdentifier(session))
+            PulsarWorkoutStartupTrace.watch(
+                "[PrimaryCreate] manager=\(managerObjectToken) object=\(primaryObject) workoutID=\(sessionId.uuidString) requestID=\(requestedRequestID?.uuidString ?? "none") authority=\(creationSource.authorityLabel) configuration=\(configuration.activityType.rawValue) source=\(source) timestamp=\(Date())"
+            )
+            PulsarWorkoutStartupTrace.diag(
+                "[PrimaryCreate] run object=\(primaryObject) workoutID=\(sessionId.uuidString) requestID=\(requestedRequestID?.uuidString ?? "none") hkState=\(session.state.rawValue) \(PulsarWorkoutStartupTrace.threadTag())"
+            )
+            routeCapture.attach(
+                to: builder,
+                healthStore: healthStore,
+                enabled: workoutKind.isOutdoorDistanceWorkout
+            )
 
-        startLocationUpdates()
-        startTicking()
-        sendMetricsIfNeeded(force: true)
-        publishActiveWorkoutState(phase: .active, updatedFrom: .appleWatch, reason: "watchRunHealthKitStarted")
-        WKInterfaceDevice.current().play(.start)
+            let start = snapshot.startedAt ?? Date()
+            mirroringStart.reset()
+            PulsarWorkoutStartupTrace.watch(
+                "[MirrorStart] primaryObject=\(primaryObject) workoutID=\(sessionId.uuidString) requestID=\(requestedRequestID?.uuidString ?? "none") attempt=1 source=\(source)"
+            )
+            isMirroringAvailable = await PulsarHealthKitCompanionMirroring.startMirroringToCompanionDevice(
+                session,
+                controller: mirroringStart,
+                reason: "initialWatchStart run session=\(sessionId.uuidString) type=\(workoutKind.rawValue) primaryObject=\(primaryObject)"
+            )
+            PulsarWorkoutStartupTrace.watch(
+                "[MirrorStart] primaryObject=\(primaryObject) success=\(isMirroringAvailable) source=\(source)"
+            )
+            PulsarWorkoutLifecycleLogger.log(
+                .watchHealthKitMirroringStarted,
+                sessionID: sessionId,
+                workoutType: workoutKind.rawValue,
+                source: source,
+                healthKitState: "\(session.state.rawValue)",
+                role: "watch"
+            )
+            startWorkoutSessionIfNeeded(session, at: start, reason: source)
+            try await builder.beginCollection(at: start)
+            PulsarWorkoutLifecycleLogger.log(
+                .watchHealthKitActivityStarted,
+                sessionID: sessionId,
+                workoutType: workoutKind.rawValue,
+                source: source,
+                healthKitState: "\(session.state.rawValue)",
+                role: "watch"
+            )
+            addMetadata(
+                workoutMetadata(startedFrom: startedFrom),
+                to: builder,
+                context: "Apple Watch outdoor workout"
+            )
+
+            startLocationUpdates()
+            startTicking()
+            WKInterfaceDevice.current().play(.start)
+        } catch {
+            primarySessionGate.markCreationFailed()
+            throw error
+        }
     }
 
     private func waitForCompanionRequestedStart(
@@ -427,39 +576,40 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
                 PulsarSyncDebugLogger.log("Watch run adopted companion start session=\(state.sessionId.uuidString) type=\(workoutKind.rawValue) phase=\(state.phase.rawValue)")
                 return state
             }
-            try? await Task.sleep(nanoseconds: UInt64(pollIntervalSeconds * 1_000_000_000))
+            try? await Task.sleep(for: .seconds(pollIntervalSeconds))
         }
         PulsarSyncDebugLogger.log("Watch run did not find companion start within timeout type=\(workoutKind.rawValue); starting with local session until identity arrives")
         return nil
     }
 
-    private func startIfNeededWhenCompanionStateArrives(_ state: PulsarActiveWorkoutSyncState) async {
-        guard workoutSession == nil,
-              workoutBuilder == nil,
+    private func reconcileSynchronizedRunState(_ state: PulsarActiveWorkoutSyncState) async {
+        guard case .outdoor = state.kind,
               state.startedFrom == .iPhoneRequestedWatchStart,
               state.phase.isLive,
-              !state.isEnded,
-              let workoutKind = state.kind.outdoorWorkoutKind,
-              handledCompanionStartSessionIDs.insert(state.sessionId).inserted else { return }
-        PulsarSyncDebugLogger.log("Watch run late companion state arrived; starting HealthKit session=\(state.sessionId.uuidString) type=\(workoutKind.rawValue)")
-        await requestAuthorization(for: workoutKind)
-        guard message == nil else { return }
-        do {
-            try await startWorkout(
-                configuration: Self.outdoorWorkoutConfiguration(for: workoutKind),
-                workoutKind: workoutKind,
-                companionStateOverride: state
-            )
-        } catch {
-            snapshot.phase = .failed
-            message = error.localizedDescription
+              !state.isEnded else { return }
+        if workoutSession != nil {
+            logDuplicateStartIgnored(source: "activeWorkoutStateSink", reason: "primary already exists")
+            return
         }
+        PulsarWorkoutStartupTrace.watch(
+            "received synchronized state without primary session session=\(state.sessionId.uuidString) source=activeWorkoutStateSink action=reconcileDoNotCreate"
+        )
+        PulsarSyncDebugLogger.log(
+            "Watch run synchronized state ignored for primary creation session=\(state.sessionId.uuidString) type=\(state.kind.workoutTypeRawValue)"
+        )
     }
 
     private func startWorkoutSessionIfNeeded(_ session: HKWorkoutSession, at start: Date, reason: String) {
         switch session.state {
         case .notStarted, .prepared:
+            PulsarWorkoutStartupTrace.diag(
+                "[StartActivity] run begin reason=\(reason) session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none") hkState=\(session.state.rawValue) \(PulsarWorkoutStartupTrace.threadTag())"
+            )
             session.startActivity(with: start)
+            PulsarWorkoutStartupTrace.watch("startActivity run reason=\(reason) session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none")")
+            PulsarWorkoutStartupTrace.diag(
+                "[StartActivity] run applied reason=\(reason) session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none") hkState=\(session.state.rawValue) \(PulsarWorkoutStartupTrace.threadTag())"
+            )
             PulsarSyncDebugLogger.log("Watch run HealthKit startActivity applied reason=\(reason) state=\(Self.describe(session.state)) session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none")")
         case .running, .paused:
             PulsarSyncDebugLogger.log("Watch run HealthKit startActivity skipped because session already started reason=\(reason) state=\(Self.describe(session.state)) session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none")")
@@ -547,7 +697,12 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
             )
             workoutSession = nil
             workoutBuilder = nil
-            routeBuilder = nil
+            routeCapture.reset()
+            mirroringStart.reset()
+            isMirroringAvailable = false
+            if !primarySessionGate.isCreating {
+                primarySessionGate.reset()
+            }
         }
         startDate = nil
         pauseBeganAt = nil
@@ -561,12 +716,13 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
         lastMetricsSentAt = .distantPast
         lastRoutePointSentCount = 0
         activeWorkoutStartedFrom = nil
+        audioCueTracker.reset()
     }
 
     private func scheduleFinishFallback(reason: String) {
         finishFallbackTask?.cancel()
         finishFallbackTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            try? await Task.sleep(for: .milliseconds(2_500))
             guard self.snapshot.phase == .finishing, self.summary == nil else { return }
             PulsarSyncDebugLogger.log("[PulsarWorkoutLifecycle] Watch run finish fallback fired reason=\(reason) session=\(self.snapshot.pulsarWorkoutSessionId?.uuidString ?? "none")")
             await self.finishWorkout()
@@ -610,7 +766,7 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
         tickTask?.cancel()
         tickTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                try? await Task.sleep(for: .seconds(1))
                 await MainActor.run {
                     self?.updateTimeMetrics(date: Date())
                     self?.sendMetricsIfNeeded()
@@ -723,13 +879,7 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
             )
         }
         let sessionID = snapshot.pulsarWorkoutSessionId?.uuidString ?? "none"
-        routeBuilder?.insertRouteData(locations) { success, error in
-            if let error {
-                PulsarSyncDebugLogger.log("Watch HealthKit route insert failed session=\(sessionID) error=\(error.localizedDescription)")
-            } else if !success {
-                PulsarSyncDebugLogger.log("Watch HealthKit route insert returned false session=\(sessionID)")
-            }
-        }
+        routeCapture.insert(locations, sessionID: sessionID)
     }
 
     private func logDistanceUpdate(source: String, decision: PulsarRunGPSDistanceFilter.Decision) {
@@ -794,6 +944,18 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
             distanceMeters: max(0, snapshot.distanceMeters - splitStartDistance),
             movingTime: max(0, snapshot.movingTime - splitStartMovingTime)
         )
+        processOutdoorHapticCuesFromSplits()
+    }
+
+    private func processOutdoorHapticCuesFromSplits() {
+        let shouldAnnounce = options.audioCuesEnabled && snapshot.phase == .running
+        let events = audioCueTracker.consume(
+            completedSplits: snapshot.splits,
+            shouldAnnounce: shouldAnnounce
+        )
+        guard !events.isEmpty else { return }
+        // Spoken cues play on iPhone only. Watch provides a single haptic per completed kilometer.
+        WKInterfaceDevice.current().play(.notification)
     }
 
     private func applyPausedState(date: Date) {
@@ -873,7 +1035,6 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
         updateTimeMetrics(date: end)
         let session = workoutSession
         let builder = workoutBuilder
-        let routeBuilder = routeBuilder
         cleanupRuntime(keepsWorkoutObjects: true)
         isFinishing = true
 
@@ -884,7 +1045,8 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
             )
             workoutSession = nil
             workoutBuilder = nil
-            self.routeBuilder = nil
+            routeCapture.reset()
+            primarySessionGate.reset()
             isFinishing = false
             PulsarWorkoutLifecycleLogger.log(
                 .finishCompleted,
@@ -898,18 +1060,21 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
         }
 
         do {
+            let sessionID = snapshot.pulsarWorkoutSessionId?.uuidString ?? "none"
+            await routeCapture.waitForPendingInserts()
             try await builder?.endCollection(at: end)
             let workout = try await builder?.finishWorkout()
             if let workout, !snapshot.route.isEmpty {
                 var routeMetadata = workoutMetadata(startedFrom: .appleWatch)
                 routeMetadata["PulsarRouteSource"] = "Apple Watch GPS"
-                do {
-                    _ = try await routeBuilder?.finishRoute(with: workout, metadata: routeMetadata)
-                    PulsarSyncDebugLogger.log("Watch HealthKit route saved session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none") points=\(snapshot.route.count)")
-                } catch {
-                    PulsarSyncDebugLogger.log("Watch HealthKit route save failed session=\(snapshot.pulsarWorkoutSessionId?.uuidString ?? "none") error=\(error.localizedDescription)")
-                }
+                _ = await routeCapture.finishStandaloneRouteIfNeeded(
+                    workout: workout,
+                    metadata: routeMetadata,
+                    sessionID: sessionID,
+                    pointCount: snapshot.route.count
+                )
             }
+            sendRouteDeltaIfNeeded()
             let finishedSummary = makeSummary(workoutUUID: workout?.uuid)
             summary = finishedSummary
             snapshot.phase = .finished
@@ -1076,6 +1241,8 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
         switch envelope {
         case .identity(let identity):
             applyIdentity(identity)
+        case .startAcknowledgement:
+            break
         case .sessionCommand(let command):
             handleSessionCommand(command)
         case .commandAcknowledgement(let acknowledgement):
@@ -1086,12 +1253,21 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
             case .resume: resume()
             case .finish: finish()
             }
-        case .metrics, .routeDelta, .summary, .options:
+        case .metrics, .routeDelta, .summary:
             break
+        case .options(let incomingOptions):
+            options = incomingOptions
+            OutdoorWorkoutAudioCueSettings.persist(incomingOptions)
+            PulsarSyncDebugLogger.log("Watch run options applied audioCues=\(incomingOptions.audioCuesEnabled) autoPause=\(incomingOptions.autoPauseEnabled)")
         }
     }
 
     private func applyIdentity(_ identity: PulsarRunSessionIdentity) {
+        pendingStartIdentity = identity
+        guard workoutSession != nil else {
+            PulsarSyncDebugLogger.log("Watch run cached companion identity pending HealthKit start session=\(identity.sessionId.uuidString) request=\(identity.requestID?.uuidString ?? "none")")
+            return
+        }
         snapshot.pulsarWorkoutSessionId = identity.sessionId
         snapshot.workoutKind = identity.workoutKind
         activeWorkoutStartedFrom = identity.startedFrom
@@ -1106,6 +1282,43 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
         PulsarSyncDebugLogger.log("Watch run identity applied selectedType=\(identity.workoutKind.rawValue) session=\(identity.sessionId.uuidString) startedFrom=\(identity.startedFrom.rawValue)")
         publishActiveWorkoutState(updatedFrom: .appleWatch, reason: "watchRunIdentityApplied")
         sendMetricsIfNeeded(force: true)
+        if let workoutSession,
+           workoutSession.state == .running || workoutSession.state == .paused {
+            sendStartAcknowledgementIfNeeded()
+        }
+    }
+
+    private func sendStartAcknowledgementIfNeeded() {
+        guard let identity = pendingStartIdentity,
+              let requestID = identity.requestID,
+              snapshot.pulsarWorkoutSessionId == identity.sessionId,
+              acknowledgedStartRequestIDs.insert(requestID).inserted else { return }
+        let acknowledgement = PulsarRunStartAcknowledgement(
+            requestID: requestID,
+            candidateSessionID: identity.sessionId,
+            authoritativeSessionID: identity.sessionId,
+            workoutKind: identity.workoutKind,
+            isHealthKitRunning: true,
+            isMirroringAvailable: isMirroringAvailable,
+            acknowledgedAt: Date()
+        )
+        let envelope = PulsarRunTransportEnvelope.startAcknowledgement(acknowledgement)
+        sendEnvelope(envelope)
+        syncStore.sendRunTransportEnvelope(
+            envelope,
+            reason: "watchRunStartAcknowledgement",
+            queueIfUnreachable: true
+        )
+        PulsarWorkoutLifecycleLogger.log(
+            .watchAcknowledgementReceived,
+            sessionID: identity.sessionId,
+            requestID: requestID,
+            workoutType: identity.workoutKind.rawValue,
+            source: "WatchRunSessionManager",
+            healthKitState: "running",
+            transport: "healthKit+watchConnectivity",
+            role: "watch"
+        )
     }
 
     private func publishActiveWorkoutState(
@@ -1160,6 +1373,19 @@ final class WatchRunSessionManager: NSObject, ObservableObject {
 
     private static func outdoorWorkoutConfiguration(for workoutKind: PulsarOutdoorWorkoutKind) -> HKWorkoutConfiguration {
         PulsarWorkoutCatalog.entry(for: workoutKind)?.workoutConfiguration ?? workoutKind.workoutConfiguration
+    }
+
+    private func refreshLiveHeartRateZoneProfile() {
+        guard let birthDate = try? healthStore.dateOfBirthComponents().date,
+              let age = Calendar.current.dateComponents([.year], from: birthDate, to: .now).year,
+              age > 0 else {
+            liveHeartRateZoneProfile = PulsarLiveHeartRateZoneProfile()
+            return
+        }
+        liveHeartRateZoneProfile = PulsarLiveHeartRateZoneProfile(
+            maxHeartRate: 220 - Double(age),
+            source: .ageFormula
+        )
     }
 
     private static func describe(_ state: HKWorkoutSessionState) -> String {
@@ -1251,6 +1477,9 @@ extension WatchRunSessionManager: HKWorkoutSessionDelegate {
             switch toState {
             case .running:
                 self.applyRunningState(date: date)
+                self.publishActiveWorkoutState(phase: .active, updatedFrom: .appleWatch, reason: "watchRunHealthKitRunning")
+                self.sendMetricsIfNeeded(force: true)
+                self.sendStartAcknowledgementIfNeeded()
             case .paused:
                 self.applyPausedState(date: date)
             case .stopped:

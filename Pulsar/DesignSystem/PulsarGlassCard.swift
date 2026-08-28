@@ -39,6 +39,7 @@ struct PulsarGlassCard<Content: View>: View {
     @ViewBuilder var content: Content
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.pulsarFitnessUsesMonochromeAppearance) private var usesFitnessMonochromeAppearance
 
     init(
         cornerRadius: CGFloat = PulsarGlassStandard.cardCornerRadius,
@@ -62,7 +63,14 @@ struct PulsarGlassCard<Content: View>: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
-        if tint != nil {
+        if usesFitnessMonochromeAppearance {
+            baseContent
+                .pulsarFitnessMonochromeSurface(
+                    cornerRadius: cornerRadius,
+                    isInteractive: isInteractive,
+                    shadowOpacity: suppressShadow ? 0 : 0.055
+                )
+        } else if tint != nil {
             let resolvedFillOpacity = fillOpacity ?? (reduceTransparency ? PulsarGlassStandard.reducedTransparencyFillOpacity : PulsarGlassStandard.tintedFillOpacity)
             baseContent
                 .background {

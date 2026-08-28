@@ -23,7 +23,7 @@ final class StrengthProgressViewModel: ObservableObject {
         initialTimeRange: StrengthProgressTimeRange = .threeMonths,
         displayUnit: PulsarWeightUnit = .kilograms
     ) {
-        self.historyStore = historyStore ?? PulsarGymWorkoutHistoryStore()
+        self.historyStore = historyStore ?? .shared
         self.calendar = calendar
         self.selectedTimeRange = initialTimeRange
         self.dashboard = .empty(timeRange: initialTimeRange, displayUnit: displayUnit)

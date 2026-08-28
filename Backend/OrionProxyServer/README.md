@@ -60,6 +60,8 @@ ORION_BACKEND_BASE_URL[sdk=iphoneos*] = http:/$()/<MAC_LOCAL_IP>:8788
 - `POST /api/orion/chat`
 - `POST /orion/meal-scan`
 - `POST /api/orion/meal-scan`
+- `POST /orion/nutrition-explain`
+- `POST /api/orion/nutrition-explain`
 
 ## Request Contract
 
@@ -87,6 +89,12 @@ ORION_BACKEND_BASE_URL[sdk=iphoneos*] = http:/$()/<MAC_LOCAL_IP>:8788
 ```
 
 The backend does not log request bodies, OpenAI responses, API keys, HealthKit data, or user messages.
+
+## Nutrition Explanation Route
+
+`POST /api/orion/nutrition-explain` receives user-confirmed calculator inputs, aggregated activity summaries, and the deterministic result. The model may explain those values but cannot replace them. Raw HealthKit samples, names, device identifiers, and API keys are not sent.
+
+The route returns a strict `explanation` object with rationale, practical recommendations, limitations, a reassessment date, and a safety note. The calculator and target saving continue to work when this optional route is unavailable.
 
 ## Meal Scanner Route
 

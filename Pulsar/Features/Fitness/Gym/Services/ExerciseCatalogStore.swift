@@ -5,6 +5,7 @@
 
 import Combine
 import Foundation
+import OSLog
 
 @MainActor
 final class ExerciseCatalogStore: ObservableObject {
@@ -48,6 +49,10 @@ final class ExerciseCatalogStore: ObservableObject {
 
     func loadCatalogIfNeeded() async {
         guard !hasLoaded else { return }
+        let signpostState = PulsarPerformanceSignposts.catalog.beginInterval("load")
+        defer {
+            PulsarPerformanceSignposts.catalog.endInterval("load", signpostState)
+        }
         hasLoaded = true
         loadCachedCatalog()
 

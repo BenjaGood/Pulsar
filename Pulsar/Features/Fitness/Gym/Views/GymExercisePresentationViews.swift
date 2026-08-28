@@ -39,12 +39,12 @@ struct GymSetEditorSheet: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Set \(setNumber)")
                     .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(.white.opacity(0.54))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                     .textCase(.uppercase)
 
                 Text("Adjust performance")
                     .font(.system(size: 25, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
             }
 
             VStack(spacing: 12) {
@@ -69,12 +69,12 @@ struct GymSetEditorSheet: View {
             } label: {
                 Text("Save Set Values")
                     .pulsarTextStyle(.cardTitle)
-                    .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
                     .background(
                         LinearGradient(
-                            colors: [.white.opacity(0.98), Color(red: 0.74, green: 1.0, blue: 0.78)],
+                            colors: [.white.opacity(0.98), PulsarFitnessMonochromeDesign.primaryText],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -86,7 +86,7 @@ struct GymSetEditorSheet: View {
         .padding(22)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(GymGlassBackground().ignoresSafeArea())
-        .preferredColorScheme(.dark)
+        .pulsarFitnessMonochromeAppearance()
     }
 
     private var weightStep: Double {
@@ -105,11 +105,11 @@ private struct GymSetEditorStepper: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(.white.opacity(0.54))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                 Text(value)
                     .pulsarTextStyle(.sectionHeader)
                     .monospacedDigit()
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
             }
 
             Spacer(minLength: 0)
@@ -131,7 +131,7 @@ private struct GymSetEditorStepper: View {
                 }
                 .accessibilityLabel("Increase \(title.lowercased())")
             }
-            .foregroundStyle(.white.opacity(0.88))
+            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
             .buttonStyle(.plain)
         }
         .padding(14)
@@ -144,6 +144,7 @@ struct GymExerciseThumbnailView: View {
     var muscleGroup: PulsarMuscleGroup
     var size: CGFloat = 52
     var isCompleted = false
+    var usesLightSurface = false
 
     var body: some View {
         ZStack {
@@ -160,7 +161,10 @@ struct GymExerciseThumbnailView: View {
         .clipShape(RoundedRectangle(cornerRadius: max(12, size * 0.28), style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: max(12, size * 0.28), style: .continuous)
-                .stroke(.white.opacity(0.12), lineWidth: 1)
+                .strokeBorder(
+                    usesLightSurface ? Color.black.opacity(0.04) : Color.white.opacity(0.12),
+                    lineWidth: 0.8
+                )
         }
         .accessibilityHidden(true)
     }
@@ -169,9 +173,7 @@ struct GymExerciseThumbnailView: View {
     private func resolvedImage(_ url: URL) -> some View {
         if url.isFileURL {
             if let image = UIImage(contentsOfFile: url.path) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
+                styledImage(Image(uiImage: image))
             } else {
                 fallbackIcon
             }
@@ -179,14 +181,12 @@ struct GymExerciseThumbnailView: View {
             AsyncImage(url: url) { phase in
                 switch phase {
                 case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
+                    styledImage(image)
                 case .failure:
                     fallbackIcon
                 case .empty:
                     ProgressView()
-                        .tint(.white.opacity(0.72))
+                        .tint(usesLightSurface ? PulsarFitnessMonochromeDesign.secondaryText : .white.opacity(0.72))
                 @unknown default:
                     fallbackIcon
                 }
@@ -194,11 +194,18 @@ struct GymExerciseThumbnailView: View {
         }
     }
 
+    private func styledImage(_ image: Image) -> some View {
+        image
+            .resizable()
+            .aspectRatio(contentMode: usesLightSurface ? .fit : .fill)
+            .padding(usesLightSurface ? 5 : 0)
+    }
+
     private var fallbackIcon: some View {
         Image(systemName: isCompleted ? "checkmark" : symbolName)
             .font(.system(size: max(18, size * 0.42), weight: .semibold, design: .rounded))
             .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(isCompleted ? Color(red: 0.72, green: 1.0, blue: 0.78) : .white.opacity(0.76))
+            .foregroundStyle(isCompleted ? PulsarFitnessMonochromeDesign.primaryText  : PulsarFitnessMonochromeDesign.secondaryText)
     }
 
     private var symbolName: String {
@@ -216,9 +223,11 @@ struct GymExerciseThumbnailView: View {
 
     private var background: LinearGradient {
         LinearGradient(
-            colors: isCompleted
-                ? [Color(red: 0.66, green: 1.0, blue: 0.78).opacity(0.22), .white.opacity(0.07)]
-                : [Color(red: 0.78, green: 0.72, blue: 1.0).opacity(0.18), .white.opacity(0.07)],
+            colors: usesLightSurface
+                ? [Color.white.opacity(0.98), Color.white.opacity(0.84)]
+                : isCompleted
+                    ? [PulsarFitnessMonochromeDesign.primaryText.opacity(0.22), .white.opacity(0.07)]
+                    : [PulsarFitnessMonochromeDesign.primaryText.opacity(0.18), .white.opacity(0.07)],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -265,12 +274,12 @@ struct GymExerciseCatalogDetailSheet: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(exercise.name)
                     .pulsarTextStyle(.title)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(exercise.primaryMuscleSummary)
                     .pulsarTextStyle(.label)
-                    .foregroundStyle(.white.opacity(0.62))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                     .lineLimit(2)
             }
 
@@ -281,7 +290,7 @@ struct GymExerciseCatalogDetailSheet: View {
             } label: {
                 Image(systemName: "xmark")
                     .pulsarTextStyle(.label)
-                    .foregroundStyle(.white.opacity(0.78))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     .frame(width: 34, height: 34)
                     .background(PulsarCircularGlassSurface(cornerRadius: 17, opacity: 0.82))
             }
@@ -307,7 +316,7 @@ struct GymExerciseCatalogDetailSheet: View {
         .frame(maxWidth: .infinity)
         .frame(height: 270)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .pulsarLiquidGlass(cornerRadius: 24, tint: Color(red: 0.78, green: 0.72, blue: 1.0).opacity(0.08), isClear: true)
+        .pulsarLiquidGlass(cornerRadius: 24, tint: PulsarFitnessMonochromeDesign.primaryText.opacity(0.08), isClear: true)
     }
 
     private var metadataGrid: some View {
@@ -327,15 +336,15 @@ struct GymExerciseCatalogDetailSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Instructions")
                 .pulsarTextStyle(.cardTitle)
-                .foregroundStyle(.white)
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
 
             if instructionSteps.isEmpty {
                 Text("No form instructions saved for this exercise.")
                     .pulsarTextStyle(.label)
-                    .foregroundStyle(.white.opacity(0.70))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                     .padding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .pulsarLiquidGlass(cornerRadius: 18, tint: Color(red: 0.78, green: 0.72, blue: 1.0).opacity(0.06), isClear: true)
+                    .pulsarLiquidGlass(cornerRadius: 18, tint: PulsarFitnessMonochromeDesign.primaryText.opacity(0.06), isClear: true)
             } else {
                 PulsarGlassEffectGroup(spacing: 10) {
                     VStack(spacing: 10) {
@@ -343,19 +352,19 @@ struct GymExerciseCatalogDetailSheet: View {
                             HStack(alignment: .top, spacing: 11) {
                                 Text("\(index + 1)")
                                     .pulsarTextStyle(.captionEmphasis)
-                                    .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
+                                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                                     .frame(width: 24, height: 24)
                                     .background(.white.opacity(0.92), in: Circle())
 
                                 Text(step)
                                     .pulsarTextStyle(.label)
-                                    .foregroundStyle(.white.opacity(0.78))
+                                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                                     .fixedSize(horizontal: false, vertical: true)
 
                                 Spacer(minLength: 0)
                             }
                             .padding(12)
-                            .pulsarLiquidGlass(cornerRadius: 18, tint: Color(red: 0.78, green: 0.72, blue: 1.0).opacity(0.055), isClear: true)
+                            .pulsarLiquidGlass(cornerRadius: 18, tint: PulsarFitnessMonochromeDesign.primaryText.opacity(0.055), isClear: true)
                         }
                     }
                 }
@@ -366,7 +375,7 @@ struct GymExerciseCatalogDetailSheet: View {
     private var attribution: some View {
         Text("Source: \(exercise.attribution.sourceName)")
             .pulsarTextStyle(.captionEmphasis)
-            .foregroundStyle(.white.opacity(0.48))
+            .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -380,16 +389,16 @@ private struct GymExerciseDetailMetric: View {
         HStack(spacing: 10) {
             Image(systemName: symbolName)
                 .pulsarTextStyle(.label)
-                .foregroundStyle(Color(red: 0.78, green: 0.72, blue: 1.0))
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(.white.opacity(0.52))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                 Text(value)
                     .pulsarTextStyle(.label)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     .lineLimit(2)
                     .minimumScaleFactor(0.82)
             }
@@ -398,7 +407,7 @@ private struct GymExerciseDetailMetric: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
-        .pulsarLiquidGlass(cornerRadius: 18, tint: Color(red: 0.78, green: 0.72, blue: 1.0).opacity(0.045), isClear: true)
+        .pulsarLiquidGlass(cornerRadius: 18, tint: PulsarFitnessMonochromeDesign.primaryText.opacity(0.045), isClear: true)
     }
 }
 
@@ -439,7 +448,7 @@ private struct GymExerciseMediaFallback: View {
         Image(systemName: "figure.strengthtraining.traditional")
             .pulsarTextStyle(.title)
             .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(.white.opacity(0.70))
+            .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
     }
 }
 
@@ -520,12 +529,12 @@ struct GymSessionExerciseDetailSheet: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(exercise.exerciseName)
                             .pulsarTextStyle(.title)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                             .fixedSize(horizontal: false, vertical: true)
 
                         Text(exercise.primaryMuscleGroup.displayName)
                             .pulsarTextStyle(.label)
-                            .foregroundStyle(.white.opacity(0.62))
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                     }
 
                     Spacer(minLength: 8)
@@ -535,7 +544,7 @@ struct GymSessionExerciseDetailSheet: View {
                     } label: {
                         Image(systemName: "xmark")
                             .pulsarTextStyle(.label)
-                            .foregroundStyle(.white.opacity(0.78))
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                             .frame(width: 34, height: 34)
                             .background(.white.opacity(0.09), in: Circle())
                     }
@@ -552,11 +561,11 @@ struct GymSessionExerciseDetailSheet: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("Form Cues", systemImage: "list.clipboard.fill")
                             .pulsarTextStyle(.cardTitle)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
 
                         Text(instructionsPreview)
                             .pulsarTextStyle(.label)
-                            .foregroundStyle(.white.opacity(0.76))
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(13)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -565,7 +574,7 @@ struct GymSessionExerciseDetailSheet: View {
                 } else {
                     Label("No form instructions saved for this exercise.", systemImage: "info.circle")
                         .pulsarTextStyle(.label)
-                        .foregroundStyle(.white.opacity(0.62))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                         .padding(13)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -595,7 +604,7 @@ struct GymExerciseMetadataRow: View {
     private func metadataChip(_ text: String, systemImage: String) -> some View {
         Label(text, systemImage: systemImage)
             .pulsarTextStyle(.captionEmphasis)
-            .foregroundStyle(.white.opacity(0.74))
+            .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
             .lineLimit(1)
             .minimumScaleFactor(0.78)
             .padding(.horizontal, 10)
@@ -645,12 +654,12 @@ struct CompletedWorkoutExerciseInstructionsSheet: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(exercise.exerciseName)
                     .pulsarTextStyle(.title)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text("Form instructions")
                     .pulsarTextStyle(.label)
-                    .foregroundStyle(.white.opacity(0.62))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
             }
 
             Spacer(minLength: 8)
@@ -660,7 +669,7 @@ struct CompletedWorkoutExerciseInstructionsSheet: View {
             } label: {
                 Image(systemName: "xmark")
                     .pulsarTextStyle(.label)
-                    .foregroundStyle(.white.opacity(0.78))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     .frame(width: 34, height: 34)
                     .background(.white.opacity(0.09), in: Circle())
             }
@@ -673,11 +682,11 @@ struct CompletedWorkoutExerciseInstructionsSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Instructions", systemImage: "list.clipboard.fill")
                 .pulsarTextStyle(.cardTitle)
-                .foregroundStyle(.white)
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
 
             Text(exercise.instructionsFull ?? exercise.instructionsPreview ?? "No form instructions saved for this exercise.")
                 .pulsarTextStyle(.label)
-                .foregroundStyle(.white.opacity(0.76))
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(14)
@@ -687,7 +696,7 @@ struct CompletedWorkoutExerciseInstructionsSheet: View {
 
     private var accent: Color {
         ExerciseProgressService.primaryMatrixGroup(for: exercise.primaryMuscleGroup)?.accent
-            ?? Color(red: 0.78, green: 0.62, blue: 1.0)
+            ?? PulsarFitnessMonochromeDesign.primaryText
     }
 }
 
@@ -717,7 +726,7 @@ struct ExercisePreviousWeightsSheet: View {
                 } label: {
                     Label("Open Full Progress", systemImage: "chart.line.uptrend.xyaxis")
                         .pulsarTextStyle(.cardTitle)
-                        .foregroundStyle(Color(red: 0.14, green: 0.09, blue: 0.22))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(.white.opacity(0.94), in: Capsule(style: .continuous))
@@ -745,11 +754,11 @@ struct ExercisePreviousWeightsSheet: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Previous Weights")
                     .pulsarTextStyle(.title)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
 
                 Text(exercise.exerciseName)
                     .pulsarTextStyle(.label)
-                    .foregroundStyle(.white.opacity(0.62))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                     .lineLimit(2)
             }
 
@@ -782,12 +791,12 @@ struct ExercisePreviousWeightsSheet: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(value)
                 .pulsarTextStyle(.cardTitle)
-                .foregroundStyle(.white)
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
             Text(title)
                 .pulsarTextStyle(.captionEmphasis)
-                .foregroundStyle(.white.opacity(0.54))
+                .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -801,7 +810,7 @@ struct ExercisePreviousWeightsSheet: View {
     private var emptyState: some View {
         Label("Complete this exercise once to build a weight history.", systemImage: "clock.arrow.circlepath")
             .pulsarTextStyle(.label)
-            .foregroundStyle(.white.opacity(0.64))
+            .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -811,32 +820,32 @@ struct ExercisePreviousWeightsSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Recent Sessions", systemImage: "calendar")
                 .pulsarTextStyle(.cardTitle)
-                .foregroundStyle(.white)
+                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
 
             ForEach(recentSessions) { session in
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         Text(session.workoutName)
                             .pulsarTextStyle(.label)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                             .lineLimit(1)
 
                         Spacer(minLength: 0)
 
                         Text(session.performedAt.formatted(.dateTime.month(.abbreviated).day()))
                             .pulsarTextStyle(.captionEmphasis)
-                            .foregroundStyle(.white.opacity(0.52))
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                     }
 
                     Text(session.sets.map { "\($0.reps)x\($0.weight.formattedGymDecimal)" }.joined(separator: " / "))
                         .pulsarTextStyle(.captionEmphasis)
-                        .foregroundStyle(.white.opacity(0.70))
+                        .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                         .lineLimit(2)
 
                     if let bestSet = session.bestSet {
                         Text("Best: \(bestSet.displayText(unit: history.displayUnit, isBodyweight: history.isBodyweight))")
                             .pulsarTextStyle(.captionEmphasis)
-                            .foregroundStyle(Color(red: 0.72, green: 1.0, blue: 0.78))
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                     }
                 }
                 .padding(12)
@@ -865,7 +874,7 @@ struct GymCompletedExerciseCard: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(exercise.exerciseName)
                             .pulsarTextStyle(.label)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                             .lineLimit(2)
 
                         GymExerciseMetadataRow(
@@ -879,7 +888,7 @@ struct GymCompletedExerciseCard: View {
                     if onTap != nil {
                         Image(systemName: "chart.line.uptrend.xyaxis")
                             .pulsarTextStyle(.captionEmphasis)
-                            .foregroundStyle(Color(red: 0.78, green: 0.72, blue: 1.0))
+                            .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                             .frame(width: 30, height: 30)
                             .background(.white.opacity(0.075), in: Circle())
                     }
@@ -890,19 +899,19 @@ struct GymCompletedExerciseCard: View {
                         HStack(spacing: 10) {
                             Text("Set \(set.setNumber)")
                                 .pulsarTextStyle(.captionEmphasis)
-                                .foregroundStyle(.white.opacity(0.56))
+                                .foregroundStyle(PulsarFitnessMonochromeDesign.secondaryText)
                                 .frame(width: 50, alignment: .leading)
 
                             Text("\(set.reps) reps")
                                 .pulsarTextStyle(.captionEmphasis)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
 
                             Spacer(minLength: 0)
 
                             Text("\(set.weight.formattedGymDecimal) \(exercise.weightUnit.displayName)")
                                 .pulsarTextStyle(.captionEmphasis)
                                 .monospacedDigit()
-                                .foregroundStyle(.white.opacity(0.82))
+                                .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)

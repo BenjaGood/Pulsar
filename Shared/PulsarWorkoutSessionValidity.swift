@@ -5,7 +5,7 @@
 
 import Foundation
 
-enum PulsarWorkoutSessionValidity {
+nonisolated enum PulsarWorkoutSessionValidity {
     static let liveHeartbeatGraceInterval: TimeInterval = 15 * 60
     static let startingGraceInterval: TimeInterval = 2 * 60
     static let endedStateRetentionInterval: TimeInterval = 6 * 60 * 60
@@ -34,7 +34,7 @@ extension PulsarActiveWorkoutSyncPhase {
 }
 
 extension PulsarActiveWorkoutSyncState {
-    func isFreshRestoreConfirmation(now: Date = Date(), interval: TimeInterval = 90) -> Bool {
+    nonisolated func isFreshRestoreConfirmation(now: Date = Date(), interval: TimeInterval = 90) -> Bool {
         guard phase.isActiveWorkoutPresentationPhase else { return false }
         return PulsarWorkoutSessionValidity.isRecent(updatedAt, now: now, interval: interval)
     }
@@ -96,6 +96,11 @@ extension PulsarActiveWorkoutSyncState {
 }
 
 extension ActiveGymWorkoutState {
+    nonisolated func isFreshRestoreConfirmation(now: Date = Date(), interval: TimeInterval = 90) -> Bool {
+        guard !isFinished else { return false }
+        return PulsarWorkoutSessionValidity.isRecent(updatedAt, now: now, interval: interval)
+    }
+
     func isValidLiveRouteCandidate(now: Date = Date()) -> Bool {
         guard !isFinished else { return false }
         if PulsarWorkoutSessionValidity.isRecent(updatedAt, now: now) {
@@ -114,6 +119,9 @@ extension ActiveGymWorkoutState {
     func activeWorkoutPresentationRejectionReason(now: Date = Date()) -> String? {
         if sessionId.uuidString == "00000000-0000-0000-0000-000000000000" {
             return "mock/default session"
+        }
+        if isPrelaunchPlaceholder {
+            return "launch placeholder"
         }
         if isFinished {
             return "finished"

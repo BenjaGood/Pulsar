@@ -28,7 +28,8 @@ struct PulsarRunIntroExperienceView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.985)))
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(PulsarFitnessMonochromeBackground())
+        .pulsarFitnessMonochromeAppearance()
         .animation(.smooth(duration: 0.42), value: isShowingRunExperience)
     }
 

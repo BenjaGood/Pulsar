@@ -11,6 +11,7 @@ import UIKit
 
 struct MealScannerView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var nutritionStore: PulsarNutritionStore
     var initialCategoryID: UUID?
 
@@ -26,13 +27,11 @@ struct MealScannerView: View {
     @State private var guidedScanStep: MealGuidedScanStep = .capturePhoto
     @State private var lidarScanState = MealLidarScanState()
     @State private var photoCapture: MealScannerPhotoCapture?
-    @State private var guidedScanAutoCompleteTask: Task<Void, Never>?
     @State private var frameFeedbackLogCounter = 0
 
     private let processingService = MealScanProcessingService()
     private let nutritionAIService: MealNutritionAIServicing
     private static let logger = Logger(subsystem: "tech.aetherial.pulsar", category: "MealScanner")
-    private static let guidedScanAutoCompleteDelayNanoseconds: UInt64 = 15_000_000_000
 
     init(
         nutritionStore: PulsarNutritionStore,
@@ -54,32 +53,36 @@ struct MealScannerView: View {
                         initialCategoryID: initialCategoryID,
                         onRescan: resetForRescan
                     )
+                    .transition(.opacity)
                 } else if scanPhase.usesCamera {
                     immersiveCameraContent
+                        .transition(
+                            reduceMotion
+                                ? .opacity
+                                : .opacity.combined(with: .scale(scale: 1.015))
+                        )
                 } else {
-                    PulsarSectionBackground()
                     scannerContent
+                        .transition(
+                            reduceMotion
+                                ? .opacity
+                                : .opacity.combined(with: .scale(scale: 0.985))
+                        )
                 }
             }
-            .navigationTitle("")
-            .toolbarTitleDisplayMode(.inline)
+            .animation(.smooth(duration: reduceMotion ? 0.20 : 0.42), value: scanPhase)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     if !scanPhase.usesCamera {
-                        Button(action: closeScanner) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(.primary)
-                                .frame(width: 38, height: 38)
-                                .pulsarLiquidGlass(cornerRadius: 19)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Close meal scanner")
+                        Button("Close meal scanner", systemImage: "xmark", action: closeScanner)
+                            .labelStyle(.iconOnly)
+                            .accessibilityHint("Dismisses the meal scanner")
                     }
                 }
             }
         }
-        .toolbar(.hidden, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar(scanPhase.usesCamera ? .hidden : .visible, for: .navigationBar)
         .onDisappear {
             cancelGuidedScan()
         }
@@ -97,432 +100,193 @@ struct MealScannerView: View {
     }
 
     private var scannerContent: some View {
-        GeometryReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    header
-                    scannerSurface(height: scannerHeight(in: proxy))
-                    if !scanPhase.usesCamera {
-                        guidanceCard
-                    }
-                    statusCard
-                    actionButton
-
-                    if let errorMessage {
-                        errorCard(errorMessage)
-                    }
-                }
-                .padding(.horizontal, 18)
-                .padding(.top, proxy.safeAreaInsets.top + 18)
-                .padding(.bottom, 38)
-            }
-            .scrollContentBackground(.hidden)
-        }
-    }
-
-    private var immersiveCameraContent: some View {
-        GeometryReader { proxy in
-            ZStack {
-                Color.black.ignoresSafeArea()
-
-                MealScannerARView(
-                    captureController: captureController,
-                    scanMode: scanMode,
-                    isSessionRunning: scanPhase.usesCamera,
-                    showsLiDARMesh: scanPhase == .scanning || scanPhase == .complete,
-                    onFrameUpdate: handleFrameFeedback
-                )
-                .ignoresSafeArea()
-
-                cameraReadabilityGradient
-                    .ignoresSafeArea()
-
-                MealScannerReticleView(isActive: scanPhase == .scanning || scanPhase == .complete)
-                    .padding(.horizontal, 34)
-                    .padding(.top, proxy.safeAreaInsets.top + 138)
-                    .padding(.bottom, 210)
-
-                VStack(spacing: 0) {
-                    immersiveCameraTopBar(safeAreaTop: proxy.safeAreaInsets.top)
-                    Spacer(minLength: 0)
-                    immersiveCameraBottomPanel(safeAreaBottom: proxy.safeAreaInsets.bottom)
-                }
-            }
-        }
-    }
-
-    private func immersiveCameraTopBar(safeAreaTop: CGFloat) -> some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                Button(action: closeScanner) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 46, height: 46)
-                        .background(.black.opacity(0.54), in: Circle())
-                        .overlay {
-                            Circle()
-                                .stroke(.white.opacity(0.18), lineWidth: 1)
-                        }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close meal scanner")
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("3D Meal Scanner")
-                        .pulsarTextStyle(.cardTitle)
-                        .foregroundStyle(.white)
-                    Text(immersiveStatusText)
-                        .pulsarTextStyle(.overline)
-                        .foregroundStyle(.white.opacity(0.66))
-                }
-
-                Spacer(minLength: 0)
-
-                Text(scanPhase.surfaceLabel)
-                    .pulsarTextStyle(.overline)
-                    .foregroundStyle(scanPhase.tint)
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 7)
-                    .background(scanPhase.tint.opacity(0.18), in: Capsule(style: .continuous))
-            }
-
-            HStack(spacing: 8) {
-                liveStatusChip(
-                    title: liveFrameFeedback.trackingTitle,
-                    symbolName: "scope",
-                    tint: liveFrameFeedback.isTrackingReady ? .green : .orange
-                )
-                liveStatusChip(
-                    title: lidarStatusTitle,
-                    symbolName: liveFrameFeedback.hasDepth ? "viewfinder.circle.fill" : "camera.fill",
-                    tint: liveFrameFeedback.hasDepth ? .cyan : .orange
-                )
-                liveStatusChip(
-                    title: liveFrameFeedback.lightingTitle,
-                    symbolName: liveFrameFeedback.isLightingReady ? "sun.max.fill" : "lightbulb.max.fill",
-                    tint: liveFrameFeedback.isLightingReady ? .green : .orange
-                )
-            }
-        }
-        .padding(.top, safeAreaTop + 12)
-        .padding(.horizontal, 18)
-    }
-
-    private func immersiveCameraBottomPanel(safeAreaBottom: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            MealScannerPhaseRail(
-                photoStatus: photoCapture == nil ? .active : .complete,
-                lidarStatus: lidarPhaseStatus
-            )
-
-            scanProgressHeader
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text(currentGuidanceTitle)
-                    .pulsarTextStyle(.sectionTitle)
-                    .foregroundStyle(.white)
-                Text(currentGuidanceSubtitle)
-                    .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(.white.opacity(0.72))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            MealScannerStepTimeline(
-                activeStep: guidedScanStep,
-                progress: guidedScanProgress,
-                isComplete: scanPhase == .complete
-            )
-
-            Button(action: primaryAction) {
-                HStack(spacing: 10) {
-                    if scanPhase == .analyzing {
-                        ProgressView()
-                            .tint(.white)
-                    } else {
-                        Image(systemName: scanPhase.buttonSymbolName)
-                    }
-                    Text(scanPhase.buttonTitle)
-                }
-                .pulsarTextStyle(.buttonTitle)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 13)
-            }
-            .buttonStyle(NutritionActionButtonStyle(tint: scanPhase == .complete ? .green : .cyan))
-            .disabled(!scanPhase.canTapPrimary)
-        }
-        .padding(14)
-        .padding(.bottom, max(safeAreaBottom, 12))
-        .background(.black.opacity(0.58), in: UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24))
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(.white.opacity(0.14))
-                .frame(height: 1)
-        }
-    }
-
-    private var scanProgressHeader: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack {
-                Label(scanPhase == .complete ? "Scan complete" : "Building 3D map", systemImage: scanPhase == .complete ? "checkmark.circle.fill" : "dot.viewfinder")
-                    .pulsarTextStyle(.cardTitle)
-                    .foregroundStyle(scanPhase == .complete ? .green : .white)
-
-                Spacer(minLength: 10)
-
-                Text("\(Int((guidedScanProgress * 100).rounded()))%")
-                    .pulsarTextStyle(.captionEmphasis)
-                    .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.70))
-            }
-
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule(style: .continuous)
-                        .fill(.white.opacity(0.16))
-                    Capsule(style: .continuous)
-                        .fill(LinearGradient(colors: [.cyan, .green], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(8, proxy.size.width * guidedScanProgress))
-                }
-            }
-            .frame(height: 7)
-        }
-    }
-
-    private func liveStatusChip(title: String, symbolName: String, tint: Color) -> some View {
-        Label(title, systemImage: symbolName)
-            .pulsarTextStyle(.overline)
-            .lineLimit(1)
-            .minimumScaleFactor(0.72)
-            .foregroundStyle(tint)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity)
-            .background(.black.opacity(0.34), in: Capsule(style: .continuous))
-            .overlay {
-                Capsule(style: .continuous)
-                    .stroke(tint.opacity(0.22), lineWidth: 1)
-            }
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                Image(systemName: "viewfinder.circle.fill")
-                    .font(.system(size: 36, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.cyan, .green)
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("3D Meal Scanner")
-                        .pulsarTextStyle(.displayLarge)
-                        .foregroundStyle(.primary)
-                    Text("LiDAR, image analysis, and AI nutrition estimates.")
-                        .pulsarTextStyle(.label)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            MealScannerCapabilityPill(
-                title: scanMode == .depthAssisted ? "LiDAR depth enabled" : "Photo AI estimation mode",
-                symbolName: scanMode == .depthAssisted ? "viewfinder.circle.fill" : "camera.fill",
-                tint: scanMode == .depthAssisted ? .cyan : .orange
-            )
-        }
-    }
-
-    private func scannerSurface(height: CGFloat) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 34, style: .continuous)
-                .fill(.black.opacity(0.36))
-
-            if scanPhase.usesCamera {
-                MealScannerARView(
-                    captureController: captureController,
-                    scanMode: scanMode,
-                    isSessionRunning: scanPhase.usesCamera,
-                    showsLiDARMesh: scanPhase == .scanning || scanPhase == .complete
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
-                .overlay(cameraReadabilityGradient)
-            } else {
-                VStack(spacing: 12) {
-                    Image(systemName: "camera.viewfinder")
-                        .font(.system(size: 42, weight: .medium))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.white.opacity(0.92), .cyan.opacity(0.74))
-                    Text("Position your plate in good light")
-                        .pulsarTextStyle(.cardTitle)
-                        .foregroundStyle(.white.opacity(0.88))
-                    Text("Pulsar captures a clear photo first, then maps the plate with LiDAR when available.")
-                        .pulsarTextStyle(.captionEmphasis)
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.white.opacity(0.58))
-                        .padding(.horizontal, 28)
-                }
-            }
-
-            MealScannerReticleView(isActive: scanPhase == .scanning)
-                .padding(30)
-
-            if scanPhase.usesCamera {
-                VStack {
-                    Spacer()
-                    activeCameraInstructionCard
-                }
-                .padding(16)
-            }
-
-            VStack {
-                HStack {
-                    Spacer()
-                    Text(scanPhase.surfaceLabel)
-                        .pulsarTextStyle(.overline)
-                        .foregroundStyle(.white.opacity(0.88))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(.black.opacity(0.34), in: Capsule(style: .continuous))
-                }
-                Spacer()
-            }
-            .padding(18)
-        }
-        .frame(height: height)
-        .overlay {
-            RoundedRectangle(cornerRadius: 34, style: .continuous)
-                .stroke(.white.opacity(0.18), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.24), radius: 24, y: 16)
-    }
-
-    private var cameraReadabilityGradient: some View {
-        LinearGradient(
-            colors: [
-                .black.opacity(0.22),
-                .black.opacity(0.04),
-                .black.opacity(0.62)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
+        MealScannerIntroView(
+            isLiDARReady: scanMode == .depthAssisted,
+            isStarting: scanPhase == .checkingPermission,
+            errorMessage: errorMessage,
+            onStart: primaryAction
         )
     }
 
-    private var activeCameraInstructionCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: activeCameraInstructionSymbol)
-                    .pulsarTextStyle(.cardTitle)
-                    .foregroundStyle(scanPhase.tint)
-                    .frame(width: 30, height: 30)
-                    .background(scanPhase.tint.opacity(0.18), in: Circle())
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(activeCameraInstructionTitle)
-                        .pulsarTextStyle(.cardTitle)
-                        .foregroundStyle(.white)
-                    Text(activeCameraInstructionSubtitle)
-                        .pulsarTextStyle(.overline)
-                        .foregroundStyle(.white.opacity(0.66))
-                }
-
-                Spacer(minLength: 0)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(activeCameraInstructions.enumerated()), id: \.offset) { index, instruction in
-                    MealScannerInstructionRow(number: index + 1, text: instruction)
-                }
-            }
-        }
-        .padding(14)
-        .background(.black.opacity(0.66), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(.white.opacity(0.16), lineWidth: 1)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private var guidanceCard: some View {
-        PulsarNutritionGlassCard(cornerRadius: 28) {
-            VStack(alignment: .leading, spacing: 12) {
-                NutritionSectionHeader(
-                    title: "Two-phase scan",
-                    subtitle: "Photo first, LiDAR mapping second"
-                )
-
-                Text("Capture a clear photo for food identity, then move slowly while LiDAR fills the plate map. Pulsar marks the scan complete only after enough depth coverage is collected.")
-                    .pulsarTextStyle(.label)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text("\(estimateMethodText). For medical or strict diet tracking, verify with a food scale.")
-                    .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(.orange.opacity(0.88))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private var statusCard: some View {
-        PulsarNutritionGlassCard(cornerRadius: 26) {
-            HStack(spacing: 12) {
-                scannerStatusIcon
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(scanPhase.title)
-                        .pulsarTextStyle(.cardTitle)
-                        .foregroundStyle(.primary)
-                    Text(scanPhase.subtitle(for: scanMode))
-                        .pulsarTextStyle(.captionEmphasis)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 0)
-            }
-        }
-    }
-
-    private var scannerStatusIcon: some View {
+    private var immersiveCameraContent: some View {
         ZStack {
-            Circle()
-                .fill(scanPhase.tint.opacity(0.16))
-            Image(systemName: scanPhase.symbolName)
-                .pulsarTextStyle(.cardTitle)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(scanPhase.tint)
+            Color.black
+                .ignoresSafeArea()
+
+            MealScannerARView(
+                captureController: captureController,
+                scanMode: scanMode,
+                isSessionRunning: scanPhase.usesCamera,
+                showsLiDARMesh: false,
+                onFrameUpdate: handleFrameFeedback
+            )
+            .ignoresSafeArea()
+
+            MealScannerCameraOverlay(
+                model: cameraOverlayModel,
+                onClose: closeScanner,
+                onCapture: primaryAction
+            )
         }
-        .frame(width: 44, height: 44)
-        .accessibilityHidden(true)
     }
 
-    private var actionButton: some View {
-        Button(action: primaryAction) {
-            HStack(spacing: 10) {
-                if scanPhase == .checkingPermission || scanPhase == .analyzing {
-                    ProgressView()
-                        .tint(.white)
-                } else {
-                    Image(systemName: scanPhase.buttonSymbolName)
-                }
-                Text(scanPhase.buttonTitle)
+    private var cameraOverlayModel: MealScannerCameraOverlay.Model {
+        MealScannerCameraOverlay.Model(
+            currentStep: cameraStep,
+            selectedPhase: selectedCameraPhase,
+            isLiDARAvailable: scanMode == .depthAssisted,
+            guidance: cameraGuidance,
+            scanProgress: cameraMapProgress,
+            isAnalyzing: scanPhase == .analyzing,
+            captureAccessibilityLabel: scanPhase.buttonTitle
+        )
+    }
+
+    private var cameraMapProgress: Double {
+        guard scanMode == .depthAssisted, photoCapture != nil else { return 0 }
+        let lidarPortion = (guidedScanProgress - 0.16) / 0.84
+        return min(max(lidarPortion, 0), 1)
+    }
+
+    private var cameraStep: Int {
+        switch scanPhase {
+        case .ready:
+            1
+        case .scanning:
+            2
+        case .complete, .analyzing:
+            3
+        case .intro, .checkingPermission, .error:
+            1
+        }
+    }
+
+    private var selectedCameraPhase: MealScannerCameraOverlay.CapturePhase {
+        guard scanMode == .depthAssisted else { return .photo }
+        return scanPhase == .ready ? .photo : .lidar
+    }
+
+    private var cameraGuidance: MealScannerCameraOverlay.Guidance {
+        if scanPhase == .analyzing {
+            return .init(
+                symbolName: "sparkles",
+                title: "Analyzing your meal",
+                subtitle: "Keep the plate in view."
+            )
+        }
+
+        if scanPhase == .complete {
+            return .init(
+                symbolName: "checkmark",
+                title: "Scan complete",
+                subtitle: "Ready to analyze your meal."
+            )
+        }
+
+        if !liveFrameFeedback.isLightingReady {
+            return .init(
+                symbolName: "sun.max",
+                title: "Find better light",
+                subtitle: "Avoid strong shadows over the food."
+            )
+        }
+
+        if !liveFrameFeedback.isTrackingReady {
+            if liveFrameFeedback.trackingMessage.localizedCaseInsensitiveContains("slower") {
+                return .init(
+                    symbolName: "hand.raised",
+                    title: "Move slowly",
+                    subtitle: "Keep the phone steady while scanning."
+                )
             }
-            .pulsarTextStyle(.buttonTitle)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 15)
-        }
-        .buttonStyle(NutritionActionButtonStyle(tint: scanPhase == .error ? .orange : .green))
-        .disabled(!scanPhase.canTapPrimary)
-    }
 
-    private func errorCard(_ message: String) -> some View {
-        PulsarNutritionGlassCard(cornerRadius: 24) {
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .pulsarTextStyle(.captionEmphasis)
-                .foregroundStyle(.orange.opacity(0.9))
-                .fixedSize(horizontal: false, vertical: true)
+            if liveFrameFeedback.trackingMessage.localizedCaseInsensitiveContains("edge") {
+                return .init(
+                    symbolName: "camera.metering.center.weighted",
+                    title: "Keep the plate visible",
+                    subtitle: "Include the plate edge and nearby table."
+                )
+            }
+
+            return .init(
+                symbolName: "hand.raised",
+                title: "Hold steady",
+                subtitle: "Let the camera find the plate."
+            )
+        }
+
+        if scanMode == .depthAssisted,
+           let distance = liveFrameFeedback.approximateSubjectDistance {
+            if distance < 0.28 {
+                return .init(
+                    symbolName: "arrow.up.left.and.arrow.down.right",
+                    title: "Move back slightly",
+                    subtitle: "Keep the full plate in view."
+                )
+            }
+
+            if distance > 1.25 {
+                return .init(
+                    symbolName: "arrow.down.right.and.arrow.up.left",
+                    title: "Move closer",
+                    subtitle: "Bring the meal into clearer view."
+                )
+            }
+        }
+
+        if scanPhase == .ready {
+            return .init(
+                symbolName: "camera.metering.center.weighted",
+                title: "Capture the plate",
+                subtitle: "Center the entire plate in good light."
+            )
+        }
+
+        if scanPhase == .scanning, !liveFrameFeedback.hasDepth {
+            return .init(
+                symbolName: "move.3d",
+                title: "Move closer",
+                subtitle: "Keep the full plate in view."
+            )
+        }
+
+        switch guidedScanStep {
+        case .capturePhoto, .mapCenter:
+            return .init(
+                symbolName: "move.3d",
+                title: "Scan around the plate",
+                subtitle: "Move slowly around the meal."
+            )
+        case .moveLeft:
+            return .init(
+                symbolName: "arrow.left",
+                title: "Scan one side",
+                subtitle: "Keep the entire plate visible."
+            )
+        case .moveRight:
+            return .init(
+                symbolName: "arrow.right",
+                title: "Move to the other side",
+                subtitle: "Keep the entire plate visible."
+            )
+        case .tiltForward:
+            return .init(
+                symbolName: "arrow.down.forward",
+                title: "Capture the height",
+                subtitle: "Tilt slightly toward the meal."
+            )
+        case .holdSteady:
+            return .init(
+                symbolName: "circle.dotted",
+                title: "Almost there",
+                subtitle: "Capture the remaining side."
+            )
+        case .complete:
+            return .init(
+                symbolName: "checkmark",
+                title: "Scan complete",
+                subtitle: "Ready to analyze your meal."
+            )
         }
     }
 
@@ -747,7 +511,6 @@ struct MealScannerView: View {
         guidedScanStep = .mapCenter
         errorMessage = nil
         frameFeedbackLogCounter = 0
-        scheduleGuidedScanAutoComplete()
         Self.logger.debug("LiDAR guided meal scan started")
 
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
@@ -760,7 +523,7 @@ struct MealScannerView: View {
         cancelGuidedScan()
         captureController.stopAccumulating()
         Self.logger.debug("Completing guided meal scan progress=\(lidarScanState.progress, privacy: .public) acceptedFrames=\(lidarScanState.acceptedFrameCount, privacy: .public) stableFrames=\(lidarScanState.stableFrameCount, privacy: .public) points=\(lidarScanState.pointCloud.count, privacy: .public) coverage=\(lidarScanState.coverageRatio, privacy: .public) coveredCells=\(lidarScanState.coveredCellRatio, privacy: .public) movement=\(lidarScanState.movementScore, privacy: .public) automaticThreshold=\(lidarScanState.isComplete, privacy: .public) keyFrames=\(captureController.frameAccumulator.frameCount, privacy: .public)")
-        guidedScanProgress = 1
+        guidedScanProgress = lidarScanState.isComplete ? 1 : lidarScanState.progress
         guidedScanStep = .complete
         withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
             scanPhase = .complete
@@ -768,22 +531,7 @@ struct MealScannerView: View {
         playNotification(.success)
     }
 
-    private func scheduleGuidedScanAutoComplete() {
-        guidedScanAutoCompleteTask?.cancel()
-        guidedScanAutoCompleteTask = Task {
-            try? await Task.sleep(nanoseconds: Self.guidedScanAutoCompleteDelayNanoseconds)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard scanPhase == .scanning, photoCapture != nil else { return }
-                Self.logger.debug("LiDAR guided meal scan auto-completing after timeout progress=\(lidarScanState.progress, privacy: .public)")
-                completeGuidedScan()
-            }
-        }
-    }
-
     private func cancelGuidedScan() {
-        guidedScanAutoCompleteTask?.cancel()
-        guidedScanAutoCompleteTask = nil
         captureController.stopAccumulating()
     }
 
@@ -815,147 +563,6 @@ struct MealScannerView: View {
         UINotificationFeedbackGenerator().notificationOccurred(type)
     }
 
-    private func status(for step: MealGuidedScanStep) -> MealGuidedScanStepRow.Status {
-        if scanPhase == .complete || step.progressEnd <= guidedScanProgress {
-            return .complete
-        }
-        if step == guidedScanStep {
-            return .active
-        }
-        return .pending
-    }
-
-    private var immersiveStatusText: String {
-        if scanPhase == .complete {
-            return "Ready to analyze"
-        }
-        if scanPhase == .scanning {
-            return liveFrameFeedback.isCaptureReady ? "LiDAR map \(Int((lidarScanState.progress * 100).rounded()))% built" : "\(liveFrameFeedback.trackingMessage). \(liveFrameFeedback.lightingMessage)."
-        }
-        return liveFrameFeedback.isCaptureReady ? "Phase 1: capture photo" : "\(liveFrameFeedback.trackingMessage). \(liveFrameFeedback.lightingMessage)."
-    }
-
-    private var lidarStatusTitle: String {
-        guard scanMode == .depthAssisted else { return "Photo only" }
-        if scanPhase == .scanning || scanPhase == .complete {
-            return "\(Int((lidarScanState.progress * 100).rounded()))% built"
-        }
-        return liveFrameFeedback.hasDepth ? "Depth ready" : "Depth pending"
-    }
-
-    private var currentGuidanceTitle: String {
-        if scanPhase == .complete {
-            return "Scan complete"
-        }
-        if scanPhase == .ready {
-            return "Phase 1: capture the plate"
-        }
-        return guidedScanStep.title
-    }
-
-    private var currentGuidanceSubtitle: String {
-        if scanPhase == .complete {
-            return "Great. Keep the plate in frame and tap Analyze Meal."
-        }
-        if scanPhase == .ready {
-            return "Center the full plate in good light. This photo is the visual evidence the AI will analyze."
-        }
-        if scanPhase == .scanning, guidedScanProgress >= 0.34 {
-            return "Keep moving for more depth, or tap Finish Scan when the plate is mapped well enough."
-        }
-        if !liveFrameFeedback.isCaptureReady {
-            return "\(liveFrameFeedback.trackingMessage). \(liveFrameFeedback.lightingMessage)."
-        }
-        return guidedScanStep.instruction
-    }
-
-    private var lidarPhaseStatus: MealScannerPhaseRail.Status {
-        if scanPhase == .complete || lidarScanState.isComplete {
-            return .complete
-        }
-        if scanPhase == .scanning {
-            return .active
-        }
-        return photoCapture == nil ? .pending : .active
-    }
-
-    private var activeCameraInstructionTitle: String {
-        switch scanPhase {
-        case .ready:
-            "Capture photo"
-        case .scanning:
-            "Map with LiDAR"
-        case .complete:
-            "Scan complete"
-        case .analyzing:
-            "Hold steady"
-        case .intro, .checkingPermission, .error:
-            "Frame the full plate"
-        }
-    }
-
-    private var activeCameraInstructionSubtitle: String {
-        switch scanPhase {
-        case .ready:
-            "Phase 1"
-        case .scanning:
-            "Phase 2"
-        case .complete:
-            "Ready to analyze"
-        case .analyzing:
-            "Estimating portions"
-        case .intro, .checkingPermission, .error:
-            "Scanner guide"
-        }
-    }
-
-    private var activeCameraInstructionSymbol: String {
-        switch scanPhase {
-        case .ready:
-            "scope"
-        case .scanning:
-            "dot.viewfinder"
-        case .complete:
-            "checkmark.circle.fill"
-        case .analyzing:
-            "sparkles"
-        case .intro, .checkingPermission, .error:
-            "camera.viewfinder"
-        }
-    }
-
-    private var activeCameraInstructions: [String] {
-        switch scanPhase {
-        case .ready:
-            [
-                "Center the whole plate.",
-                "Use bright, even light.",
-                "Tap Capture Photo before moving."
-            ]
-        case .scanning:
-            [
-                "Watch the LiDAR mesh attach to the plate and food.",
-                "Move left, right, then tilt for tall food.",
-                "Tap Finish Scan if depth progress stalls."
-            ]
-        case .complete:
-            [
-                "Scan complete.",
-                "Keep the plate in frame.",
-                "Tap Analyze Meal to estimate nutrition."
-            ]
-        case .analyzing:
-            [
-                "Keep the app open while Pulsar estimates portions.",
-                "You will be able to edit grams before saving."
-            ]
-        case .intro, .checkingPermission, .error:
-            [
-                "Use bright, even light.",
-                "Keep the whole plate visible."
-            ]
-        }
-    }
 }
 
 private enum ScanPhase: Equatable {
@@ -976,37 +583,6 @@ private enum ScanPhase: Equatable {
         }
     }
 
-    var title: String {
-        switch self {
-        case .intro: "Ready when you are"
-        case .checkingPermission: "Checking camera access"
-        case .ready: "Camera ready"
-        case .scanning: "Move slowly around the plate"
-        case .complete: "Scan complete"
-        case .analyzing: "Estimating nutrition"
-        case .error: "Needs attention"
-        }
-    }
-
-    func subtitle(for mode: MealScanMode) -> String {
-        switch self {
-        case .intro:
-            mode == .depthAssisted ? "This iPhone can use depth-assisted scanning." : "This iPhone will use photo-only AI estimation."
-        case .checkingPermission:
-            "Pulsar asks only when you open the scanner."
-        case .ready:
-            "Phase 1: capture a clear photo before LiDAR mapping."
-        case .scanning:
-            "Phase 2: LiDAR mapping is building coverage from real depth frames."
-        case .complete:
-            "Enough coverage captured. Analyze when the plate is still in frame."
-        case .analyzing:
-            "Sending a compact image and depth summary to the backend."
-        case .error:
-            "You can retry after adjusting permission, lighting, or framing."
-        }
-    }
-
     var buttonTitle: String {
         switch self {
         case .intro, .error: "Start Scan"
@@ -1017,61 +593,9 @@ private enum ScanPhase: Equatable {
         case .analyzing: "Analyzing..."
         }
     }
-
-    var buttonSymbolName: String {
-        switch self {
-        case .intro, .error, .ready: "camera.fill"
-        case .checkingPermission, .analyzing: "hourglass"
-        case .scanning: "dot.viewfinder"
-        case .complete: "sparkles"
-        }
-    }
-
-    var symbolName: String {
-        switch self {
-        case .intro: "viewfinder"
-        case .checkingPermission: "lock.shield"
-        case .ready: "camera.fill"
-        case .scanning: "dot.viewfinder"
-        case .complete: "checkmark.circle.fill"
-        case .analyzing: "sparkles"
-        case .error: "exclamationmark.triangle.fill"
-        }
-    }
-
-    var surfaceLabel: String {
-        switch self {
-        case .intro: "Setup"
-        case .checkingPermission: "Permission"
-        case .ready: "Camera"
-        case .scanning: "Scanning"
-        case .complete: "Complete"
-        case .analyzing: "Analyzing"
-        case .error: "Paused"
-        }
-    }
-
-    var tint: Color {
-        switch self {
-        case .intro, .ready: .cyan
-        case .checkingPermission, .analyzing: .green
-        case .scanning: .mint
-        case .complete: .green
-        case .error: .orange
-        }
-    }
-
-    var canTapPrimary: Bool {
-        switch self {
-        case .checkingPermission, .analyzing:
-            false
-        case .intro, .ready, .scanning, .complete, .error:
-            true
-        }
-    }
 }
 
-private enum MealGuidedScanStep: String, CaseIterable, Identifiable {
+private enum MealGuidedScanStep: String {
     case capturePhoto
     case mapCenter
     case moveLeft
@@ -1079,17 +603,6 @@ private enum MealGuidedScanStep: String, CaseIterable, Identifiable {
     case tiltForward
     case holdSteady
     case complete
-
-    var id: String { rawValue }
-
-    static let scanSequence: [MealGuidedScanStep] = [
-        .capturePhoto,
-        .mapCenter,
-        .moveLeft,
-        .moveRight,
-        .tiltForward,
-        .holdSteady
-    ]
 
     static func step(for progress: Double) -> MealGuidedScanStep {
         switch progress {
@@ -1110,73 +623,6 @@ private enum MealGuidedScanStep: String, CaseIterable, Identifiable {
         }
     }
 
-    var progressEnd: Double {
-        switch self {
-        case .capturePhoto: 0.16
-        case .mapCenter: 0.34
-        case .moveLeft: 0.52
-        case .moveRight: 0.70
-        case .tiltForward: 0.88
-        case .holdSteady, .complete: 1.0
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .capturePhoto:
-            "Photo captured"
-        case .mapCenter:
-            "Map the plate center"
-        case .moveLeft:
-            "Scan one side"
-        case .moveRight:
-            "Scan the opposite side"
-        case .tiltForward:
-            "Tilt slightly forward"
-        case .holdSteady:
-            "Hold steady"
-        case .complete:
-            "Scan complete"
-        }
-    }
-
-    var instruction: String {
-        switch self {
-        case .capturePhoto:
-            "Use this clear photo as the visual evidence for food identity."
-        case .mapCenter:
-            "Hold above the plate until the center fills with depth points."
-        case .moveLeft:
-            "Slide to one side so LiDAR sees the edge of the food."
-        case .moveRight:
-            "Slide to the opposite side without cropping the plate."
-        case .tiltForward:
-            "Tilt slightly forward so tall portions get depth."
-        case .holdSteady:
-            "Pause until Pulsar gets a stable final depth frame."
-        case .complete:
-            "Coverage is complete. Analyze the meal."
-        }
-    }
-
-    var symbolName: String {
-        switch self {
-        case .capturePhoto:
-            "camera.fill"
-        case .mapCenter:
-            "viewfinder"
-        case .moveLeft:
-            "arrow.left"
-        case .moveRight:
-            "arrow.right"
-        case .tiltForward:
-            "arrow.down.forward"
-        case .holdSteady:
-            "pause.circle.fill"
-        case .complete:
-            "checkmark.circle.fill"
-        }
-    }
 }
 
 private struct MealScannerPhotoCapture {
@@ -1361,413 +807,13 @@ private struct MealLidarScanState {
     }
 }
 
-private struct MealScannerPhaseRail: View {
-    enum Status {
-        case pending
-        case active
-        case complete
-    }
-
-    var photoStatus: Status
-    var lidarStatus: Status
-
-    var body: some View {
-        HStack(spacing: 8) {
-            phasePill(title: "1 Photo", symbolName: "camera.fill", status: photoStatus, tint: .cyan)
-            phasePill(title: "2 LiDAR", symbolName: "viewfinder.circle.fill", status: lidarStatus, tint: .mint)
-        }
-    }
-
-    private func phasePill(title: String, symbolName: String, status: Status, tint: Color) -> some View {
-        Label(title, systemImage: status == .complete ? "checkmark.circle.fill" : symbolName)
-            .pulsarTextStyle(.overline)
-            .lineLimit(1)
-            .minimumScaleFactor(0.76)
-            .foregroundStyle(foregroundColor(status: status, tint: tint))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity)
-            .background(backgroundColor(status: status, tint: tint), in: Capsule(style: .continuous))
-            .overlay {
-                Capsule(style: .continuous)
-                    .stroke(foregroundColor(status: status, tint: tint).opacity(0.22), lineWidth: 1)
-            }
-    }
-
-    private func foregroundColor(status: Status, tint: Color) -> Color {
-        switch status {
-        case .pending:
-            .white.opacity(0.44)
-        case .active:
-            tint
-        case .complete:
-            .green
-        }
-    }
-
-    private func backgroundColor(status: Status, tint: Color) -> Color {
-        switch status {
-        case .pending:
-            .white.opacity(0.06)
-        case .active:
-            tint.opacity(0.14)
-        case .complete:
-            Color.green.opacity(0.14)
-        }
-    }
-}
-
-private struct MealScannerStepTimeline: View {
-    var activeStep: MealGuidedScanStep
-    var progress: Double
-    var isComplete: Bool
-
-    var body: some View {
-        HStack(spacing: 7) {
-            ForEach(MealGuidedScanStep.scanSequence) { step in
-                Capsule(style: .continuous)
-                    .fill(color(for: step))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: step == activeStep && !isComplete ? 8 : 5)
-                    .overlay {
-                        if step == activeStep && !isComplete {
-                            Capsule(style: .continuous)
-                                .stroke(.white.opacity(0.34), lineWidth: 1)
-                        }
-                    }
-            }
-        }
-        .padding(.horizontal, 2)
-        .accessibilityLabel("Meal scan progress \(Int((progress * 100).rounded())) percent")
-    }
-
-    private func color(for step: MealGuidedScanStep) -> Color {
-        if isComplete || step.progressEnd <= progress {
-            return .green.opacity(0.76)
-        }
-        if step == activeStep {
-            return .cyan.opacity(0.86)
-        }
-        return .white.opacity(0.16)
-    }
-}
-
-private struct MealScannerPointCloudOverlay: View {
-    var points: [MealScannerDepthPoint]
-    var livePoints: [MealScannerDepthPoint]
-    var coverageCells: [Double]
-    var columns: Int
-    var progress: Double
-    var acceptedFrameCount: Int
-    var isActive: Bool
-
-    var body: some View {
-        if isActive {
-            ZStack {
-                Canvas { context, size in
-                    drawScanSurface(in: &context, size: size)
-                    drawPoints(in: &context, size: size, points: visiblePoints)
-                }
-
-                if visiblePoints.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "dot.viewfinder")
-                            .font(.system(size: 24, weight: .semibold))
-                            .foregroundStyle(.cyan.opacity(0.82))
-                        Text("Move slowly to paint the plate")
-                            .pulsarTextStyle(.captionEmphasis)
-                            .foregroundStyle(.white.opacity(0.72))
-                    }
-                    .padding(.horizontal, 18)
-                    .multilineTextAlignment(.center)
-                }
-
-                VStack {
-                    Spacer(minLength: 0)
-                    coverageRibbon
-                }
-                .padding(10)
-            }
-            .background(.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(.cyan.opacity(0.18), lineWidth: 1)
-            }
-            .overlay(alignment: .topLeading) {
-                Label("3D map", systemImage: "point.3.connected.trianglepath.dotted")
-                    .pulsarTextStyle(.overline)
-                    .foregroundStyle(.cyan)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(.black.opacity(0.36), in: Capsule(style: .continuous))
-                    .padding(8)
-            }
-            .overlay(alignment: .topTrailing) {
-                Text("\(min(acceptedFrameCount, 99)) keyframes")
-                    .pulsarTextStyle(.overline)
-                    .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.78))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(.black.opacity(0.36), in: Capsule(style: .continuous))
-                    .padding(8)
-            }
-            .accessibilityHidden(true)
-        }
-    }
-
-    private var visiblePoints: [MealScannerDepthPoint] {
-        let combined = Array(points.suffix(420)) + Array(livePoints.prefix(50))
-        return Array(combined.suffix(470))
-    }
-
-    private var coverageRibbon: some View {
-        HStack(spacing: 2) {
-            ForEach(Array(coverageCells.enumerated()), id: \.offset) { _, coverage in
-                Capsule(style: .continuous)
-                    .fill(cellColor(for: coverage))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 5)
-            }
-        }
-        .frame(height: 7)
-        .overlay(alignment: .trailing) {
-            Text("\(Int((progress * 100).rounded()))%")
-                .pulsarTextStyle(.overline)
-                .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.78))
-                .padding(.leading, 8)
-                .background(.black.opacity(0.46))
-        }
-    }
-
-    private func drawScanSurface(in context: inout GraphicsContext, size: CGSize) {
-        let center = CGPoint(x: size.width / 2, y: size.height * 0.56)
-        let plateRect = CGRect(
-            x: center.x - (size.width * 0.34),
-            y: center.y - (size.height * 0.20),
-            width: size.width * 0.68,
-            height: size.height * 0.34
-        )
-        let plate = Path(ellipseIn: plateRect)
-        context.stroke(plate, with: .color(.white.opacity(0.22)), lineWidth: 1.2)
-
-        let innerPlate = Path(ellipseIn: plateRect.insetBy(dx: plateRect.width * 0.14, dy: plateRect.height * 0.18))
-        context.stroke(innerPlate, with: .color(.cyan.opacity(0.20)), lineWidth: 1)
-
-        let gridColor = Color.white.opacity(0.09)
-        for step in 0...4 {
-            let fraction = CGFloat(step) / 4
-            var horizontal = Path()
-            horizontal.move(to: CGPoint(x: 14, y: size.height * (0.22 + (fraction * 0.56))))
-            horizontal.addLine(to: CGPoint(x: size.width - 14, y: size.height * (0.18 + (fraction * 0.50))))
-            context.stroke(horizontal, with: .color(gridColor), lineWidth: 0.8)
-        }
-        for step in 0...5 {
-            let fraction = CGFloat(step) / 5
-            var vertical = Path()
-            vertical.move(to: CGPoint(x: size.width * (0.14 + fraction * 0.72), y: size.height * 0.18))
-            vertical.addLine(to: CGPoint(x: size.width * (0.22 + fraction * 0.56), y: size.height * 0.82))
-            context.stroke(vertical, with: .color(gridColor), lineWidth: 0.8)
-        }
-    }
-
-    private func drawPoints(in context: inout GraphicsContext, size: CGSize, points: [MealScannerDepthPoint]) {
-        for point in points.sorted(by: { $0.z > $1.z }) {
-            let location = projected(point, in: size)
-            let radius = CGFloat(1.35 + (point.confidence * 1.35) + ((1 - point.normalizedDepth) * 0.7))
-            let rect = CGRect(
-                x: location.x - radius,
-                y: location.y - radius,
-                width: radius * 2,
-                height: radius * 2
-            )
-            let color = pointColor(for: point)
-            context.fill(Path(ellipseIn: rect), with: .color(color.opacity(0.56)))
-        }
-    }
-
-    private func projected(_ point: MealScannerDepthPoint, in size: CGSize) -> CGPoint {
-        let center = CGPoint(x: size.width / 2, y: size.height * 0.62)
-        let depth = CGFloat(point.normalizedDepth)
-        let perspective = 1 / (1 + (depth * 0.72))
-        let projectedX = center.x
-            + (CGFloat(point.x) * size.width * 0.34 * perspective)
-            + ((depth - 0.5) * size.width * 0.08)
-        let projectedY = center.y
-            + (CGFloat(point.y) * size.height * 0.23 * perspective)
-            - (depth * size.height * 0.28)
-        return CGPoint(
-            x: min(max(projectedX, 12), size.width - 12),
-            y: min(max(projectedY, 16), size.height - 18)
-        )
-    }
-
-    private func pointColor(for point: MealScannerDepthPoint) -> Color {
-        if point.confidence > 0.72 {
-            return .green
-        }
-        if point.confidence > 0.42 {
-            return .cyan
-        }
-        return .orange
-    }
-
-    private func cellColor(for coverage: Double) -> Color {
-        switch coverage {
-        case 0.75...:
-            .green.opacity(0.54)
-        case 0.40..<0.75:
-            .cyan.opacity(0.42)
-        case 0.10..<0.40:
-            .cyan.opacity(0.18)
-        default:
-            .white.opacity(0.055)
-        }
-    }
-}
-
-private struct MealGuidedScanStepRow: View {
-    enum Status {
-        case pending
-        case active
-        case complete
-    }
-
-    var step: MealGuidedScanStep
-    var status: Status
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: symbolName)
-                .pulsarTextStyle(.captionEmphasis)
-                .foregroundStyle(symbolColor)
-                .frame(width: 24, height: 24)
-                .background(symbolColor.opacity(status == .pending ? 0.08 : 0.18), in: Circle())
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(step.title)
-                    .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(textColor)
-                if status == .active {
-                    Text(step.instruction)
-                        .pulsarTextStyle(.caption)
-                        .foregroundStyle(.white.opacity(0.58))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, status == .active ? 9 : 7)
-        .background(backgroundColor, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-    }
-
-    private var symbolName: String {
-        switch status {
-        case .pending:
-            step.symbolName
-        case .active:
-            "dot.radiowaves.left.and.right"
-        case .complete:
-            "checkmark"
-        }
-    }
-
-    private var symbolColor: Color {
-        switch status {
-        case .pending:
-            .white.opacity(0.42)
-        case .active:
-            .cyan
-        case .complete:
-            .green
-        }
-    }
-
-    private var textColor: Color {
-        switch status {
-        case .pending:
-            .white.opacity(0.48)
-        case .active, .complete:
-            .white.opacity(0.90)
-        }
-    }
-
-    private var backgroundColor: Color {
-        switch status {
-        case .pending:
-            .white.opacity(0.045)
-        case .active:
-            .cyan.opacity(0.14)
-        case .complete:
-            .green.opacity(0.12)
-        }
-    }
-}
-
-private struct MealScannerReticleView: View {
-    var isActive: Bool
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(.white.opacity(isActive ? 0.16 : 0.10), style: StrokeStyle(lineWidth: 1.4, dash: [10, 12]))
-
-            VStack {
-                HStack {
-                    corner
-                    Spacer()
-                    corner.rotationEffect(.degrees(90))
-                }
-                Spacer()
-                HStack {
-                    corner.rotationEffect(.degrees(-90))
-                    Spacer()
-                    corner.rotationEffect(.degrees(180))
-                }
-            }
-            .padding(12)
-        }
-        .animation(.easeInOut(duration: 0.28), value: isActive)
-        .accessibilityHidden(true)
-    }
-
-    private var corner: some View {
-        Path { path in
-            path.move(to: CGPoint(x: 0, y: 22))
-            path.addLine(to: CGPoint(x: 0, y: 0))
-            path.addLine(to: CGPoint(x: 22, y: 0))
-        }
-        .stroke(.green.opacity(isActive ? 0.82 : 0.48), style: StrokeStyle(lineWidth: 2.6, lineCap: .round))
-        .frame(width: 22, height: 22)
-    }
-}
-
-private struct MealScannerInstructionRow: View {
-    var number: Int
-    var text: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 9) {
-            Text("\(number)")
-                .pulsarTextStyle(.overline)
-                .foregroundStyle(.black.opacity(0.78))
-                .frame(width: 20, height: 20)
-                .background(.white.opacity(0.88), in: Circle())
-
-            Text(text)
-                .pulsarTextStyle(.captionEmphasis)
-                .foregroundStyle(.white.opacity(0.86))
-                .fixedSize(horizontal: false, vertical: true)
-
-            Spacer(minLength: 0)
-        }
-    }
-}
-
 #Preview {
+    MealScannerView(
+        nutritionStore: PulsarNutritionStore(provider: PulsarNutritionLocalProvider(fileStore: PulsarNutritionFileStore(directoryURL: FileManager.default.temporaryDirectory)))
+    )
+}
+
+#Preview("Meal Scanner — 430 × 932", traits: .fixedLayout(width: 430, height: 932)) {
     MealScannerView(
         nutritionStore: PulsarNutritionStore(provider: PulsarNutritionLocalProvider(fileStore: PulsarNutritionFileStore(directoryURL: FileManager.default.temporaryDirectory)))
     )

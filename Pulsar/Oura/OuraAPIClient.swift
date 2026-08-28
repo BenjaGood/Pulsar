@@ -9,19 +9,42 @@ protocol OuraAPIClientProtocol {
     func fetchBundle(startDate: Date, endDate: Date, scopes: Set<OuraScope>, calendar: Calendar) async throws -> OuraRawSyncBundle
 }
 
+/// Process-session memory for optional endpoints the current Oura account or
+/// token cannot access. This avoids repeating a known authorization failure
+/// without changing the meaning of legitimate zero-sample responses.
+final class OuraEndpointCapabilityCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var unavailableReasons: [String: String] = [:]
+
+    func unavailableReason(for path: String) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return unavailableReasons[path]
+    }
+
+    func rememberUnavailable(path: String, reason: String) {
+        lock.lock()
+        unavailableReasons[path] = reason
+        lock.unlock()
+    }
+}
+
 final class URLSessionOuraAPIClient: OuraAPIClientProtocol {
     private let authService: OuraAuthService
     private let session: URLSession
     private let baseURL: URL
+    private let capabilityCache: OuraEndpointCapabilityCache
 
     init(
         authService: OuraAuthService,
         session: URLSession = .shared,
-        baseURL: URL = OuraAPIEndpoint.apiBaseURL
+        baseURL: URL = OuraAPIEndpoint.apiBaseURL,
+        capabilityCache: OuraEndpointCapabilityCache = OuraEndpointCapabilityCache()
     ) {
         self.authService = authService
         self.session = session
         self.baseURL = baseURL
+        self.capabilityCache = capabilityCache
     }
 
     func fetchBundle(startDate: Date, endDate: Date, scopes: Set<OuraScope>, calendar: Calendar = .current) async throws -> OuraRawSyncBundle {
@@ -121,6 +144,18 @@ final class URLSessionOuraAPIClient: OuraAPIClientProtocol {
                 debugRow: debugRow(path: path, count: 0, status: .skipped, detail: "Scope not granted or not requested.")
             )
         }
+        if let unavailableReason = capabilityCache.unavailableReason(for: path) {
+            PulsarOuraLogger.log("Oura endpoint \(path) skipped after prior capability denial")
+            return OuraListFetchResult(
+                values: [],
+                debugRow: debugRow(
+                    path: path,
+                    count: 0,
+                    status: .unavailable,
+                    detail: "Skipped after prior capability denial: \(unavailableReason)"
+                )
+            )
+        }
         do {
             let values = try await fetchList(path: path, startDate: startDate, endDate: endDate, calendar: calendar, type: type)
             let newestTimestamp = Self.newestDebugTimestamp(in: values)
@@ -132,6 +167,9 @@ final class URLSessionOuraAPIClient: OuraAPIClientProtocol {
             )
         } catch let error as OuraAPIError {
             if error.isRecoverableOptionalEndpointFailure(for: path) || (error.isDecodingFailure && Self.canSkipDecodeFailure(for: path)) {
+                if error.shouldMemoizeCapabilityDenial(for: path) {
+                    capabilityCache.rememberUnavailable(path: path, reason: error.localizedDescription)
+                }
                 PulsarOuraLogger.log("Oura endpoint \(path) unavailable for this account or scope: \(error.localizedDescription)")
                 return OuraListFetchResult(
                     values: [],
@@ -192,6 +230,7 @@ final class URLSessionOuraAPIClient: OuraAPIClientProtocol {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
+        PulsarOuraLogger.log("network request started path=\(path)")
         do {
             let (data, response) = try await session.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
@@ -337,6 +376,22 @@ private extension OuraAPIError {
         return normalizedMessage.contains("stress scope") ||
             normalizedMessage.contains("missing scope") ||
             normalizedMessage.contains("missing required scopes")
+    }
+
+    func shouldMemoizeCapabilityDenial(for path: String) -> Bool {
+        switch self {
+        case .forbidden:
+            return true
+        case .unauthorized(let message):
+            let normalizedMessage = message.lowercased()
+            return Self.isStressEndpoint(path) && (
+                normalizedMessage.contains("stress scope") ||
+                normalizedMessage.contains("missing scope") ||
+                normalizedMessage.contains("missing required scopes")
+            )
+        default:
+            return false
+        }
     }
 
     var isDecodingFailure: Bool {

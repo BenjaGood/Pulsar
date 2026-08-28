@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct DailyStrainRecord: Identifiable, Hashable, Codable {
+nonisolated struct DailyStrainRecord: Identifiable, Hashable, Codable, Sendable {
     var id: String { dateKey }
     var dateKey: String
     var date: Date
@@ -401,7 +401,7 @@ extension DailyStrainRecord {
 }
 
 private extension PulsarSyncSourceDevice {
-    var displayName: String {
+    nonisolated var displayName: String {
         switch self {
         case .iPhone:
             return "iPhone"

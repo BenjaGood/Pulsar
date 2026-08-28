@@ -44,7 +44,7 @@ struct DailyExerciseProgressSection: View {
         .modifier(
             FitnessGlassSurfaceModifier(
                 cornerRadius: 32,
-                tint: Color(red: 0.72, green: 0.82, blue: 0.92),
+                tint: PulsarFitnessMonochromeDesign.primaryText,
                 borderOpacity: 0.94
             )
         )
@@ -124,7 +124,7 @@ struct DailyExerciseProgressSection: View {
             }
         }
         .padding(4)
-        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 22, tint: .green))
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 22, tint: PulsarFitnessMonochromeDesign.active))
         .overlay {
             Capsule(style: .continuous)
                 .stroke(.white.opacity(colorScheme == .dark ? 0.10 : 0.72), lineWidth: 1)
@@ -180,7 +180,7 @@ struct DailyExerciseProgressSection: View {
     }
 
     private var selectedMetricText: Color {
-        colorScheme == .dark ? .white : Color(red: 0.06, green: 0.08, blue: 0.13)
+        colorScheme == .dark ? .white : PulsarFitnessMonochromeDesign.primaryText
     }
 
     private var unselectedMetricText: Color {
@@ -192,9 +192,9 @@ struct DailyExerciseProgressSection: View {
         return LinearGradient(
             colors: isSelected
                 ? [
-                    metric.accent.opacity(colorScheme == .dark ? 0.22 : 0.16),
+                    PulsarFitnessMonochromeDesign.primaryText.opacity(colorScheme == .dark ? 0.22 : 0.16),
                     Color.white.opacity(colorScheme == .dark ? 0.10 : 0.78),
-                    Color.green.opacity(colorScheme == .dark ? 0.12 : 0.08)
+                    PulsarFitnessMonochromeDesign.active.opacity(colorScheme == .dark ? 0.12 : 0.08)
                 ]
                 : [
                     Color.white.opacity(0),
@@ -207,7 +207,7 @@ struct DailyExerciseProgressSection: View {
 
     private func metricBorder(for metric: DailyExerciseChartMetric) -> Color {
         metric == selectedMetric
-            ? metric.accent.opacity(colorScheme == .dark ? 0.34 : 0.42)
+            ? PulsarFitnessMonochromeDesign.primaryText.opacity(colorScheme == .dark ? 0.34 : 0.42)
             : Color.white.opacity(0)
     }
 }
@@ -245,9 +245,9 @@ private enum DailyExerciseChartMetric: String, CaseIterable, Identifiable {
 
     var accent: Color {
         switch self {
-        case .weight: Color(red: 0.58, green: 0.68, blue: 1.0)
-        case .reps: Color(red: 0.42, green: 0.82, blue: 1.0)
-        case .volume: Color(red: 0.34, green: 0.90, blue: 0.66)
+        case .weight: PulsarFitnessMonochromeDesign.primaryText
+        case .reps: PulsarFitnessMonochromeDesign.primaryText
+        case .volume: PulsarFitnessMonochromeDesign.primaryText
         }
     }
 }
@@ -321,14 +321,14 @@ private struct DailyProgressDateStrip: View {
     }
 
     private func accent(for day: Date) -> Color {
-        isSelected(day) ? Color.green : Color(red: 0.42, green: 0.78, blue: 1.0)
+        isSelected(day) ? PulsarFitnessMonochromeDesign.active : PulsarFitnessMonochromeDesign.primaryText
     }
 
     private func background(for day: Date) -> LinearGradient {
         LinearGradient(
             colors: isSelected(day)
                 ? [
-                    Color.green.opacity(colorScheme == .dark ? 0.18 : 0.14),
+                    PulsarFitnessMonochromeDesign.active.opacity(colorScheme == .dark ? 0.18 : 0.14),
                     Color.white.opacity(colorScheme == .dark ? 0.08 : 0.72)
                 ]
                 : [
@@ -342,7 +342,7 @@ private struct DailyProgressDateStrip: View {
 
     private func border(for day: Date) -> Color {
         isSelected(day)
-            ? Color.green.opacity(colorScheme == .dark ? 0.32 : 0.42)
+            ? PulsarFitnessMonochromeDesign.active.opacity(colorScheme == .dark ? 0.32 : 0.42)
             : Color.white.opacity(colorScheme == .dark ? 0.08 : 0.56)
     }
 
@@ -423,11 +423,11 @@ private struct DailyExerciseProgressCard: View {
                             .minimumScaleFactor(0.72)
                     }
 
-                    DailyExerciseMiniChart(values: chartValues, accent: selectedMetric.accent)
+                    DailyExerciseMiniChart(values: chartValues, accent: PulsarFitnessMonochromeDesign.primaryText)
                         .frame(height: 54)
                 }
                 .padding(12)
-                .modifier(FitnessGlassSurfaceModifier(cornerRadius: 18, tint: selectedMetric.accent, borderOpacity: 0.54))
+                .modifier(FitnessGlassSurfaceModifier(cornerRadius: 18, tint: PulsarFitnessMonochromeDesign.primaryText, borderOpacity: 0.54))
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -466,7 +466,7 @@ private struct DailyExerciseProgressCard: View {
     }
 
     private var accent: Color {
-        summary.matrixGroup?.accent ?? Color(red: 0.42, green: 0.76, blue: 1.0)
+        PulsarFitnessMonochromeDesign.primaryText
     }
 
     private var primaryText: Color {
@@ -634,13 +634,13 @@ private struct DailyProgressEmptyState: View {
         VStack(spacing: 15) {
             ZStack {
                 Circle()
-                    .fill(Color.green.opacity(colorScheme == .dark ? 0.16 : 0.12))
+                    .fill(PulsarFitnessMonochromeDesign.active.opacity(colorScheme == .dark ? 0.16 : 0.12))
                     .frame(width: 72, height: 72)
 
                 Image(systemName: "figure.strengthtraining.traditional.circle.fill")
                     .font(.system(size: 34, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(Color.green)
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.active)
             }
 
             VStack(spacing: 6) {
@@ -676,7 +676,7 @@ private struct DailyProgressEmptyState: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 30)
         .padding(.horizontal, 18)
-        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 26, tint: .green))
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 26, tint: PulsarFitnessMonochromeDesign.active))
         .overlay {
             RoundedRectangle(cornerRadius: 26, style: .continuous)
                 .stroke(.white.opacity(colorScheme == .dark ? 0.12 : 0.72), lineWidth: 1)
@@ -696,7 +696,7 @@ private struct DailyProgressLoadingCard: View {
                 .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
         }
         .frame(maxWidth: .infinity, minHeight: 176)
-        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 26, tint: .green))
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 26, tint: PulsarFitnessMonochromeDesign.active))
     }
 }
 
@@ -747,7 +747,7 @@ struct ExerciseProgressHistorySheet: View {
                             subtitle: "Total reps per workout date",
                             values: viewModel.history.points.map { Double($0.totalReps) },
                             valueSuffix: " reps",
-                            accent: Color(red: 0.42, green: 0.82, blue: 1.0)
+                            accent: PulsarFitnessMonochromeDesign.primaryText
                         )
 
                         ExerciseHistoryChartPanel(
@@ -755,7 +755,7 @@ struct ExerciseProgressHistorySheet: View {
                             subtitle: "Completed load volume per workout date",
                             values: viewModel.history.points.map(\.totalVolume),
                             valueSuffix: " \(viewModel.history.displayUnit.displayName)",
-                            accent: Color(red: 0.34, green: 0.90, blue: 0.66)
+                            accent: PulsarFitnessMonochromeDesign.primaryText
                         )
 
                         ExerciseBestSetHistoryList(history: viewModel.history)
@@ -779,7 +779,7 @@ struct ExerciseProgressHistorySheet: View {
     }
 
     private var accent: Color {
-        viewModel.history.matrixGroup?.accent ?? Color(red: 0.58, green: 0.68, blue: 1.0)
+        PulsarFitnessMonochromeDesign.primaryText
     }
 }
 
@@ -807,7 +807,7 @@ private struct ExerciseHistoryHeader: View {
     }
 
     private var accent: Color {
-        history.matrixGroup?.accent ?? Color(red: 0.58, green: 0.68, blue: 1.0)
+        PulsarFitnessMonochromeDesign.primaryText
     }
 }
 
@@ -894,11 +894,11 @@ private struct ExerciseHistorySummaryCard: View {
     }
 
     private var improvementColor: Color {
-        guard let percent = history.improvementPercent else { return Color(red: 0.42, green: 0.82, blue: 1.0) }
+        guard let percent = history.improvementPercent else { return PulsarFitnessMonochromeDesign.primaryText }
         if percent >= 0 {
-            return Color(red: 0.30, green: 0.90, blue: 0.62)
+            return PulsarFitnessMonochromeDesign.primaryText
         }
-        return Color(red: 1.0, green: 0.64, blue: 0.34)
+        return PulsarFitnessMonochromeDesign.primaryText
     }
 }
 
@@ -1051,7 +1051,7 @@ private struct ExerciseLimitedHistoryNotice: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "sparkles")
                 .pulsarTextStyle(.cardTitle)
-                .foregroundStyle(Color.green)
+                .foregroundStyle(PulsarFitnessMonochromeDesign.active)
 
             Text("Complete this exercise again to unlock trend charts.")
                 .pulsarTextStyle(.label)
@@ -1059,10 +1059,10 @@ private struct ExerciseLimitedHistoryNotice: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(14)
-        .background(Color.green.opacity(colorScheme == .dark ? 0.10 : 0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(PulsarFitnessMonochromeDesign.active.opacity(colorScheme == .dark ? 0.10 : 0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.green.opacity(colorScheme == .dark ? 0.18 : 0.22), lineWidth: 1)
+                .stroke(PulsarFitnessMonochromeDesign.active.opacity(colorScheme == .dark ? 0.18 : 0.22), lineWidth: 1)
         }
     }
 }
@@ -1076,13 +1076,13 @@ private struct ExerciseHistoryEmptyState: View {
         VStack(spacing: 14) {
             ZStack {
                 Circle()
-                    .fill(Color(red: 0.50, green: 0.70, blue: 1.0).opacity(colorScheme == .dark ? 0.16 : 0.12))
+                    .fill(PulsarFitnessMonochromeDesign.primaryText.opacity(colorScheme == .dark ? 0.16 : 0.12))
                     .frame(width: 74, height: 74)
 
                 Image(systemName: "chart.line.uptrend.xyaxis.circle.fill")
                     .font(.system(size: 35, weight: .bold))
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(Color(red: 0.50, green: 0.70, blue: 1.0))
+                    .foregroundStyle(PulsarFitnessMonochromeDesign.primaryText)
             }
 
             VStack(spacing: 6) {
@@ -1100,7 +1100,7 @@ private struct ExerciseHistoryEmptyState: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 32)
         .padding(.horizontal, 20)
-        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 26, tint: .green))
+        .modifier(FitnessGlassSurfaceModifier(cornerRadius: 26, tint: PulsarFitnessMonochromeDesign.active))
         .overlay {
             RoundedRectangle(cornerRadius: 26, style: .continuous)
                 .stroke(.white.opacity(colorScheme == .dark ? 0.12 : 0.72), lineWidth: 1)

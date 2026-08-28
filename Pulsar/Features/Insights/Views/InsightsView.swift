@@ -24,12 +24,14 @@ struct InsightsView: View {
     }
 
     var body: some View {
-        MindfulnessView(
-            homeViewModel: homeViewModel,
-            store: mindfulnessStore,
-            router: mindfulnessRouter,
-            bottomChromeLayoutStore: bottomChromeLayoutStore
-        )
+        PulsarPerformanceSignposts.measureTabDestinationBody(.mindfulness) {
+            MindfulnessView(
+                homeViewModel: homeViewModel,
+                store: mindfulnessStore,
+                router: mindfulnessRouter,
+                bottomChromeLayoutStore: bottomChromeLayoutStore
+            )
+        }
     }
 }
 

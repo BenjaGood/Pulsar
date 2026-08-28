@@ -208,7 +208,7 @@ struct PulsarLiveRunView: View {
                 value: coordinator.snapshot.activeEnergyKilocalories.map(PulsarRunFormatters.calories) ?? "Calories Unavailable",
                 unit: coordinator.snapshot.activeEnergyKilocalories == nil ? nil : "cal",
                 symbolName: "flame.fill",
-                tint: .orange
+                tint: PulsarFitnessMonochromeDesign.primaryText
             ),
             PulsarLiveWorkoutMetric(
                 title: activeWorkoutKind.isOutdoorDistanceWorkout ? "Distance" : "Moving",
@@ -222,7 +222,7 @@ struct PulsarLiveRunView: View {
                 title: liveEffortTitle,
                 value: currentEffortValue,
                 symbolName: "speedometer",
-                tint: .cyan
+                tint: PulsarFitnessMonochromeDesign.primaryText
             ),
             PulsarLiveWorkoutMetric(
                 title: "Heart",
@@ -247,14 +247,14 @@ struct PulsarLiveRunView: View {
                 value: PulsarRunFormatters.duration(coordinator.snapshot.elapsedTime),
                 unit: "Elapsed",
                 symbolName: "timer",
-                tint: .green
+                tint: PulsarFitnessMonochromeDesign.active
             ),
             PulsarLiveWorkoutMetric(
                 title: "Calories",
                 value: coordinator.snapshot.activeEnergyKilocalories.map(PulsarRunFormatters.calories) ?? "--",
                 unit: "kcal",
                 symbolName: "flame.fill",
-                tint: .orange
+                tint: PulsarFitnessMonochromeDesign.primaryText
             ),
             PulsarLiveWorkoutMetric(
                 title: "Heart Rate",
@@ -298,7 +298,7 @@ struct PulsarLiveRunView: View {
                     value: PulsarRunFormatters.cadence(cadence),
                     unit: "spm",
                     symbolName: "metronome.fill",
-                    tint: .cyan
+                    tint: PulsarFitnessMonochromeDesign.primaryText
                 )
             )
         }
@@ -448,9 +448,9 @@ struct PulsarLiveRunView: View {
     private func coachingTint(for coaching: AdaptiveWorkoutCoaching) -> Color {
         switch coaching.severity {
         case .informational:
-            .cyan
+            PulsarFitnessMonochromeDesign.primaryText
         case .caution, .protective:
-            .orange
+            PulsarFitnessMonochromeDesign.primaryText
         }
     }
 

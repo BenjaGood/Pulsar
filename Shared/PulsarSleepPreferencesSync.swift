@@ -1,6 +1,6 @@
 import Foundation
 
-struct PulsarSleepPreferencesSyncPayload: Codable, Equatable {
+struct PulsarSleepPreferencesSyncPayload: nonisolated Codable, Equatable, Sendable {
     var syncedAt: Date
     var bedtimeMinutesFromMidnight: Int
     var wakeTimeMinutesFromMidnight: Int

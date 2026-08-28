@@ -15,6 +15,7 @@ struct LabView: View {
     @State private var isVisible = false
     @State private var isShowingImport = false
     @State private var isShowingManualEntry = false
+    @State private var isShowingEstimateInformation = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(profileStore: ProfileStore, startsVisible: Bool = false, onClose: (() -> Void)? = nil) {
@@ -27,35 +28,28 @@ struct LabView: View {
         NavigationStack {
             PulsarScreenScaffold(
                 layoutStore: bottomChromeLayoutStore,
+                header: labHeaderConfiguration,
                 horizontalPadding: 22,
                 spacing: 14,
                 reservesBottomChrome: false,
                 background: {
                     LabModuleBackground()
                 },
-                content: {
-                    if let onClose {
-                        LabCloseButton(action: onClose)
-                            .labStaggered(isVisible: isVisible, index: 0)
+                expandedHeader: {
+                    LabReferenceHeaderView {
+                        isShowingEstimateInformation = true
                     }
-
-                    LabHeaderView()
-                        .labStaggered(isVisible: isVisible, index: onClose == nil ? 0 : 1)
-
+                        .labStaggered(isVisible: isVisible, index: onClose == nil ? 0 : 0)
+                },
+                content: {
                     if let result = store.state.latestBiologicalAgeResult {
-                        LabBiologicalAgeHeroView(result: result)
+                        LabReferenceBiologicalAgeCard(result: result)
                             .labStaggered(isVisible: isVisible, index: onClose == nil ? 1 : 2)
 
-                        LabPrivacyFooter()
-                            .labStaggered(isVisible: isVisible, index: onClose == nil ? 2 : 3)
-
-                        LabSectionTitle(title: "Pillar Signals", subtitle: "A conservative estimate weighted by fitness, lifestyle, and recent blood markers.")
-                            .labStaggered(isVisible: isVisible, index: onClose == nil ? 3 : 4)
-
-                        LabPillarSignalsList(pillars: result.pillarResults)
+                        LabReferencePillarSection(pillars: result.pillarResults)
                             .labStaggered(isVisible: isVisible, index: onClose == nil ? 4 : 5)
 
-                        DataConfidenceCard(result: result)
+                        LabReferenceDataConfidenceCard(result: result)
                             .labStaggered(isVisible: isVisible, index: onClose == nil ? 5 : 6)
                     } else {
                         LabEmptyStateCard(
@@ -68,12 +62,9 @@ struct LabView: View {
                             onManualEntry: { isShowingManualEntry = true }
                         )
                         .labStaggered(isVisible: isVisible, index: onClose == nil ? 1 : 2)
-
-                        LabPrivacyFooter()
-                            .labStaggered(isVisible: isVisible, index: onClose == nil ? 2 : 3)
                     }
 
-                    BiomarkersSection(
+                    LabBiomarkersSection(
                         biomarkers: store.displayedBiomarkers,
                         onImport: { isShowingImport = true },
                         onManualEntry: { isShowingManualEntry = true },
@@ -123,47 +114,39 @@ struct LabView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
-    }
-
-}
-
-private struct LabCloseButton: View {
-    let action: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            action()
-        } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 22, weight: .medium))
-                .foregroundStyle(PulsarTheme.fitnessPrimaryText(for: colorScheme))
-                .frame(width: 52, height: 52)
-                .background(
-                    FitnessCircularGlassSurface(
-                        cornerRadius: 26,
-                        tint: LabPalette.glassTint(for: colorScheme),
-                        opacity: 1
-                    )
-                )
+        .alert("About the estimate", isPresented: $isShowingEstimateInformation) { } message: {
+            Text("Biological Age compares your calculated biological age with your chronological age using available fitness, lifestyle, and recent blood-marker signals. It is an estimate, not a diagnosis or a substitute for medical advice.")
         }
-        .buttonStyle(.plain)
-        .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .accessibilityLabel("Close Lab")
+        .pulsarFitnessMonochromeAppearance()
     }
-}
 
-private struct LabHeaderView: View {
-    var body: some View {
-        PulsarTabHeader(
-            systemImage: "testtube.2",
+    private var labHeaderConfiguration: PulsarScreenHeaderConfiguration {
+        var leading: PulsarHeaderItem?
+        if let onClose {
+            leading = .systemImage(
+                "xmark",
+                accessibilityLabel: "Close Lab",
+                pinned: true,
+                action: {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    onClose()
+                }
+            )
+        }
+
+        return PulsarScreenHeaderConfiguration(
             title: "Lab",
-            subtitle: "Biological age & biomarker insights",
-            primaryText: .white.opacity(0.96),
-            secondaryText: .white.opacity(0.62)
+            leading: leading,
+            trailing: [
+                .systemImage(
+                    "info.circle.fill",
+                    accessibilityLabel: "About estimate",
+                    action: { isShowingEstimateInformation = true }
+                )
+            ]
         )
     }
+
 }
 
 private struct LabHeaderIconView: View {
@@ -2360,44 +2343,6 @@ private struct LabCommandButton: View {
     }
 }
 
-private struct BiomarkersSection: View {
-    let biomarkers: [LabBiomarker]
-    let onImport: () -> Void
-    let onManualEntry: () -> Void
-    let onDelete: (LabBiomarker) -> Void
-    @State private var selectedBiomarker: LabBiomarker?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            LabSectionTitle(title: "Biomarkers", subtitle: "Professional lab records used by the biological age engine.")
-
-            HStack(spacing: 10) {
-                LabCommandButton(title: "Import PDF", symbol: "doc.badge.plus", action: onImport)
-                LabCommandButton(title: "Enter manually", symbol: "square.and.pencil", action: onManualEntry)
-            }
-
-            VStack(spacing: 10) {
-                ForEach(biomarkers) { biomarker in
-                    Button {
-                        selectedBiomarker = biomarker
-                    } label: {
-                        BiomarkerRow(biomarker: biomarker)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .sheet(item: $selectedBiomarker) { biomarker in
-            BiomarkerDetailView(biomarker: biomarker, onDelete: {
-                selectedBiomarker = nil
-                onDelete(biomarker)
-            })
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-        }
-    }
-}
-
 private struct BiomarkerRow: View {
     let biomarker: LabBiomarker
     @Environment(\.colorScheme) private var colorScheme
@@ -2466,7 +2411,7 @@ private struct BiomarkerRow: View {
     }
 }
 
-private struct BiomarkerDetailView: View {
+struct BiomarkerDetailView: View {
     let biomarker: LabBiomarker
     let onDelete: () -> Void
     @Environment(\.dismiss) private var dismiss
@@ -2526,7 +2471,8 @@ private struct BiomarkerDetailView: View {
                                 .padding(.vertical, 14)
                         }
                         .buttonStyle(.plain)
-                        .background(Color.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .foregroundStyle(PulsarTabPalette.primaryText)
+                        .background(PulsarTabPalette.separator.opacity(0.7), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                     }
                 }
                 .padding(18)
@@ -2861,48 +2807,21 @@ private struct LabTextField: View {
     }
 }
 
-private struct LabPrivacyFooter: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        VStack(spacing: 7) {
-            HStack(spacing: 7) {
-                Image(systemName: "lock.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                Text("Your data is private and encrypted")
-                    .pulsarTextStyle(.captionEmphasis)
-            }
-            .foregroundStyle(PulsarTheme.fitnessSecondaryText(for: colorScheme))
-
-            Text("Biological Age is an estimate, not a diagnosis or a substitute for medical advice.")
-                .pulsarTextStyle(.caption)
-                .foregroundStyle(PulsarTheme.fitnessTertiaryText(for: colorScheme))
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.horizontal, 20)
-        .padding(.top, 2)
-        .padding(.bottom, 6)
-        .accessibilityElement(children: .combine)
-    }
-}
-
 private enum LabPalette {
-    static func primaryText(for colorScheme: ColorScheme) -> Color {
-        PulsarTheme.fitnessPrimaryText(for: colorScheme)
+    static func primaryText(for _: ColorScheme) -> Color {
+        PulsarTabPalette.primaryText
     }
 
-    static func secondaryText(for colorScheme: ColorScheme) -> Color {
-        PulsarTheme.fitnessSecondaryText(for: colorScheme)
+    static func secondaryText(for _: ColorScheme) -> Color {
+        PulsarTabPalette.secondaryText
     }
 
-    static func tertiaryText(for colorScheme: ColorScheme) -> Color {
-        PulsarTheme.fitnessTertiaryText(for: colorScheme)
+    static func tertiaryText(for _: ColorScheme) -> Color {
+        PulsarTabPalette.tertiaryText
     }
 
     static func glassTint(for _: ColorScheme) -> Color {
-        Color(red: 0.68, green: 0.80, blue: 0.92)
+        Color.white
     }
 
     static func cardBackground(for colorScheme: ColorScheme) -> LinearGradient {
@@ -2910,12 +2829,12 @@ private enum LabPalette {
             colors: colorScheme == .dark
                 ? [
                     Color.white.opacity(0.095),
-                    Color(red: 0.055, green: 0.075, blue: 0.095).opacity(0.38),
+                    Color.black.opacity(0.38),
                     Color.black.opacity(0.14)
                 ]
                 : [
                     Color.white.opacity(0.78),
-                    Color(red: 0.90, green: 0.95, blue: 0.98).opacity(0.48),
+                    Color.white.opacity(0.48),
                     Color.white.opacity(0.20)
                 ],
             startPoint: .topLeading,
@@ -2936,7 +2855,7 @@ private enum LabPalette {
                     .white.opacity(0.96),
                     .white.opacity(0.40),
                     accent(for: colorScheme).opacity(0.18),
-                    Color(red: 0.05, green: 0.17, blue: 0.22).opacity(0.08)
+                    Color.black.opacity(0.08)
                 ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -2951,68 +2870,52 @@ private enum LabPalette {
 
     static func moduleBackground(for colorScheme: ColorScheme) -> Color {
         colorScheme == .dark
-            ? Color(red: 0.115, green: 0.125, blue: 0.140)
-            : Color(red: 0.90, green: 0.94, blue: 0.96)
+            ? Color.black.opacity(0.82)
+            : PulsarTabPalette.pageBackgroundMiddle
     }
 
     static func controlBorder(for colorScheme: ColorScheme) -> Color {
         colorScheme == .dark
             ? .white.opacity(0.14)
-            : Color(red: 0.25, green: 0.50, blue: 0.58).opacity(0.18)
+            : PulsarTabPalette.separator
     }
 
-    static func accent(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 0.50, green: 0.78, blue: 0.90)
-            : Color(red: 0.16, green: 0.46, blue: 0.56)
+    static func accent(for _: ColorScheme) -> Color {
+        PulsarTabPalette.primaryText
     }
 
-    static func accentSoft(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 0.20, green: 0.88, blue: 0.80).opacity(0.12)
-            : Color(red: 0.72, green: 0.93, blue: 0.96).opacity(0.32)
+    static func accentSoft(for _: ColorScheme) -> Color {
+        PulsarTabPalette.separator.opacity(0.7)
     }
 
-    static func positive(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 0.28, green: 0.92, blue: 0.66)
-            : Color(red: 0.00, green: 0.48, blue: 0.34)
+    static func positive(for _: ColorScheme) -> Color {
+        PulsarTabPalette.primaryText
     }
 
-    static func warning(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 1.00, green: 0.60, blue: 0.32)
-            : Color(red: 0.78, green: 0.31, blue: 0.08)
+    static func warning(for _: ColorScheme) -> Color {
+        PulsarTabPalette.secondaryText
     }
 
-    static func older(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 0.66, green: 0.58, blue: 1.00)
-            : Color(red: 0.42, green: 0.33, blue: 0.76)
+    static func older(for _: ColorScheme) -> Color {
+        PulsarTabPalette.primaryText
     }
 
-    static func tealTile(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 0.18, green: 0.88, blue: 0.72)
-            : Color(red: 0.00, green: 0.52, blue: 0.48)
+    static func tealTile(for _: ColorScheme) -> Color {
+        PulsarTabPalette.primaryText
     }
 
-    static func purpleTile(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 0.50, green: 0.42, blue: 1.00)
-            : Color(red: 0.36, green: 0.28, blue: 0.76)
+    static func purpleTile(for _: ColorScheme) -> Color {
+        PulsarTabPalette.secondaryText
     }
 
-    static func negative(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 1.00, green: 0.39, blue: 0.42)
-            : Color(red: 0.78, green: 0.09, blue: 0.18)
+    static func negative(for _: ColorScheme) -> Color {
+        PulsarTabPalette.primaryText
     }
 }
 
 private struct LabModuleBackground: View {
     var body: some View {
-        FitnessWeeklyBackground()
+        PulsarFitnessMonochromeBackground()
     }
 }
 
@@ -3085,9 +2988,7 @@ private extension LabBiomarkerStatus {
         case .high:
             return LabPalette.warning(for: colorScheme)
         case .low:
-            return colorScheme == .dark
-                ? Color(red: 0.72, green: 0.62, blue: 1.0)
-                : Color(red: 0.35, green: 0.28, blue: 0.72)
+            return LabPalette.secondaryText(for: colorScheme)
         case .missing:
             return LabPalette.tertiaryText(for: colorScheme)
         }

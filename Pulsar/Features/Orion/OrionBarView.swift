@@ -5,6 +5,13 @@
 
 import SwiftUI
 
+private enum OrionBarMetrics {
+    static let regularHeight: CGFloat = 50
+    static let compactHeight: CGFloat = 44
+    static let regularCornerRadius: CGFloat = 25
+    static let compactCornerRadius: CGFloat = 22
+}
+
 struct OrionBarView: View {
     var isInlinePlacement = false
     var usesNativeAccessoryChrome = false
@@ -14,7 +21,7 @@ struct OrionBarView: View {
         if #available(iOS 26.0, *) {
             Button(action: onOpen) {
                 label
-                    .modifier(OrionLiquidGlassChromeModifier(
+                    .modifier(PulsarBottomChromeGlassModifier(
                         cornerRadius: cornerRadius,
                         usesNativeAccessoryChrome: usesNativeAccessoryChrome
                     ))
@@ -30,7 +37,7 @@ struct OrionBarView: View {
                         Capsule(style: .continuous)
                             .stroke(.white.opacity(0.18), lineWidth: 0.7)
                     }
-                    .shadow(color: .black.opacity(0.16), radius: 18, x: 0, y: 10)
+                    .shadow(color: .black.opacity(0.10), radius: 14, x: 0, y: 7)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Ask Orion")
@@ -39,16 +46,25 @@ struct OrionBarView: View {
     }
 
     private var cornerRadius: CGFloat {
-        isInlinePlacement ? 23 : 28
+        isInlinePlacement ? OrionBarMetrics.compactCornerRadius : OrionBarMetrics.regularCornerRadius
     }
 
     private var label: some View {
-        HStack(spacing: isInlinePlacement ? 8 : 11) {
-            OrionLogoView(size: isInlinePlacement ? 31 : 38)
+        HStack(spacing: isInlinePlacement ? 8 : 13) {
+            Image("oriononly")
+                .renderingMode(.original)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(
+                    width: isInlinePlacement ? 32 : 38,
+                    height: isInlinePlacement ? 32 : 38
+                )
+                .accessibilityHidden(true)
 
             Text("Ask Orion")
-                .pulsarTextStyle(.buttonTitle)
-                .foregroundStyle(.white.opacity(0.94))
+                .font(.headline.weight(.medium))
+                .foregroundStyle(.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
                 .layoutPriority(1)
@@ -56,100 +72,17 @@ struct OrionBarView: View {
             Spacer(minLength: 0)
 
             Image(systemName: "mic.fill")
-                .font(.system(size: isInlinePlacement ? 15 : 17, weight: .semibold))
+                .font(.system(size: isInlinePlacement ? 15 : 16, weight: .semibold))
                 .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.white.opacity(0.82))
-                .frame(width: isInlinePlacement ? 32 : 38, height: isInlinePlacement ? 32 : 38)
+                .foregroundStyle(.secondary)
+                .frame(width: isInlinePlacement ? 30 : 34, height: isInlinePlacement ? 30 : 34)
                 .accessibilityHidden(true)
         }
-        .padding(.leading, isInlinePlacement ? 7 : 9)
-        .padding(.trailing, isInlinePlacement ? 9 : 11)
+        .padding(.leading, 8)
+        .padding(.trailing, 10)
         .frame(minWidth: 1, maxWidth: .infinity)
-        .frame(height: isInlinePlacement ? 44 : 54)
+        .frame(height: isInlinePlacement ? OrionBarMetrics.compactHeight : OrionBarMetrics.regularHeight)
         .contentShape(.rect(cornerRadius: cornerRadius, style: .continuous))
-    }
-}
-
-private struct OrionLiquidGlassChromeModifier: ViewModifier {
-    let cornerRadius: CGFloat
-    let usesNativeAccessoryChrome: Bool
-
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-
-        if #available(iOS 26.0, *) {
-            if usesNativeAccessoryChrome {
-                content
-                    .overlay {
-                        shape
-                            .stroke(borderHighlight, lineWidth: 0.75)
-                            .blendMode(.plusLighter)
-                    }
-                    .overlay(alignment: .top) {
-                        specularHighlight
-                    }
-                    .overlay(alignment: .bottom) {
-                        lowerRefractionHighlight
-                    }
-            } else {
-                content
-                    .glassEffect(
-                        .regular.interactive(),
-                        in: .rect(cornerRadius: cornerRadius, style: .continuous)
-                    )
-            }
-        } else {
-            content
-        }
-    }
-
-    private var borderHighlight: LinearGradient {
-        LinearGradient(
-            colors: [
-                .white.opacity(0.48),
-                .white.opacity(0.16),
-                .white.opacity(0.03)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    private var specularHighlight: some View {
-        LinearGradient(
-            colors: [
-                .clear,
-                .white.opacity(0.70),
-                .white.opacity(0.24),
-                .clear
-            ],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-        .frame(height: 1.2)
-        .padding(.horizontal, 22)
-        .padding(.top, 1.6)
-        .clipShape(Capsule())
-        .blendMode(.plusLighter)
-        .allowsHitTesting(false)
-    }
-
-    private var lowerRefractionHighlight: some View {
-        LinearGradient(
-            colors: [
-                .clear,
-                .white.opacity(0.18),
-                .clear
-            ],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-        .frame(height: 0.8)
-        .padding(.horizontal, 28)
-        .padding(.bottom, 1)
-        .clipShape(Capsule())
-        .blendMode(.plusLighter)
-        .allowsHitTesting(false)
     }
 }
 
@@ -160,6 +93,7 @@ struct OrionLogoView: View {
         Image("Orion")
             .renderingMode(.original)
             .resizable()
+            .interpolation(.high)
             .scaledToFit()
             .frame(width: size, height: size)
             .accessibilityHidden(true)
@@ -168,7 +102,7 @@ struct OrionLogoView: View {
 
 #Preview("Orion Bar") {
     ZStack {
-        StaticTimeBackgroundView(mode: .night)
+        HomePremiumDesign.background
             .ignoresSafeArea()
 
         VStack {

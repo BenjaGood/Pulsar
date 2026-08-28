@@ -5,6 +5,7 @@ struct PulsarLaunchContainer<Content: View>: View {
     private let content: Content
 
     init(@ViewBuilder content: () -> Content) {
+        PulsarPerformanceSignposts.beginRootInit()
         self.content = content()
     }
 

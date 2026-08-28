@@ -57,6 +57,8 @@ struct OrionNutritionSummary: Codable, Equatable, Sendable {
     var hydrationGoalMilliliters: Int?
     var insightCount: Int
     var summary: String
+    var targetSource: String? = nil
+    var targetGuidelineVersion: String? = nil
 }
 
 struct OrionRecoveryContext: Codable, Equatable, Sendable {
@@ -212,7 +214,9 @@ final class OrionContextProvider: OrionContextProviding {
                 hydrationMilliliters: nil,
                 hydrationGoalMilliliters: nil,
                 insightCount: 0,
-                summary: "No nutrition dashboard is loaded yet."
+                summary: "No nutrition dashboard is loaded yet.",
+                targetSource: nil,
+                targetGuidelineVersion: nil
             )
         }
 
@@ -229,7 +233,13 @@ final class OrionContextProvider: OrionContextProviding {
             hydrationMilliliters: Int(dashboard.hydrationTotal.rounded()),
             hydrationGoalMilliliters: Int(dashboard.target.hydrationTargetMilliliters.rounded()),
             insightCount: dashboard.insights.count,
-            summary: "Nutrition is summarized from today's entries and targets only."
+            summary: "Nutrition is summarized from today's entries and targets only.",
+            targetSource: dashboard.target.source.rawValue,
+            targetGuidelineVersion: dashboard.target.calculationID.flatMap { calculationID in
+                nutritionStore?.state.savedNutritionalCalculations
+                    .first { $0.id == calculationID }?
+                    .result.guidelineVersion
+            }
         )
     }
 

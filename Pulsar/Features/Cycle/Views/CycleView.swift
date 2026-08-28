@@ -16,7 +16,6 @@ struct CycleView: View {
     @StateObject private var trackingStore: CycleTrackingStore
     @StateObject private var bottomChromeLayoutStore = PulsarBottomChromeLayoutStore()
     @State private var selectedDate: Date
-    @State private var showsModelDetails = true
     @State private var activeSheet: CycleActiveSheet?
 
     init(onClose: (() -> Void)? = nil) {
@@ -48,6 +47,7 @@ struct CycleView: View {
         NavigationStack {
             PulsarScreenScaffold(
                 layoutStore: bottomChromeLayoutStore,
+                header: cycleHeaderConfiguration,
                 horizontalPadding: 22,
                 topPadding: 18,
                 spacing: 18,
@@ -55,39 +55,24 @@ struct CycleView: View {
                 background: {
                     CycleModuleBackground()
                 },
+                expandedHeader: {
+                    CycleHeader {
+                        CycleHaptics.selection()
+                        activeSheet = .estimateDetails
+                    }
+                },
                 content: {
-                    CycleHeader()
-
                     if trackingStore.hasCycleData {
-                        CycleHeroCard(model: model)
+                        CycleHeroCard(model: model, summary: summary)
 
-                        CycleWhyTodayRow(model: model) {
+                        CycleActionRow(
+                            title: "Log bleeding",
+                            subtitle: "Add or update period days",
+                            symbolName: "drop.fill"
+                        ) {
                             CycleHaptics.selection()
-                            withAnimation(selectionAnimation) {
-                                showsModelDetails = true
-                            }
+                            activeSheet = .logBleeding
                         }
-
-                        CycleTodayStatusCard(
-                            model: model,
-                            summary: summary,
-                            onLogToday: {
-                                CycleHaptics.selection()
-                                activeSheet = .dailyLog(selectedDate)
-                            }
-                        )
-
-                        CycleTrackingSummaryCard(
-                            summary: summary,
-                            onLogBleeding: {
-                                CycleHaptics.selection()
-                                activeSheet = .logBleeding
-                            },
-                            onEdit: {
-                                CycleHaptics.selection()
-                                activeSheet = .editCycleData
-                            }
-                        )
 
                         CycleDayStrip(
                             days: model.days,
@@ -104,16 +89,20 @@ struct CycleView: View {
 
                         CycleRecommendationSection(recommendations: model.recommendations)
 
-                        CycleHistorySection(summary: summary)
-
-                        CycleTrendsSection(model: model)
-
-                        CycleDataConfidenceCard(summary: summary)
-
-                        CycleModelDetailsCard(
-                            day: model.selectedDay,
-                            inputs: model.selectedInputs,
-                            isExpanded: $showsModelDetails
+                        CycleSecondaryActionsCard(
+                            historyCount: summary.cycleRecords.count,
+                            onLogSymptoms: {
+                                CycleHaptics.selection()
+                                activeSheet = .dailyLog(selectedDate)
+                            },
+                            onShowHistory: {
+                                CycleHaptics.selection()
+                                activeSheet = .history
+                            },
+                            onEditCycle: {
+                                CycleHaptics.selection()
+                                activeSheet = .editCycleData
+                            }
                         )
                     } else {
                         CycleOnboardingCard(trackingStore: trackingStore) {
@@ -121,22 +110,11 @@ struct CycleView: View {
                         }
                     }
 
-                    CycleDisclaimer()
-
-                    CyclePrivacyNote()
+                    CycleFooterNote()
                 }
             )
-            .safeAreaInset(edge: .top, spacing: 0) {
-                CycleTopBar(
-                    onClose: onClose,
-                    showsLogButton: trackingStore.hasCycleData,
-                    onLogBleeding: {
-                        CycleHaptics.selection()
-                        activeSheet = .logBleeding
-                    }
-                )
-            }
             .toolbar(.hidden, for: .navigationBar)
+            .preferredColorScheme(.light)
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
                 case .logBleeding:
@@ -145,6 +123,10 @@ struct CycleView: View {
                     CycleEditCycleDataSheet(trackingStore: trackingStore)
                 case .dailyLog(let date):
                     CycleDailyLogSheet(trackingStore: trackingStore, date: date)
+                case .estimateDetails:
+                    CycleEstimateDetailsSheet(model: model, summary: summary)
+                case .history:
+                    CycleHistorySheet(summary: summary)
                 }
             }
         }
@@ -153,331 +135,215 @@ struct CycleView: View {
     private var selectionAnimation: Animation? {
         reduceMotion ? .easeInOut(duration: 0.16) : .spring(response: 0.34, dampingFraction: 0.84)
     }
+
+    private var cycleHeaderConfiguration: PulsarScreenHeaderConfiguration {
+        var leading: PulsarHeaderItem?
+        if let onClose {
+            leading = .systemImage(
+                "xmark",
+                accessibilityLabel: "Close Cycle",
+                pinned: true,
+                action: onClose
+            )
+        }
+
+        var trailing: [PulsarHeaderItem] = []
+        if trackingStore.hasCycleData {
+            trailing.append(
+                .systemImage(
+                    "calendar.badge.plus",
+                    accessibilityLabel: "Log bleeding",
+                    action: {
+                        CycleHaptics.selection()
+                        activeSheet = .logBleeding
+                    }
+                )
+            )
+        }
+
+        return PulsarScreenHeaderConfiguration(
+            title: "Cycle",
+            leading: leading,
+            trailing: trailing
+        )
+    }
 }
 
 private enum CycleActiveSheet: Identifiable {
     case logBleeding
     case editCycleData
     case dailyLog(Date)
+    case estimateDetails
+    case history
 
     var id: String {
         switch self {
         case .logBleeding: "logBleeding"
         case .editCycleData: "editCycleData"
         case .dailyLog(let date): "dailyLog-\(CycleTrackingCalculator.dateKey(for: date))"
+        case .estimateDetails: "estimateDetails"
+        case .history: "history"
         }
-    }
-}
-
-private struct CycleTopBar: View {
-    let onClose: (() -> Void)?
-    let showsLogButton: Bool
-    let onLogBleeding: () -> Void
-
-    var body: some View {
-        HStack(alignment: .center) {
-            if let onClose {
-                CycleToolbarGlassButton(
-                    systemName: "xmark",
-                    pointSize: 27,
-                    weight: .regular,
-                    accessibilityLabel: "Close Cycle",
-                    action: onClose
-                )
-            } else {
-                Color.clear
-                    .frame(width: 58, height: 58)
-            }
-
-            Spacer(minLength: 12)
-
-            Text("Cycle")
-                .pulsarTextStyle(.sectionHeader)
-                .foregroundStyle(.white.opacity(0.96))
-                .shadow(color: .black.opacity(0.16), radius: 8, y: 4)
-
-            Spacer(minLength: 12)
-
-            if showsLogButton {
-                CycleToolbarGlassButton(
-                    systemName: "calendar.badge.plus",
-                    pointSize: 24,
-                    weight: .semibold,
-                    accessibilityLabel: "Log bleeding",
-                    action: onLogBleeding
-                )
-            } else {
-                Color.clear
-                    .frame(width: 58, height: 58)
-            }
-        }
-        .padding(.horizontal, 24)
-        .padding(.top, 8)
-        .padding(.bottom, 16)
-        .background(alignment: .top) {
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.012, green: 0.020, blue: 0.046).opacity(0.24),
-                            Color(red: 0.026, green: 0.032, blue: 0.060).opacity(0.12),
-                            Color.black.opacity(0.03),
-                            .clear
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .frame(height: 148)
-                .mask(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .black, location: 0.0),
-                            .init(color: .black.opacity(0.98), location: 0.62),
-                            .init(color: .black.opacity(0.56), location: 0.78),
-                            .init(color: .black.opacity(0.0), location: 1.0)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-        }
-        .zIndex(10)
-    }
-}
-
-private struct CycleToolbarGlassButton: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @GestureState private var isPressed = false
-
-    let systemName: String
-    let pointSize: CGFloat
-    let weight: Font.Weight
-    let accessibilityLabel: String
-    let action: () -> Void
-
-    var body: some View {
-        CycleToolbarGlassIcon(systemName: systemName, pointSize: pointSize, weight: weight)
-            .scaleEffect(isPressed && !reduceMotion ? 0.96 : 1)
-            .animation(reduceMotion ? .easeInOut(duration: 0.12) : .spring(response: 0.24, dampingFraction: 0.78), value: isPressed)
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .updating($isPressed) { _, state, _ in
-                        state = true
-                    }
-                    .onEnded { _ in
-                        action()
-                    }
-            )
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text(accessibilityLabel))
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction {
-                action()
-            }
-    }
-}
-
-private struct CycleToolbarGlassIcon: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    let systemName: String
-    let pointSize: CGFloat
-    let weight: Font.Weight
-
-    var body: some View {
-        let shape = Circle()
-
-        Image(systemName: systemName)
-            .font(.system(size: pointSize, weight: weight))
-            .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(.white.opacity(0.95))
-            .frame(width: 56, height: 56)
-            .background(.ultraThinMaterial, in: shape)
-            .background(CyclePalette.toolbarGlassFill(for: colorScheme), in: shape)
-            .overlay {
-                shape
-                    .stroke(CyclePalette.toolbarGlassBorder(for: colorScheme), lineWidth: 0.85)
-            }
-            .overlay(alignment: .topLeading) {
-                shape
-                    .stroke(.white.opacity(colorScheme == .dark ? 0.18 : 0.48), lineWidth: 0.6)
-                    .blur(radius: 0.6)
-                    .mask(
-                        LinearGradient(
-                            colors: [.white, .clear],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            }
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.14 : 0.07), radius: 14, y: 8)
-            .contentShape(shape)
-            .cycleNativeGlass(shape: shape, tintOpacity: 0.055, isInteractive: true)
     }
 }
 
 private struct CycleHeader: View {
+    let onAboutEstimate: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
-        PulsarTabHeader(
-            systemImage: "moonphase.waxing.crescent",
-            title: "Cycle",
-            subtitle: "Track your cycle, symptoms, phases, and wellness trends.",
-            primaryText: .white.opacity(0.97),
-            secondaryText: CyclePalette.softText
-        )
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 12) {
+                    CycleHeaderIdentity()
+                    CycleAboutEstimateButton(action: onAboutEstimate)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            } else {
+                HStack(spacing: 10) {
+                    CycleHeaderIdentity()
+                        .layoutPriority(1)
+                    Spacer(minLength: 2)
+                    CycleAboutEstimateButton(action: onAboutEstimate)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+            }
+        }
+    }
+}
+
+private struct CycleHeaderIdentity: View {
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "moonphase.waxing.crescent")
+                .font(.system(size: 24, weight: .regular))
+                .foregroundStyle(CycleDashboardPalette.primaryText)
+                .frame(width: 50, height: 50)
+                .cycleDashboardSurface(cornerRadius: 20, shadowOpacity: 0.03)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Cycle")
+                    .font(.system(.largeTitle, design: .serif, weight: .regular))
+                    .foregroundStyle(CycleDashboardPalette.primaryText)
+                Text("Track your cycle")
+                    .font(.caption)
+                    .foregroundStyle(CycleDashboardPalette.secondaryText)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+private struct CycleAboutEstimateButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label("About estimate", systemImage: "info.circle.fill")
+                .font(.caption.scaled(by: 0.82).weight(.medium))
+                .foregroundStyle(CycleDashboardPalette.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+                .padding(.horizontal, 8)
+                .frame(minHeight: 44)
+        }
+        .buttonStyle(.plain)
+        .cycleDashboardSurface(cornerRadius: 22, isInteractive: true, shadowOpacity: 0.02)
     }
 }
 
 private struct CycleHeroCard: View {
     let model: CycleViewModel
+    let summary: CycleTrackingSummary
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var day: CycleDayModel { model.selectedDay }
-    private var token: CyclePhaseToken { CyclePalette.phase(day.estimate.phase) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            HStack(alignment: .top, spacing: 18) {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("Estimated phase")
-                        .pulsarTextStyle(.captionEmphasis)
-                        .textCase(.uppercase)
-                        .foregroundStyle(.white.opacity(0.78))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .background(.ultraThinMaterial, in: Capsule(style: .continuous))
-                        .background(CyclePalette.pillGlassFill, in: Capsule(style: .continuous))
-                        .overlay {
-                            Capsule(style: .continuous)
-                                .stroke(.white.opacity(0.14), lineWidth: 0.8)
-                        }
-                        .cycleNativeGlass(shape: Capsule(style: .continuous), tintOpacity: 0.040)
-
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(model.displayPhaseName)
-                            .pulsarTextStyle(.displayLarge)
-                            .foregroundStyle(.white.opacity(0.96))
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.72)
-
-                        CycleConfidenceChip(estimate: day.estimate)
+        VStack(spacing: 16) {
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 18) {
+                        CyclePhaseIdentity(model: model)
+                        CyclePhaseRing(
+                            phase: day.estimate.phase,
+                            cycleDay: day.cycleDay,
+                            predictedCycleLength: model.predictedCycleLength,
+                            progress: model.phaseProgress
+                        )
+                        .frame(width: 138, height: 138)
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Text(token.subtitle)
-                        .pulsarTextStyle(.label)
-                        .foregroundStyle(CyclePalette.softText)
-                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    HStack(alignment: .center, spacing: 12) {
+                        CyclePhaseIdentity(model: model)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        CyclePhaseRing(
+                            phase: day.estimate.phase,
+                            cycleDay: day.cycleDay,
+                            predictedCycleLength: model.predictedCycleLength,
+                            progress: model.phaseProgress
+                        )
+                        .frame(width: 128, height: 128)
+                    }
                 }
+            }
 
-                CyclePhaseRing(
-                    phase: day.estimate.phase,
-                    cycleDay: day.cycleDay,
-                    predictedCycleLength: model.predictedCycleLength,
-                    progress: model.phaseProgress
+            Divider()
+
+            HStack(spacing: 12) {
+                CycleHeroMetric(
+                    title: "Cycle day",
+                    value: day.cycleDay > 0 ? "\(day.cycleDay)" : "—",
+                    symbolName: "calendar"
                 )
-                .frame(width: 132, height: 132)
-                .accessibilityLabel("Cycle phase progress")
-                .accessibilityValue("Day \(day.cycleDay) of about \(model.predictedCycleLength), \(model.displayPhaseName)")
-            }
 
-            HStack(spacing: 10) {
-                CycleHeroMetric(title: "Cycle day", value: "\(day.cycleDay)", symbolName: "calendar")
-                CycleHeroMetric(title: "Next event", value: model.nextEvent, symbolName: "sparkles")
+                Divider()
+                    .frame(height: 54)
+
+                CycleHeroMetric(
+                    title: "Period started",
+                    value: summary.latestCycleStartDate?.monthDayText ?? "Not logged",
+                    symbolName: "drop.fill"
+                )
             }
         }
-        .padding(22)
-        .cycleCard(cornerRadius: 32)
+        .padding(18)
+        .cycleDashboardSurface(cornerRadius: 30)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(model.displayPhaseName), estimate strength \(day.estimate.confidenceLabel.rawValue.lowercased()), cycle day \(day.cycleDay). \(model.nextEvent).")
+        .accessibilityLabel("\(model.displayPhaseName), estimate confidence \(day.estimate.confidenceLabel.rawValue.lowercased()), cycle day \(day.cycleDay).")
     }
 }
 
-private struct CycleWhyTodayRow: View {
+private struct CyclePhaseIdentity: View {
     let model: CycleViewModel
-    var onTap: () -> Void
 
     private var day: CycleDayModel { model.selectedDay }
-    private var token: CyclePhaseToken { CyclePalette.phase(day.estimate.phase) }
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 14) {
-                Image(systemName: "sun.horizon.fill")
-                    .font(.system(size: 19, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.92))
-                    .frame(width: 46, height: 46)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .background(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.12),
-                                CyclePalette.premiumGlassAccent.opacity(0.08),
-                                token.accent.opacity(0.11)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        in: Circle()
-                    )
-                    .overlay {
-                        Circle()
-                            .stroke(.white.opacity(0.24), lineWidth: 0.8)
-                    }
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Current phase")
+                .font(.caption.scaled(by: 0.88).weight(.medium))
+                .textCase(.uppercase)
+                .tracking(0.7)
+                .foregroundStyle(CycleDashboardPalette.secondaryText)
 
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Why today?")
-                        .pulsarTextStyle(.captionEmphasis)
-                        .textCase(.uppercase)
-                        .foregroundStyle(CyclePalette.chartAccent.opacity(0.92))
-                    Text(day.estimate.evidenceSummary.prefix(1).joined(separator: " • "))
-                        .pulsarTextStyle(.cardTitle)
-                        .foregroundStyle(CyclePalette.primaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 8)
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.72))
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .cycleGlassSurface(cornerRadius: 30, tintOpacity: 0.055, isInteractive: true)
-        }
-        .buttonStyle(CyclePressButtonStyle())
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct CycleConfidenceChip: View {
-    let estimate: PhaseEstimate
-
-    var body: some View {
-        Label {
-            Text(estimate.confidenceLabel.rawValue)
-                .pulsarTextStyle(.caption)
-                .lineLimit(1)
+            Text(model.displayPhaseName)
+                .font(.system(.title, design: .serif, weight: .regular).scaled(by: 1.12))
+                .foregroundStyle(CycleDashboardPalette.primaryText)
+                .lineLimit(2)
                 .minimumScaleFactor(0.72)
-        } icon: {
-            Image(systemName: estimate.confidenceLabel.symbolName)
-                .pulsarTextStyle(.overline)
+
+            Label(day.estimate.confidenceLabel.rawValue, systemImage: day.estimate.confidenceLabel.symbolName)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 11)
+                .frame(minHeight: 32)
+                .background(CycleDashboardPalette.primaryText, in: Capsule())
+                .accessibilityLabel("Estimate confidence \(day.estimate.confidenceLabel.rawValue)")
         }
-        .foregroundStyle(CyclePalette.primaryText.opacity(0.90))
-        .fixedSize(horizontal: true, vertical: false)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(CyclePalette.calendarMarkerFill(isSelected: true), in: Capsule(style: .continuous))
-        .cycleNativeGlass(shape: Capsule(style: .continuous), tintOpacity: 0.07, isInteractive: false)
-        .overlay {
-            Capsule(style: .continuous)
-                .stroke(.white.opacity(0.24), lineWidth: 1)
-        }
-        .accessibilityLabel("Estimate strength \(estimate.confidenceLabel.rawValue)")
     }
 }
 
@@ -487,195 +353,70 @@ private struct CycleHeroMetric: View {
     let symbolName: String
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Image(systemName: symbolName)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(CyclePalette.chartAccent.opacity(0.95))
-                .frame(width: 38, height: 38)
-                .background(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.18),
-                            Color(red: 0.035, green: 0.050, blue: 0.086).opacity(0.34),
-                            CyclePalette.premiumGlassAccent.opacity(0.08)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    in: Circle()
-                )
-                .overlay {
-                    Circle()
-                        .stroke(.white.opacity(0.22), lineWidth: 1)
-                }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .pulsarTextStyle(.captionEmphasis)
-                    .textCase(.uppercase)
-                    .foregroundStyle(CyclePalette.softText)
-                    .lineLimit(1)
-                Text(value)
-                    .pulsarTextStyle(title == "Next event" ? .bodyEmphasis : .metricMedium)
-                    .foregroundStyle(CyclePalette.primaryText)
-                    .lineLimit(3)
-                    .minimumScaleFactor(0.78)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cycleGlassSurface(cornerRadius: 20, tintOpacity: 0.045)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct CycleTodayStatusCard: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    let model: CycleViewModel
-    let summary: CycleTrackingSummary
-    var onLogToday: () -> Void
-
-    private var day: CycleDayModel { model.selectedDay }
-    private var token: CyclePhaseToken { CyclePalette.phase(day.estimate.phase) }
-
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Image("CycleLeaf")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 188)
-                .opacity(0.34)
-                .saturation(0.82)
-                .offset(x: 58, y: 18)
+                .font(.body)
+                .foregroundStyle(CycleDashboardPalette.primaryText)
+                .frame(width: 28)
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 22) {
-                HStack(alignment: .top, spacing: 14) {
-                    Image(systemName: "leaf.fill")
-                        .font(.system(size: 23, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.94))
-                        .frame(width: 56, height: 56)
-                        .background(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.18),
-                                    CyclePalette.premiumGlassAccent.opacity(0.14),
-                                    CyclePalette.premiumGlassAccent.opacity(0.20)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            in: Circle()
-                        )
-                        .overlay {
-                            Circle()
-                                .stroke(.white.opacity(0.30), lineWidth: 1)
-                        }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Today's status")
-                            .pulsarTextStyle(.sectionHeader)
-                            .foregroundStyle(CyclePalette.primaryText)
-                        Text(statusText)
-                            .pulsarTextStyle(.label)
-                            .foregroundStyle(CyclePalette.softText)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 72)
-                }
-
-                HStack(spacing: 12) {
-                    CycleStatusChip(title: "Phase", value: CyclePalette.phase(day.estimate.phase).name, symbolName: "moonphase.waxing.crescent", tint: token.accent)
-                    CycleStatusChip(title: "Strength", value: day.estimate.confidenceLabel.rawValue, symbolName: "gauge.with.dots.needle.bottom.50percent", tint: token.accent)
-                }
-
-                Button {
-                    onLogToday()
-                } label: {
-                    Label("Log symptoms", systemImage: "list.clipboard.fill")
-                        .pulsarTextStyle(.buttonTitle)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .foregroundStyle(CyclePalette.primaryText)
-                        .background(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.14),
-                                    CyclePalette.premiumGlassAccent.opacity(0.12),
-                                    Color(red: 0.045, green: 0.055, blue: 0.090).opacity(0.26)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            in: Capsule(style: .continuous)
-                        )
-                        .cycleNativeGlass(shape: Capsule(style: .continuous), tintOpacity: 0.09, isInteractive: true)
-                        .overlay {
-                            Capsule(style: .continuous)
-                                .stroke(CyclePalette.glassBorder(for: colorScheme), lineWidth: 1)
-                        }
-                }
-                .buttonStyle(CyclePressButtonStyle())
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.caption.scaled(by: 0.78).weight(.medium))
+                    .textCase(.uppercase)
+                    .tracking(0.45)
+                    .foregroundStyle(CycleDashboardPalette.secondaryText)
+                Text(value)
+                    .font(.body)
+                    .foregroundStyle(CycleDashboardPalette.primaryText)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.76)
             }
-            .padding(22)
-            .zIndex(1)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-        .cycleCard(cornerRadius: 32)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
-    }
-
-    private var statusText: String {
-        let cycleDay = summary.currentCycleDay.map { "cycle day \($0)" } ?? "your current cycle day"
-        return "Estimated from logged bleeding and symptoms. You are on \(cycleDay); recommendations flex with today's symptoms, sleep, and energy."
     }
 }
 
-private struct CycleStatusChip: View {
+private struct CycleActionRow: View {
     let title: String
-    let value: String
+    let subtitle: String
     let symbolName: String
-    let tint: Color
+    let action: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: symbolName)
-                .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.92))
-                .frame(width: 44, height: 44)
-                .background(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.14),
-                            CyclePalette.premiumGlassAccent.opacity(0.10),
-                            Color.black.opacity(0.08)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    in: Circle()
-                )
+        Button(action: action) {
+            HStack(spacing: 14) {
+                Image(systemName: symbolName)
+                    .font(.body)
+                    .foregroundStyle(.white)
+                    .frame(width: 42, height: 42)
+                    .background(CycleDashboardPalette.primaryText, in: Circle())
+                    .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .pulsarTextStyle(.overline)
-                    .textCase(.uppercase)
-                    .foregroundStyle(CyclePalette.softText)
-                Text(value)
-                    .pulsarTextStyle(.cardTitle)
-                    .foregroundStyle(title == "Phase" ? CyclePalette.chartAccent.opacity(0.98) : CyclePalette.primaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.74)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(.headline, design: .serif, weight: .regular))
+                        .foregroundStyle(CycleDashboardPalette.primaryText)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(CycleDashboardPalette.secondaryText)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(CycleDashboardPalette.tertiaryText)
+                    .accessibilityHidden(true)
             }
+            .padding(.horizontal, 16)
+            .frame(minHeight: 68)
+            .contentShape(.rect)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cycleGlassSurface(cornerRadius: 22, tintOpacity: 0.07)
+        .buttonStyle(CyclePressButtonStyle())
+        .cycleDashboardSurface(cornerRadius: 24, isInteractive: true)
+        .accessibilityHint("Opens the bleeding log")
     }
 }
 
@@ -698,16 +439,17 @@ private struct CycleOnboardingCard: View {
             HStack(alignment: .top, spacing: 14) {
                 Image(systemName: "calendar.badge.plus")
                     .pulsarTextStyle(.sectionHeader)
-                    .foregroundStyle(CyclePalette.phase(.menstrual).accent)
+                    .foregroundStyle(CycleDashboardPalette.primaryText)
                     .frame(width: 46, height: 46)
-                    .background(CyclePalette.phase(.menstrual).tint, in: Circle())
+                    .background(CycleDashboardPalette.subtleFill, in: Circle())
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Set up cycle tracking")
                         .pulsarTextStyle(.title)
+                        .foregroundStyle(CycleDashboardPalette.primaryText)
                     Text("Start with the first day of your most recent period. Pulsar will use bleeding days as the foundation for estimates.")
                         .pulsarTextStyle(.label)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(CycleDashboardPalette.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -748,15 +490,15 @@ private struct CycleOnboardingCard: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
             }
-            .pulsarGlassProminent(tint: CyclePalette.phase(.luteal).accent.opacity(0.48))
+            .pulsarGlassProminent(tint: CycleDashboardPalette.primaryText)
 
             Text("Predictions improve as you log more cycles.")
                 .pulsarTextStyle(.metadata)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(CycleDashboardPalette.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(18)
-        .cycleCard(cornerRadius: 30)
+        .cycleDashboardSurface(cornerRadius: 30)
     }
 }
 
@@ -890,47 +632,119 @@ private struct CycleSummaryMetric: View {
 
 private struct CyclePredictionsCard: View {
     let summary: CycleTrackingSummary
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "calendar.badge.clock")
-                    .pulsarTextStyle(.cardTitle)
-                    .foregroundStyle(CyclePalette.premiumGold)
-                    .frame(width: 38, height: 38)
-                    .background(CyclePalette.calendarMarkerFill(isSelected: false), in: Circle())
-                    .cycleNativeGlass(shape: Circle(), tintOpacity: 0.055)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Overview")
+                .font(.caption.weight(.medium))
+                .textCase(.uppercase)
+                .tracking(0.7)
+                .foregroundStyle(CycleDashboardPalette.secondaryText)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Predictions")
-                        .pulsarTextStyle(.cardTitle)
-                    Text("Estimated from your logged history. Dates can shift when cycles vary or logs are limited.")
-                        .pulsarTextStyle(.metadata)
-                        .foregroundStyle(CyclePalette.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(spacing: 0) {
+                        CycleOverviewMetric(
+                            title: "Next period",
+                            value: summary.estimatedNextPeriodDate?.monthDayText ?? "More logs needed",
+                            symbolName: "calendar"
+                        )
+                        Divider()
+                        CycleOverviewMetric(
+                            title: "Ovulation window",
+                            value: dateRange(summary.estimatedOvulationStart, summary.estimatedOvulationEnd),
+                            symbolName: "sparkles"
+                        )
+                        Divider()
+                        CycleOverviewMetric(
+                            title: "Fertile window",
+                            value: dateRange(summary.estimatedFertileWindowStart, summary.estimatedFertileWindowEnd),
+                            symbolName: "leaf"
+                        )
+                        Divider()
+                        CycleOverviewMetric(
+                            title: "Cycle length",
+                            value: "\(summary.averageCycleLength) days",
+                            symbolName: "waveform.path.ecg"
+                        )
+                    }
+                } else {
+                    VStack(spacing: 0) {
+                        HStack(spacing: 0) {
+                            CycleOverviewMetric(
+                                title: "Next period",
+                                value: summary.estimatedNextPeriodDate?.monthDayText ?? "More logs needed",
+                                symbolName: "calendar"
+                            )
+                            Divider()
+                            CycleOverviewMetric(
+                                title: "Ovulation window",
+                                value: dateRange(summary.estimatedOvulationStart, summary.estimatedOvulationEnd),
+                                symbolName: "sparkles"
+                            )
+                        }
+
+                        Divider()
+
+                        HStack(spacing: 0) {
+                            CycleOverviewMetric(
+                                title: "Fertile window",
+                                value: dateRange(summary.estimatedFertileWindowStart, summary.estimatedFertileWindowEnd),
+                                symbolName: "leaf"
+                            )
+                            Divider()
+                            CycleOverviewMetric(
+                                title: "Cycle length",
+                                value: "\(summary.averageCycleLength) days",
+                                symbolName: "waveform.path.ecg"
+                            )
+                        }
+                    }
                 }
             }
-
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
-                CycleSummaryMetric(title: "Next period", value: summary.estimatedNextPeriodDate?.monthDayText ?? "More logs needed")
-                CycleSummaryMetric(title: "Ovulation window", value: dateRange(summary.estimatedOvulationStart, summary.estimatedOvulationEnd))
-                CycleSummaryMetric(title: "Fertile window", value: dateRange(summary.estimatedFertileWindowStart, summary.estimatedFertileWindowEnd))
-                CycleSummaryMetric(title: "Typical cycle", value: "\(summary.averageCycleLength) days")
-            }
-
-            Text("Fertile-window estimates are wellness context only and should not be used as contraception.")
-                .pulsarTextStyle(.metadata)
-                .foregroundStyle(CyclePalette.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
-        .cycleCard(cornerRadius: 26)
+        .cycleDashboardSurface(cornerRadius: 28)
     }
 
     private func dateRange(_ start: Date?, _ end: Date?) -> String {
         guard let start, let end else { return "More logs needed" }
         if CycleDate.isSameDay(start, end) { return start.monthDayText }
-        return "\(start.monthDayText)-\(end.monthDayText)"
+        return "\(start.monthDayText)–\(end.monthDayText)"
+    }
+}
+
+private struct CycleOverviewMetric: View {
+    let title: String
+    let value: String
+    let symbolName: String
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: symbolName)
+                .font(.body)
+                .foregroundStyle(CycleDashboardPalette.primaryText)
+                .frame(width: 28)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.caption.scaled(by: 0.76).weight(.medium))
+                    .textCase(.uppercase)
+                    .foregroundStyle(CycleDashboardPalette.secondaryText)
+                    .lineLimit(2)
+                Text(value)
+                    .font(.subheadline)
+                    .foregroundStyle(CycleDashboardPalette.primaryText)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.72)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -1090,66 +904,33 @@ private struct CyclePhaseRing: View {
 
             ZStack {
                 Circle()
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.34),
-                                Color.white.opacity(0.12),
-                                token.accent.opacity(0.22)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        style: StrokeStyle(lineWidth: 12, lineCap: .round)
-                    )
+                    .stroke(CycleDashboardPalette.ringTrack, style: StrokeStyle(lineWidth: 10, lineCap: .round))
                     .accessibilityHidden(true)
 
                 Circle()
                     .trim(from: 0, to: CGFloat(displayedProgress))
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                token.accent.opacity(0.92),
-                                CyclePalette.chartAccent.opacity(0.72),
-                                Color.white.opacity(0.36)
-                            ],
-                            startPoint: .bottomLeading,
-                            endPoint: .topTrailing
-                        ),
-                        style: StrokeStyle(lineWidth: 12, lineCap: .round)
-                    )
+                    .stroke(CycleDashboardPalette.ringActive, style: StrokeStyle(lineWidth: 10, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                    .shadow(color: token.accent.opacity(0.18), radius: 8, y: 3)
                     .accessibilityHidden(true)
 
                 Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.96),
-                                CyclePalette.chartAccent.opacity(0.88)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 16, height: 16)
-                    .shadow(color: token.accent.opacity(0.28), radius: 6, y: 2)
+                    .fill(CycleDashboardPalette.primaryText)
+                    .frame(width: 12, height: 12)
                     .offset(progressDotOffset(diameter: diameter))
                     .accessibilityHidden(true)
 
-                VStack(spacing: 1) {
+                VStack(spacing: 0) {
                     Text("\(cycleDay)")
-                        .pulsarTextStyle(.metricLarge)
-                        .foregroundStyle(.white.opacity(0.96))
+                        .font(.system(.largeTitle, design: .serif, weight: .regular).scaled(by: 1.10))
+                        .foregroundStyle(CycleDashboardPalette.primaryText)
                         .monospacedDigit()
                     Text("day")
-                        .pulsarTextStyle(.overline)
+                        .font(.caption.weight(.medium))
                         .textCase(.uppercase)
-                        .foregroundStyle(CyclePalette.softText)
+                        .foregroundStyle(CycleDashboardPalette.primaryText)
                     Text(token.marker)
-                        .pulsarTextStyle(.captionEmphasis)
-                        .foregroundStyle(token.accent.opacity(0.95))
+                        .font(.caption)
+                        .foregroundStyle(CycleDashboardPalette.secondaryText)
                 }
                 .minimumScaleFactor(0.78)
             }
@@ -1167,7 +948,7 @@ private struct CyclePhaseRing: View {
     }
 
     private func progressDotOffset(diameter: CGFloat) -> CGSize {
-        let radius = diameter / 2 - 6
+        let radius = diameter / 2 - 5
         let angle = displayedProgress * 2 * Double.pi - Double.pi / 2
         return CGSize(
             width: CGFloat(cos(angle)) * radius,
@@ -1184,37 +965,30 @@ private struct CycleDayStrip: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .lastTextBaseline) {
-                Text("Daily view")
-                    .pulsarTextStyle(.cardTitle)
-                Spacer()
-                Text("14+ days")
-                    .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(CyclePalette.secondaryText)
-            }
-            .padding(.horizontal, 2)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Daily view")
+                .font(.caption.weight(.medium))
+                .textCase(.uppercase)
+                .tracking(0.7)
+                .foregroundStyle(CycleDashboardPalette.secondaryText)
 
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
+                    LazyHStack(spacing: 6) {
                         ForEach(days) { day in
-                            Button {
-                                onSelectDate(day.date)
-                            } label: {
-                                CycleDayCell(day: day, isSelected: day.date == selectedDate)
+                            Button(action: { onSelectDate(day.date) }) {
+                                CycleDayCell(day: day, isSelected: CycleDate.isSameDay(day.date, selectedDate))
                             }
                             .buttonStyle(CyclePressButtonStyle())
                             .id(day.date)
                             .accessibilityLabel(day.accessibilityLabel)
                             .accessibilityValue("Estimate strength \(day.estimate.confidenceLabel.rawValue)")
-                            .accessibilityHint("Selects this day and updates recommendations, trends, and model rationale.")
+                            .accessibilityHint("Selects this day and updates the phase and guidance.")
                         }
                     }
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 2)
+                    .padding(.vertical, 2)
                 }
-                .onAppear {
+                .task {
                     proxy.scrollTo(selectedDate, anchor: .center)
                 }
                 .onChange(of: selectedDate) { _, newValue in
@@ -1223,112 +997,102 @@ private struct CycleDayStrip: View {
                     }
                 }
             }
+
+            HStack(spacing: 10) {
+                Rectangle()
+                    .fill(CycleDashboardPalette.divider)
+                    .frame(height: 1)
+
+                Label(selectedPhaseName, systemImage: "moonphase.waxing.crescent")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(CycleDashboardPalette.primaryText)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+
+                Rectangle()
+                    .fill(CycleDashboardPalette.divider)
+                    .frame(height: 1)
+            }
         }
+        .padding(16)
+        .cycleDashboardSurface(cornerRadius: 28)
+    }
+
+    private var selectedPhaseName: String {
+        guard let selectedDay = days.first(where: { CycleDate.isSameDay($0.date, selectedDate) }) else {
+            return "Cycle phase"
+        }
+        if selectedDay.estimate.phase == .luteal, selectedDay.cycleDay >= 24 {
+            return "Late luteal"
+        }
+        return CyclePalette.phase(selectedDay.estimate.phase).name
     }
 }
 
 private struct CycleDayCell: View {
     let day: CycleDayModel
     let isSelected: Bool
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .body) private var cellWidth: CGFloat = 50
+    @ScaledMetric(relativeTo: .body) private var cellMinimumHeight: CGFloat = 104
 
     private var token: CyclePhaseToken { CyclePalette.phase(day.estimate.phase) }
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 5) {
             Text(day.weekdayText)
-                .pulsarTextStyle(.overline)
+                .font(.caption.scaled(by: 0.72).weight(.medium))
                 .textCase(.uppercase)
-                .foregroundStyle(isSelected ? CyclePalette.primaryText.opacity(0.90) : CyclePalette.secondaryText)
+                .foregroundStyle(isSelected ? Color.white.opacity(0.86) : CycleDashboardPalette.secondaryText)
 
             Text(day.dayNumberText)
-                .pulsarTextStyle(.metricMedium)
-                .foregroundStyle(CyclePalette.primaryText)
+                .font(.system(.title3, design: .serif, weight: .regular))
+                .foregroundStyle(isSelected ? .white : CycleDashboardPalette.primaryText)
                 .monospacedDigit()
 
-            VStack(spacing: 3) {
-                Text(token.marker)
-                    .pulsarTextStyle(.overline)
-                    .foregroundStyle(isSelected ? CyclePalette.primaryText : CyclePalette.chartAccent.opacity(0.92))
-                    .frame(width: 24, height: 24)
-                    .background(CyclePalette.calendarMarkerFill(isSelected: isSelected), in: Circle())
-                    .overlay {
-                        Circle()
-                            .stroke(isSelected ? CyclePalette.chartAccent.opacity(0.50) : .white.opacity(0.14), lineWidth: 1)
-                    }
+            Text(token.marker)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(isSelected ? .white : CycleDashboardPalette.primaryText)
+                .frame(width: 24, height: 24)
+                .background(isSelected ? Color.white.opacity(0.12) : CycleDashboardPalette.subtleFill, in: Circle())
 
-                if day.isToday {
-                    Text("Today")
-                        .pulsarTextStyle(.overline)
-                        .foregroundStyle(isSelected ? CyclePalette.primaryText.opacity(0.88) : CyclePalette.secondaryText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                }
-            }
-
-            HStack(spacing: 3) {
-                ForEach(day.markers.prefix(3)) { marker in
-                    Text(marker.shortLabel)
-                        .font(.system(size: 7, weight: .semibold, design: .rounded))
-                        .foregroundStyle(CyclePalette.primaryText.opacity(0.82))
-                        .frame(minWidth: 15, minHeight: 15)
-                        .padding(.horizontal, 2)
-                        .background(CyclePalette.calendarMarkerFill(isSelected: isSelected), in: Capsule(style: .continuous))
-                        .accessibilityHidden(true)
-                }
-            }
-            .frame(height: 17)
+            Text(day.isToday ? "Today" : " ")
+                .font(.caption.scaled(by: 0.70).weight(.medium))
+                .foregroundStyle(isSelected ? Color.white.opacity(0.88) : CycleDashboardPalette.secondaryText)
+                .lineLimit(1)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 10)
-        .frame(width: 66)
-        .frame(minHeight: 124)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(CyclePalette.calendarCellFill(isSelected: isSelected))
-        )
-        .cycleNativeGlass(
-            shape: RoundedRectangle(cornerRadius: 22, style: .continuous),
-            tintOpacity: isSelected ? 0.085 : 0.045,
-            isInteractive: true
-        )
+        .padding(.horizontal, 5)
+        .padding(.vertical, 9)
+        .frame(width: cellWidth)
+        .frame(minHeight: cellMinimumHeight)
+        .background(isSelected ? CycleDashboardPalette.primaryText : CycleDashboardPalette.dayFill, in: RoundedRectangle(cornerRadius: 18))
         .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(isSelected ? CyclePalette.chartAccent.opacity(0.64) : .white.opacity(0.14), lineWidth: isSelected ? 1.35 : 1)
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(isSelected ? Color.clear : CycleDashboardPalette.divider, lineWidth: 0.8)
         }
-        .shadow(color: .black.opacity(isSelected ? 0.22 : 0.14), radius: isSelected ? 18 : 12, y: isSelected ? 10 : 7)
-        .animation(reduceMotion ? .easeInOut(duration: 0.16) : .spring(response: 0.34, dampingFraction: 0.84), value: isSelected)
     }
 }
 
 private struct CycleRecommendationSection: View {
     let recommendations: DailyRecommendations
 
-    private let columns = [
-        GridItem(.adaptive(minimum: 230), spacing: 12, alignment: .top)
-    ]
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .lastTextBaseline) {
-                Text("Today's guidance")
-                    .pulsarTextStyle(.cardTitle)
-                Spacer()
-                Text(recommendations.rationaleTags.joined(separator: " / "))
-                    .pulsarTextStyle(.captionEmphasis)
-                    .foregroundStyle(CyclePalette.secondaryText)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.trailing)
-            }
-            .padding(.horizontal, 2)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Today's guidance")
+                .font(.caption.weight(.medium))
+                .textCase(.uppercase)
+                .tracking(0.7)
+                .foregroundStyle(CycleDashboardPalette.secondaryText)
 
-            LazyVGrid(columns: columns, spacing: 12) {
+            VStack(spacing: 0) {
                 CycleRecommendationCard(kind: .move, recommendation: recommendations.move)
+                Divider().padding(.leading, 56)
                 CycleRecommendationCard(kind: .fuel, recommendation: recommendations.fuel)
+                Divider().padding(.leading, 56)
                 CycleRecommendationCard(kind: .recover, recommendation: recommendations.recover)
             }
         }
+        .padding(16)
+        .cycleDashboardSurface(cornerRadius: 28)
     }
 }
 
@@ -1336,46 +1100,31 @@ private struct CycleRecommendationCard: View {
     let kind: RecommendationKind
     let recommendation: Recommendation
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isVisible = false
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack(spacing: 10) {
-                Image(systemName: kind.symbolName)
-                    .pulsarTextStyle(.label)
-                    .foregroundStyle(kind.accent)
-                    .frame(width: 32, height: 32)
-                    .background(kind.tint, in: Circle())
+        HStack(spacing: 12) {
+            Image(systemName: kind.symbolName)
+                .font(.body)
+                .foregroundStyle(.white)
+                .frame(width: 42, height: 42)
+                .background(CycleDashboardPalette.primaryText, in: Circle())
+                .accessibilityHidden(true)
 
+            VStack(alignment: .leading, spacing: 2) {
                 Text(kind.title)
-                    .pulsarTextStyle(.captionEmphasis)
-                    .textCase(.uppercase)
-                    .foregroundStyle(CyclePalette.secondaryText)
+                    .font(.system(.headline, design: .serif, weight: .regular))
+                    .foregroundStyle(CycleDashboardPalette.primaryText)
+                Text(recommendation.title)
+                    .font(.caption)
+                    .foregroundStyle(CycleDashboardPalette.secondaryText)
+                    .lineLimit(2)
             }
 
-            Text(recommendation.title)
-                .pulsarTextStyle(.cardTitle)
-                .foregroundStyle(CyclePalette.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text(recommendation.body)
-                .pulsarTextStyle(.label)
-                .foregroundStyle(CyclePalette.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cycleCard(cornerRadius: 24)
-        .opacity(isVisible ? 1 : 0)
-        .offset(y: isVisible || reduceMotion ? 0 : 8)
-        .onAppear {
-            withAnimation(reduceMotion ? .easeInOut(duration: 0.14) : .easeOut(duration: 0.34)) {
-                isVisible = true
-            }
-        }
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(kind.title). \(recommendation.title). \(recommendation.body)")
+        .accessibilityLabel("\(kind.title). \(recommendation.title)")
     }
 }
 
@@ -1632,32 +1381,276 @@ private struct CycleRawInputRow: View {
     }
 }
 
-private struct CycleDisclaimer: View {
+private struct CycleSecondaryActionsCard: View {
+    let historyCount: Int
+    let onLogSymptoms: () -> Void
+    let onShowHistory: () -> Void
+    let onEditCycle: () -> Void
+
     var body: some View {
-        Text("Wellness guidance only. This screen assumes adult spontaneous cycles and is not a diagnosis tool. Adapt the model for pregnancy, postpartum, hormonal contraception, or clinician-directed care.")
-            .pulsarTextStyle(.caption)
-            .foregroundStyle(CyclePalette.secondaryText)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 8)
+        VStack(spacing: 0) {
+            CycleSecondaryActionRow(
+                title: "Log symptoms",
+                detail: "For the selected day",
+                symbolName: "list.clipboard",
+                action: onLogSymptoms
+            )
+            Divider().padding(.leading, 54)
+            CycleSecondaryActionRow(
+                title: "Cycle history",
+                detail: "\(historyCount) logged",
+                symbolName: "clock.arrow.circlepath",
+                action: onShowHistory
+            )
+            Divider().padding(.leading, 54)
+            CycleSecondaryActionRow(
+                title: "Edit cycle data",
+                detail: "Dates and baselines",
+                symbolName: "slider.horizontal.3",
+                action: onEditCycle
+            )
+        }
+        .padding(.horizontal, 14)
+        .cycleDashboardSurface(cornerRadius: 26)
     }
 }
 
-private struct CyclePrivacyNote: View {
+private struct CycleSecondaryActionRow: View {
+    let title: String
+    let detail: String
+    let symbolName: String
+    let action: () -> Void
+
     var body: some View {
-        Label {
-            Text("Cycle logs stay in local Pulsar storage on this device. Keep notification text private if you add reminders later.")
-                .pulsarTextStyle(.caption)
-                .foregroundStyle(CyclePalette.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-        } icon: {
-            Image(systemName: "lock.shield.fill")
-                .foregroundStyle(CyclePalette.phase(.follicular).accent)
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: symbolName)
+                    .font(.subheadline)
+                    .foregroundStyle(CycleDashboardPalette.primaryText)
+                    .frame(width: 32, height: 32)
+                    .background(CycleDashboardPalette.subtleFill, in: Circle())
+                    .accessibilityHidden(true)
+
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(CycleDashboardPalette.primaryText)
+
+                Spacer(minLength: 8)
+
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(CycleDashboardPalette.secondaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(CycleDashboardPalette.tertiaryText)
+                    .accessibilityHidden(true)
+            }
+            .frame(minHeight: 56)
+            .contentShape(.rect)
         }
-        .padding(14)
+        .buttonStyle(CyclePressButtonStyle())
+    }
+}
+
+private struct CycleFooterNote: View {
+    var body: some View {
+        VStack(spacing: 8) {
+            Label("Your cycle data stays on this device.", systemImage: "shield")
+                .font(.caption)
+                .foregroundStyle(CycleDashboardPalette.secondaryText)
+
+            Text("Cycle and fertility dates are estimates, not contraception or diagnosis.")
+                .font(.caption.scaled(by: 0.86))
+                .foregroundStyle(CycleDashboardPalette.tertiaryText)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+    }
+}
+
+private struct CycleEstimateDetailsSheet: View {
+    let model: CycleViewModel
+    let summary: CycleTrackingSummary
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    CycleEstimateConfidenceCard(summary: summary)
+
+                    CycleDetailSection(title: "Why this phase") {
+                        ForEach(model.selectedDay.estimate.evidenceSummary, id: \.self) { line in
+                            Label(line, systemImage: "checkmark.circle")
+                                .font(.subheadline)
+                                .foregroundStyle(CycleDashboardPalette.primaryText)
+                        }
+                    }
+
+                    CycleDetailSection(title: "Model rationale") {
+                        ForEach(model.selectedDay.rationaleLines, id: \.self) { line in
+                            Text(line)
+                                .font(.subheadline)
+                                .foregroundStyle(CycleDashboardPalette.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    if !model.selectedInputs.isEmpty {
+                        CycleDetailSection(title: "Signals used") {
+                            ForEach(model.selectedInputs) { input in
+                                HStack(alignment: .top, spacing: 10) {
+                                    Image(systemName: input.type.symbolName)
+                                        .frame(width: 24)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(input.type.title)
+                                            .font(.subheadline.weight(.medium))
+                                        Text("\(input.value.summary) · \(input.date.monthDayText)")
+                                            .font(.caption)
+                                            .foregroundStyle(CycleDashboardPalette.secondaryText)
+                                    }
+                                }
+                                .foregroundStyle(CycleDashboardPalette.primaryText)
+                            }
+                        }
+                    }
+
+                    Text("Fertile-window estimates are wellness context only and should not be used as contraception.")
+                        .font(.caption)
+                        .foregroundStyle(CycleDashboardPalette.secondaryText)
+                        .padding(.horizontal, 4)
+                }
+                .padding(20)
+            }
+            .background(CycleModuleBackground())
+            .navigationTitle("About estimate")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: dismiss.callAsFunction)
+                }
+            }
+        }
+        .preferredColorScheme(.light)
+    }
+}
+
+private struct CycleEstimateConfidenceCard: View {
+    let summary: CycleTrackingSummary
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: summary.predictionConfidence.symbolName)
+                .font(.title3)
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background(CycleDashboardPalette.primaryText, in: Circle())
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Estimate confidence")
+                    .font(.caption.weight(.medium))
+                    .textCase(.uppercase)
+                    .foregroundStyle(CycleDashboardPalette.secondaryText)
+                Text(summary.predictionConfidence.rawValue)
+                    .font(.system(.title2, design: .serif, weight: .regular))
+                    .foregroundStyle(CycleDashboardPalette.primaryText)
+                Text("\(summary.cycleLengthSamples.count) complete cycle intervals used")
+                    .font(.caption)
+                    .foregroundStyle(CycleDashboardPalette.secondaryText)
+            }
+        }
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cycleGlassSurface(cornerRadius: 20, tintOpacity: 0.045)
+        .cycleDashboardSurface(cornerRadius: 26)
+    }
+}
+
+private struct CycleDetailSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.caption.weight(.medium))
+                .textCase(.uppercase)
+                .tracking(0.7)
+                .foregroundStyle(CycleDashboardPalette.secondaryText)
+            content
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cycleDashboardSurface(cornerRadius: 26)
+    }
+}
+
+private struct CycleHistorySheet: View {
+    let summary: CycleTrackingSummary
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(spacing: 10) {
+                    if summary.cycleRecords.isEmpty {
+                        ContentUnavailableView(
+                            "No cycle history",
+                            systemImage: "calendar",
+                            description: Text("Log bleeding to build your cycle history.")
+                        )
+                    } else {
+                        ForEach(Array(summary.cycleRecords.reversed())) { record in
+                            CycleHistoryCompactRow(record: record)
+                        }
+                    }
+                }
+                .padding(20)
+            }
+            .background(CycleModuleBackground())
+            .navigationTitle("Cycle history")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: dismiss.callAsFunction)
+                }
+            }
+        }
+        .preferredColorScheme(.light)
+    }
+}
+
+private struct CycleHistoryCompactRow: View {
+    let record: CycleRecord
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "calendar")
+                .font(.subheadline)
+                .frame(width: 38, height: 38)
+                .background(CycleDashboardPalette.subtleFill, in: Circle())
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(record.period.startDate.monthDayText)
+                    .font(.system(.headline, design: .serif, weight: .regular))
+                Text("\(record.period.dayCount) bleeding days · \(record.symptoms.count) symptom logs")
+                    .font(.caption)
+                    .foregroundStyle(CycleDashboardPalette.secondaryText)
+            }
+
+            Spacer(minLength: 8)
+
+            Text(record.length.map { "\($0) days" } ?? "Current")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(CycleDashboardPalette.secondaryText)
+        }
+        .foregroundStyle(CycleDashboardPalette.primaryText)
+        .padding(14)
+        .cycleDashboardSurface(cornerRadius: 22)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -2339,6 +2332,7 @@ private struct CycleEditCycleDataSheet: View {
     @State private var selectedSymptoms: Set<CycleSymptomKind>
     @State private var symptomSeverity: Int
     @State private var note: String
+    @FocusState private var isNoteFocused: Bool
     private let originalLatestPeriodDates: Set<Date>
 
     init(trackingStore: CycleTrackingStore) {
@@ -2361,53 +2355,15 @@ private struct CycleEditCycleDataSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Label("Edit cycle data", systemImage: "slider.horizontal.3")
-                            .pulsarTextStyle(.title)
-                        Text("Adjust your baseline and bleeding days. Estimates update as soon as you save.")
-                            .pulsarTextStyle(.label)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(18)
-                    .cycleCard(cornerRadius: 26)
+                LazyVStack(alignment: .leading, spacing: CycleEditDesign.sectionSpacing) {
+                    CycleEditSheetHeader(action: dismiss.callAsFunction)
 
-                    VStack(spacing: 12) {
-                        CycleDatePickerRow(
-                            title: "Last period started",
-                            selection: $lastPeriodStartDate
-                        )
-
-                        CycleStepperRow(
-                            title: "Bleeding lasted",
-                            value: $averagePeriodLength,
-                            range: 1...14,
-                            suffix: "days"
-                        )
-
-                        CycleStepperRow(
-                            title: "Average cycle length",
-                            value: $averageCycleLength,
-                            range: 15...90,
-                            suffix: "days"
-                        )
-
-                        Button {
-                            CycleHaptics.selection()
-                            applyPeriodRange()
-                        } label: {
-                            Label("Apply period range to calendar", systemImage: "calendar.badge.plus")
-                                .pulsarTextStyle(.label)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 11)
-                                .foregroundStyle(CyclePalette.phase(.menstrual).accent)
-                                .background(CyclePalette.phase(.menstrual).tint, in: Capsule(style: .continuous))
-                        }
-                        .buttonStyle(CyclePressButtonStyle())
-                    }
-                    .padding(16)
-                    .cycleCard(cornerRadius: 26)
+                    CycleEditBasicsCard(
+                        lastPeriodStartDate: $lastPeriodStartDate,
+                        averagePeriodLength: $averagePeriodLength,
+                        averageCycleLength: $averageCycleLength,
+                        onApplyPeriodRange: applyPeriodRange
+                    )
 
                     CycleBleedingCalendarCard(
                         visibleMonth: $visibleMonth,
@@ -2415,82 +2371,48 @@ private struct CycleEditCycleDataSheet: View {
                         today: trackingStore.today
                     )
 
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Start-day symptoms")
-                            .pulsarTextStyle(.cardTitle)
-
-                        Stepper(value: $symptomSeverity, in: 1...3) {
-                            Text("Symptom intensity \(symptomSeverity)/3")
-                                .pulsarTextStyle(.label)
-                        }
-                        .padding(12)
-                        .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 118), spacing: 10)], spacing: 10) {
-                            ForEach(CycleSymptomKind.allCases, id: \.self) { symptom in
-                                CycleSelectionPill(
-                                    title: symptom.shortTitle,
-                                    isSelected: selectedSymptoms.contains(symptom),
-                                    tint: CyclePalette.phase(.luteal).accent
-                                ) {
-                                    CycleHaptics.selection()
-                                    if selectedSymptoms.contains(symptom) {
-                                        selectedSymptoms.remove(symptom)
-                                    } else {
-                                        selectedSymptoms.insert(symptom)
-                                    }
-                                }
-                            }
-                        }
-
-                        TextField("Notes for this cycle", text: $note, axis: .vertical)
-                            .lineLimit(2...5)
-                            .padding(12)
-                            .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    }
-                    .padding(16)
-                    .cycleCard(cornerRadius: 26)
+                    CycleEditSymptomsCard(
+                        symptomSeverity: $symptomSeverity,
+                        selectedSymptoms: $selectedSymptoms,
+                        note: $note,
+                        isNoteFocused: $isNoteFocused
+                    )
                 }
-                .padding(18)
+                .padding(.horizontal, CycleEditDesign.screenPadding)
+                .padding(.top, 8)
+                .padding(.bottom, 18)
             }
             .background(CycleModuleBackground())
+            .scrollDismissesKeyboard(.interactively)
             .safeAreaInset(edge: .bottom) {
-                Button {
-                    CycleHaptics.success()
-                    trackingStore.saveCycleData(
-                        lastPeriodStartDate: lastPeriodStartDate,
-                        averagePeriodLength: averagePeriodLength,
-                        averageCycleLength: averageCycleLength,
-                        bleedingDates: selectedDates,
-                        symptomLogs: symptomLogsForSave(),
-                        notesByDateKey: notesForSave()
-                    )
-                    dismiss()
-                } label: {
-                    Label("Save cycle data", systemImage: "checkmark.circle.fill")
-                        .pulsarTextStyle(.label)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(CyclePalette.phase(.luteal).accent, in: Capsule(style: .continuous))
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 12)
-                        .background(.ultraThinMaterial)
-                }
-                .buttonStyle(CyclePressButtonStyle())
+                CycleEditSaveBar(action: save)
             }
-            .navigationTitle("Cycle Data")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        isNoteFocused = false
                     }
                 }
             }
+            .toolbar(.hidden, for: .navigationBar)
         }
+        .preferredColorScheme(.light)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+    }
+
+    private func save() {
+        CycleHaptics.success()
+        trackingStore.saveCycleData(
+            lastPeriodStartDate: lastPeriodStartDate,
+            averagePeriodLength: averagePeriodLength,
+            averageCycleLength: averageCycleLength,
+            bleedingDates: selectedDates,
+            symptomLogs: symptomLogsForSave(),
+            notesByDateKey: notesForSave()
+        )
+        dismiss()
     }
 
     private func applyPeriodRange() {
@@ -2527,46 +2449,455 @@ private struct CycleEditCycleDataSheet: View {
     }
 }
 
+private enum CycleEditDesign {
+    static let screenPadding: CGFloat = 20
+    static let sectionSpacing: CGFloat = 18
+    static let cardPadding: CGFloat = 18
+    static let cardRadius: CGFloat = 30
+    static let rowSpacing: CGFloat = 14
+    static let bleedingAccent = Color(red: 0.91, green: 0.18, blue: 0.31)
+    static let bleedingTint = Color(red: 1.0, green: 0.93, blue: 0.94)
+}
+
+private struct CycleEditSheetHeader: View {
+    let action: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 14) {
+                    CycleEditCancelButton(action: action)
+                    CycleEditHeaderTitle()
+                        .frame(maxWidth: .infinity)
+                }
+            } else {
+                VStack(spacing: 6) {
+                    ZStack(alignment: .leading) {
+                        Text("Edit cycle data")
+                            .font(.system(.title2, design: .serif, weight: .regular))
+                            .foregroundStyle(CycleDashboardPalette.primaryText)
+                            .frame(maxWidth: .infinity)
+                            .accessibilityAddTraits(.isHeader)
+
+                        CycleEditCancelButton(action: action)
+                    }
+
+                    Text("Adjust your baseline and bleeding days.")
+                        .font(.subheadline)
+                        .foregroundStyle(CycleDashboardPalette.secondaryText)
+                        .multilineTextAlignment(.center)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 92)
+    }
+}
+
+private struct CycleEditHeaderTitle: View {
+    var body: some View {
+        VStack(spacing: 4) {
+            Text("Edit cycle data")
+                .font(.system(.title, design: .serif, weight: .regular))
+                .foregroundStyle(CycleDashboardPalette.primaryText)
+            Text("Adjust your baseline and bleeding days.")
+                .font(.subheadline)
+                .foregroundStyle(CycleDashboardPalette.secondaryText)
+                .multilineTextAlignment(.center)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+private struct CycleEditCancelButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button("Cancel", action: action)
+            .font(.body)
+            .foregroundStyle(CycleDashboardPalette.primaryText)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 48)
+            .buttonStyle(.plain)
+            .cycleDashboardSurface(cornerRadius: 24, isInteractive: true, shadowOpacity: 0.018)
+    }
+}
+
+private struct CycleEditBasicsCard: View {
+    @Binding var lastPeriodStartDate: Date
+    @Binding var averagePeriodLength: Int
+    @Binding var averageCycleLength: Int
+    let onApplyPeriodRange: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            CycleEditSectionLabel(title: "Basics")
+                .padding(.bottom, 10)
+
+            CycleEditControlRow(symbolName: "drop.fill", title: "Last period started") {
+                DatePicker(
+                    "Last period started",
+                    selection: $lastPeriodStartDate,
+                    displayedComponents: .date
+                )
+                .datePickerStyle(.compact)
+                .labelsHidden()
+                .tint(CycleDashboardPalette.primaryText)
+                .fixedSize()
+            }
+
+            CycleEditHairline()
+
+            CycleEditControlRow(symbolName: "rectangle", title: "Bleeding lasted") {
+                HStack(spacing: 10) {
+                    Text("\(averagePeriodLength) days")
+                        .font(.subheadline)
+                        .foregroundStyle(CycleDashboardPalette.secondaryText)
+                        .monospacedDigit()
+                        .fixedSize(horizontal: true, vertical: false)
+                    CycleEditStepperControl(
+                        title: "Bleeding duration",
+                        value: $averagePeriodLength,
+                        range: 1...14
+                    )
+                }
+            }
+
+            CycleEditHairline()
+
+            CycleEditControlRow(symbolName: "arrow.clockwise", title: "Average cycle length") {
+                HStack(spacing: 10) {
+                    Text("\(averageCycleLength) days")
+                        .font(.subheadline)
+                        .foregroundStyle(CycleDashboardPalette.secondaryText)
+                        .monospacedDigit()
+                        .fixedSize(horizontal: true, vertical: false)
+                    CycleEditStepperControl(
+                        title: "Average cycle length",
+                        value: $averageCycleLength,
+                        range: 15...90
+                    )
+                }
+            }
+
+            Button(action: applyPeriodRange) {
+                Label("Apply period range to calendar", systemImage: "calendar.badge.plus")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(CycleEditDesign.bleedingAccent)
+                    .frame(maxWidth: .infinity, minHeight: 54)
+                    .contentShape(.capsule)
+            }
+            .buttonStyle(CyclePressButtonStyle())
+            .background(CycleEditDesign.bleedingTint, in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(CycleEditDesign.bleedingAccent.opacity(0.08), lineWidth: 0.8)
+            }
+            .padding(.top, 12)
+        }
+        .padding(CycleEditDesign.cardPadding)
+        .cycleDashboardSurface(cornerRadius: CycleEditDesign.cardRadius)
+    }
+
+    private func applyPeriodRange() {
+        CycleHaptics.selection()
+        onApplyPeriodRange()
+    }
+}
+
+private struct CycleEditSectionLabel: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.caption.weight(.medium))
+            .textCase(.uppercase)
+            .tracking(0.7)
+            .foregroundStyle(CycleDashboardPalette.secondaryText)
+    }
+}
+
+private struct CycleEditControlRow<Trailing: View>: View {
+    let symbolName: String
+    let title: String
+    @ViewBuilder let trailing: Trailing
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    CycleEditControlIdentity(symbolName: symbolName, title: title)
+                    trailing
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    CycleEditControlIdentity(symbolName: symbolName, title: title)
+                        .layoutPriority(1)
+                    Spacer(minLength: 8)
+                    trailing
+                }
+            }
+        }
+        .padding(.vertical, 10)
+        .frame(minHeight: 68)
+    }
+}
+
+private struct CycleEditControlIdentity: View {
+    let symbolName: String
+    let title: String
+
+    var body: some View {
+        Label {
+            Text(title)
+                .font(.system(.subheadline, design: .serif, weight: .regular))
+                .foregroundStyle(CycleDashboardPalette.primaryText)
+        } icon: {
+            Image(systemName: symbolName)
+                .font(.body)
+                .foregroundStyle(CycleDashboardPalette.primaryText)
+                .frame(width: 42, height: 42)
+                .background(CycleDashboardPalette.subtleFill, in: Circle())
+        }
+    }
+}
+
+private struct CycleEditStepperControl: View {
+    let title: String
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button("Decrease \(title)", systemImage: "minus", action: decrement)
+                .labelStyle(.iconOnly)
+                .frame(width: 48, height: 44)
+                .disabled(value <= range.lowerBound)
+
+            Divider()
+                .frame(height: 24)
+
+            Button("Increase \(title)", systemImage: "plus", action: increment)
+                .labelStyle(.iconOnly)
+                .frame(width: 48, height: 44)
+                .disabled(value >= range.upperBound)
+        }
+        .font(.body.weight(.medium))
+        .foregroundStyle(CycleDashboardPalette.primaryText)
+        .background(CycleDashboardPalette.subtleFill, in: Capsule())
+        .overlay {
+            Capsule()
+                .stroke(CycleDashboardPalette.divider, lineWidth: 0.8)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func decrement() {
+        guard value > range.lowerBound else { return }
+        CycleHaptics.selection()
+        value -= 1
+    }
+
+    private func increment() {
+        guard value < range.upperBound else { return }
+        CycleHaptics.selection()
+        value += 1
+    }
+}
+
+private struct CycleEditHairline: View {
+    var body: some View {
+        Divider()
+            .overlay(CycleDashboardPalette.divider)
+            .padding(.leading, 54)
+    }
+}
+
+private struct CycleEditSymptomsCard: View {
+    @Binding var symptomSeverity: Int
+    @Binding var selectedSymptoms: Set<CycleSymptomKind>
+    @Binding var note: String
+    @FocusState.Binding var isNoteFocused: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var columns: [GridItem] {
+        if dynamicTypeSize.isAccessibilitySize {
+            return [GridItem(.flexible())]
+        }
+        return [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            CycleEditSectionLabel(title: "Start-day symptoms")
+
+            CycleEditControlRow(symbolName: "water.waves", title: "Symptom intensity") {
+                HStack(spacing: 10) {
+                    Text("\(symptomSeverity)/3")
+                        .font(.subheadline)
+                        .foregroundStyle(CycleDashboardPalette.secondaryText)
+                        .monospacedDigit()
+                    CycleEditStepperControl(
+                        title: "Symptom intensity",
+                        value: $symptomSeverity,
+                        range: 1...3
+                    )
+                }
+            }
+
+            LazyVGrid(columns: columns, spacing: 10) {
+                ForEach(CycleSymptomKind.allCases, id: \.self) { symptom in
+                    CycleEditSymptomChip(
+                        symptom: symptom,
+                        isSelected: selectedSymptoms.contains(symptom),
+                        action: { toggle(symptom) }
+                    )
+                }
+            }
+
+            TextField("Notes for this cycle", text: $note, axis: .vertical)
+                .font(.body)
+                .foregroundStyle(CycleDashboardPalette.primaryText)
+                .lineLimit(3...6)
+                .padding(14)
+                .background(CycleDashboardPalette.subtleFill, in: RoundedRectangle(cornerRadius: 20))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(CycleDashboardPalette.divider, lineWidth: 0.8)
+                }
+                .focused($isNoteFocused)
+                .submitLabel(.done)
+                .onSubmit {
+                    isNoteFocused = false
+                }
+                .accessibilityLabel("Notes for this cycle")
+        }
+        .padding(CycleEditDesign.cardPadding)
+        .cycleDashboardSurface(cornerRadius: CycleEditDesign.cardRadius)
+    }
+
+    private func toggle(_ symptom: CycleSymptomKind) {
+        CycleHaptics.selection()
+        if selectedSymptoms.contains(symptom) {
+            selectedSymptoms.remove(symptom)
+        } else {
+            selectedSymptoms.insert(symptom)
+        }
+    }
+}
+
+private struct CycleEditSymptomChip: View {
+    let symptom: CycleSymptomKind
+    let isSelected: Bool
+    let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: symptom.dailyLogSymbolName)
+                    .font(.subheadline)
+                    .foregroundStyle(CycleDashboardPalette.primaryText)
+                    .frame(width: 20)
+                    .accessibilityHidden(true)
+
+                Text(symptom.shortTitle)
+                    .font(.subheadline)
+                    .foregroundStyle(CycleDashboardPalette.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+
+                Spacer(minLength: 4)
+
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(CycleDashboardPalette.primaryText)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .background(
+            isSelected ? Color.black.opacity(0.075) : Color.white.opacity(0.52),
+            in: Capsule()
+        )
+        .overlay {
+            Capsule()
+                .stroke(
+                    isSelected ? CycleDashboardPalette.primaryText.opacity(0.56) : CycleDashboardPalette.divider,
+                    lineWidth: isSelected ? 1.1 : 0.8
+                )
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: isSelected)
+        .accessibilityLabel(symptom.title)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private struct CycleEditSaveBar: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label("Save cycle data", systemImage: "checkmark.circle.fill")
+                .font(.headline)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 56)
+                .contentShape(.capsule)
+        }
+        .buttonStyle(CyclePressButtonStyle())
+        .background(CycleDashboardPalette.primaryText, in: Capsule())
+        .pulsarLiquidGlass(
+            cornerRadius: 28,
+            tint: Color.black.opacity(0.14),
+            interactive: true
+        )
+        .padding(.horizontal, CycleEditDesign.screenPadding)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial)
+    }
+}
+
 private struct CycleBleedingCalendarCard: View {
     @Binding var visibleMonth: Date
     @Binding var selectedDates: Set<Date>
     let today: Date
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Button {
-                    CycleHaptics.selection()
-                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                        visibleMonth = CycleDate.addMonths(-1, to: visibleMonth)
-                    }
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .pulsarTextStyle(.label)
-                        .frame(width: 34, height: 34)
-                        .background(.secondary.opacity(0.10), in: Circle())
-                }
+                Button("Previous month", systemImage: "chevron.left", action: showPreviousMonth)
+                    .labelStyle(.iconOnly)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(CycleDashboardPalette.primaryText)
+                    .frame(width: 44, height: 44)
+                    .contentShape(.circle)
                 .buttonStyle(CyclePressButtonStyle())
 
                 Spacer()
 
                 Text(visibleMonth.formatted(.dateTime.month(.wide).year()))
-                    .pulsarTextStyle(.cardTitle)
+                    .font(.system(.title3, design: .serif, weight: .regular))
+                    .foregroundStyle(CycleDashboardPalette.primaryText)
                     .multilineTextAlignment(.center)
 
                 Spacer()
 
-                Button {
-                    CycleHaptics.selection()
-                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                        visibleMonth = CycleDate.addMonths(1, to: visibleMonth)
-                    }
-                } label: {
-                    Image(systemName: "chevron.right")
-                        .pulsarTextStyle(.label)
-                        .frame(width: 34, height: 34)
-                        .background(.secondary.opacity(0.10), in: Circle())
-                }
+                Button("Next month", systemImage: "chevron.right", action: showNextMonth)
+                    .labelStyle(.iconOnly)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(CycleDashboardPalette.primaryText)
+                    .frame(width: 44, height: 44)
+                    .contentShape(.circle)
                 .buttonStyle(CyclePressButtonStyle())
             }
 
@@ -2576,13 +2907,27 @@ private struct CycleBleedingCalendarCard: View {
                 today: today
             )
 
-            HStack(spacing: 8) {
-                CycleCalendarLegendDot(color: CyclePalette.phase(.menstrual).accent, title: "Bleeding")
-                CycleCalendarLegendDot(color: .secondary.opacity(0.45), title: "Today")
+            HStack(spacing: 18) {
+                CycleCalendarLegendDot(color: CycleEditDesign.bleedingAccent, title: "Bleeding days")
+                CycleCalendarLegendDot(color: CycleDashboardPalette.tertiaryText.opacity(0.58), title: "Today")
             }
         }
-        .padding(16)
-        .cycleCard(cornerRadius: 28)
+        .padding(CycleEditDesign.cardPadding)
+        .cycleDashboardSurface(cornerRadius: CycleEditDesign.cardRadius)
+    }
+
+    private func showPreviousMonth() {
+        CycleHaptics.selection()
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+            visibleMonth = CycleDate.addMonths(-1, to: visibleMonth)
+        }
+    }
+
+    private func showNextMonth() {
+        CycleHaptics.selection()
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+            visibleMonth = CycleDate.addMonths(1, to: visibleMonth)
+        }
     }
 }
 
@@ -2591,21 +2936,23 @@ private struct CycleBleedingCalendarGrid: View {
     @Binding var selectedDates: Set<Date>
     let today: Date
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 7), count: 7)
+    private let columns = Array(repeating: GridItem(.flexible(minimum: 0), spacing: 4), count: 7)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 9) {
-            LazyVGrid(columns: columns, spacing: 7) {
+        VStack(spacing: 10) {
+            LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(CycleDate.weekdaySymbols, id: \.self) { symbol in
                     Text(symbol)
-                        .pulsarTextStyle(.overline)
-                        .foregroundStyle(.secondary)
+                        .font(.caption.scaled(by: 0.72).weight(.medium))
+                        .textCase(.uppercase)
+                        .foregroundStyle(CycleDashboardPalette.secondaryText)
                         .frame(maxWidth: .infinity)
                         .accessibilityHidden(true)
                 }
             }
 
-            LazyVGrid(columns: columns, spacing: 8) {
+            LazyVGrid(columns: columns, spacing: 6) {
                 ForEach(Array(CycleDate.monthGridDates(for: month).enumerated()), id: \.offset) { _, date in
                     if let date {
                         CycleBleedingDateButton(
@@ -2615,7 +2962,7 @@ private struct CycleBleedingCalendarGrid: View {
                         ) {
                             let normalizedDate = CycleDate.startOfDay(date)
                             CycleHaptics.selection()
-                            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                                 if selectedDates.contains(normalizedDate) {
                                     selectedDates.remove(normalizedDate)
                                 } else {
@@ -2625,7 +2972,7 @@ private struct CycleBleedingCalendarGrid: View {
                         }
                     } else {
                         Color.clear
-                            .frame(height: 42)
+                            .frame(height: 44)
                             .accessibilityHidden(true)
                     }
                 }
@@ -2639,49 +2986,52 @@ private struct CycleBleedingDateButton: View {
     let isSelected: Bool
     let isToday: Bool
     var action: () -> Void
-
-    private var token: CyclePhaseToken { CyclePalette.phase(.menstrual) }
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
     var body: some View {
         Button(action: action) {
-            Text(date.dayNumberText)
-                .pulsarTextStyle(.label)
-                .monospacedDigit()
-                .foregroundStyle(isSelected ? .white : .primary)
-                .frame(maxWidth: .infinity)
-                .frame(height: 42)
-                .background(background)
-                .overlay {
-                    Circle()
-                        .stroke(isToday ? token.accent.opacity(0.55) : .clear, lineWidth: 1.4)
-                        .padding(3)
+            ZStack(alignment: .bottomTrailing) {
+                Text(date.dayNumberText)
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(isSelected ? .white : CycleDashboardPalette.primaryText)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(
+                        isSelected
+                            ? CycleEditDesign.bleedingAccent
+                            : (isToday ? Color.black.opacity(0.095) : Color.black.opacity(0.035)),
+                        in: Circle()
+                    )
+                    .overlay {
+                        Circle()
+                            .stroke(
+                                isToday ? CycleDashboardPalette.primaryText.opacity(0.48) : Color.clear,
+                                lineWidth: 1.2
+                            )
+                            .padding(3)
+                    }
+
+                if isSelected, differentiateWithoutColor {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption.scaled(by: 0.68))
+                        .foregroundStyle(.white, CycleDashboardPalette.primaryText)
+                        .accessibilityHidden(true)
                 }
+            }
         }
         .buttonStyle(CyclePressButtonStyle())
         .accessibilityLabel(date.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-        .accessibilityValue(isSelected ? "Bleeding selected" : isToday ? "Today" : "Not selected")
+        .accessibilityValue(accessibilityValue)
         .accessibilityHint("Toggles this date as a bleeding day.")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    @ViewBuilder
-    private var background: some View {
-        if isSelected {
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            token.accent,
-                            Color(red: 0.96, green: 0.26, blue: 0.42)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .shadow(color: token.accent.opacity(0.22), radius: 8, y: 4)
-        } else {
-            Circle()
-                .fill(.secondary.opacity(isToday ? 0.13 : 0.07))
-        }
+    private var accessibilityValue: String {
+        if isSelected, isToday { return "Today, bleeding selected" }
+        if isSelected { return "Bleeding selected" }
+        if isToday { return "Today, not selected" }
+        return "Not selected"
     }
 }
 
@@ -2695,8 +3045,8 @@ private struct CycleCalendarLegendDot: View {
                 .fill(color)
                 .frame(width: 7, height: 7)
             Text(title)
-                .pulsarTextStyle(.overline)
-                .foregroundStyle(.secondary)
+                .font(.caption)
+                .foregroundStyle(CycleDashboardPalette.secondaryText)
         }
     }
 }
@@ -2764,6 +3114,34 @@ private struct CycleReadablePanelModifier: ViewModifier {
     }
 }
 
+private struct CycleDashboardSurfaceModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let cornerRadius: CGFloat
+    let isInteractive: Bool
+    let shadowOpacity: Double
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius)
+
+        content
+            .background(
+                reduceTransparency ? Color.white : Color.white.opacity(0.64),
+                in: shape
+            )
+            .pulsarLiquidGlass(
+                cornerRadius: cornerRadius,
+                tint: reduceTransparency ? nil : Color.white.opacity(0.10),
+                interactive: isInteractive,
+                isClear: true
+            )
+            .overlay {
+                shape
+                    .stroke(Color.white.opacity(reduceTransparency ? 0.95 : 0.74), lineWidth: 0.8)
+            }
+            .shadow(color: .black.opacity(shadowOpacity), radius: 16, y: 7)
+    }
+}
+
 private extension View {
     func cycleCard(cornerRadius: CGFloat) -> some View {
         modifier(CycleCardModifier(cornerRadius: cornerRadius))
@@ -2779,6 +3157,20 @@ private extension View {
 
     func cycleReadablePanel(cornerRadius: CGFloat) -> some View {
         modifier(CycleReadablePanelModifier(cornerRadius: cornerRadius))
+    }
+
+    func cycleDashboardSurface(
+        cornerRadius: CGFloat,
+        isInteractive: Bool = false,
+        shadowOpacity: Double = 0.035
+    ) -> some View {
+        modifier(
+            CycleDashboardSurfaceModifier(
+                cornerRadius: cornerRadius,
+                isInteractive: isInteractive,
+                shadowOpacity: shadowOpacity
+            )
+        )
     }
 }
 
@@ -3710,6 +4102,17 @@ private struct CyclePhaseToken {
     let tint: Color
 }
 
+private enum CycleDashboardPalette {
+    static let primaryText = Color.black.opacity(0.94)
+    static let secondaryText = Color(red: 0.35, green: 0.36, blue: 0.40)
+    static let tertiaryText = Color(red: 0.50, green: 0.51, blue: 0.55)
+    static let subtleFill = Color.black.opacity(0.045)
+    static let dayFill = Color.white.opacity(0.74)
+    static let divider = Color.black.opacity(0.09)
+    static let ringTrack = Color.black.opacity(0.075)
+    static let ringActive = Color.black.opacity(0.72)
+}
+
 private enum CyclePalette {
     static let primaryText = Color.white.opacity(0.96)
     static let secondaryText = Color(red: 0.84, green: 0.84, blue: 0.90).opacity(0.84)
@@ -4136,23 +4539,21 @@ private extension Double {
 
 private struct CycleModuleBackground: View {
     var body: some View {
-        GeometryReader { proxy in
-            Image("CycleBackground")
-                .resizable()
-                .scaledToFill()
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .clipped()
-                .overlay {
-                    LinearGradient(
-                        colors: [
-                            Color.black.opacity(0.00),
-                            Color.black.opacity(0.06),
-                            Color(red: 0.05, green: 0.07, blue: 0.11).opacity(0.16)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                }
+        ZStack {
+            Color.white
+
+            RadialGradient(
+                colors: [Color.black.opacity(0.028), .clear],
+                center: .topLeading,
+                startRadius: 0,
+                endRadius: 420
+            )
+
+            LinearGradient(
+                colors: [Color.white.opacity(0.2), Color.black.opacity(0.018), Color.white],
+                startPoint: .top,
+                endPoint: .bottom
+            )
         }
         .ignoresSafeArea()
     }
@@ -4211,5 +4612,11 @@ private enum CyclePreviewData {
     CycleDailyLogSheet(
         trackingStore: CycleTrackingStore(initialState: CyclePreviewData.dailyLogState),
         date: CycleDate.startOfDay(.now)
+    )
+}
+
+#Preview("Edit Cycle Data") {
+    CycleEditCycleDataSheet(
+        trackingStore: CycleTrackingStore(initialState: CyclePreviewData.dailyLogState)
     )
 }

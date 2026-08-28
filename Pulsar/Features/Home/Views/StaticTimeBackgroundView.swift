@@ -15,27 +15,21 @@ enum HomeBackgroundMode: String, CaseIterable, Identifiable, Codable {
     case minimalDark
 
     static var allCases: [HomeBackgroundMode] {
-        [.automatic, .morning, .day, .sunset, .night]
+        [.automatic, .day, .night]
     }
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .automatic: "Automatic"
-        case .morning: "Sunrise"
-        case .day: "Day"
-        case .sunset: "Sunset"
-        case .night: "Night"
-        case .minimalDark: "Night"
+        case .automatic: "Dynamic"
+        case .morning, .day: "Light"
+        case .sunset, .night, .minimalDark: "Dark"
         }
     }
 
     var shortTitle: String {
-        switch self {
-        case .automatic: "Automatic"
-        default: title
-        }
+        title
     }
 
     fileprivate var manualStyle: HomeBackgroundStyle? {
@@ -63,17 +57,34 @@ final class HomeBackgroundSettingsStore: ObservableObject {
         self.defaults = defaults
         if let rawValue = defaults.string(forKey: storageKey),
            let mode = HomeBackgroundMode(rawValue: rawValue) {
-            self.mode = mode == .minimalDark ? .night : mode
+            let normalizedMode = Self.normalizedAppearanceMode(mode)
+            self.mode = normalizedMode
+            if normalizedMode != mode {
+                defaults.set(normalizedMode.rawValue, forKey: storageKey)
+            }
         } else if let migratedMode = Self.migratedMode(from: defaults.string(forKey: storageKey)) {
-            self.mode = migratedMode
+            let normalizedMode = Self.normalizedAppearanceMode(migratedMode)
+            self.mode = normalizedMode
+            defaults.set(normalizedMode.rawValue, forKey: storageKey)
         } else {
             self.mode = .automatic
         }
     }
 
     func setMode(_ mode: HomeBackgroundMode) {
-        self.mode = mode == .minimalDark ? .night : mode
+        self.mode = Self.normalizedAppearanceMode(mode)
         defaults.set(self.mode.rawValue, forKey: storageKey)
+    }
+
+    private static func normalizedAppearanceMode(_ mode: HomeBackgroundMode) -> HomeBackgroundMode {
+        switch mode {
+        case .automatic:
+            .automatic
+        case .morning, .day:
+            .day
+        case .sunset, .night, .minimalDark:
+            .night
+        }
     }
 
     private static func migratedMode(from rawValue: String?) -> HomeBackgroundMode? {

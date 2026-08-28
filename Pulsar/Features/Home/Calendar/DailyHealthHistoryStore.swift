@@ -6,19 +6,34 @@
 import Foundation
 
 struct DailyHealthHistoryStore {
-    private let defaults: UserDefaults
-    private let recordsKey = "pulsar.calendar.dailyHealthRecords.v1"
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
+    private final class State {
+        var records: [DailyStrainRecord]
 
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
+        init(records: [DailyStrainRecord]) {
+            self.records = records
+        }
+    }
+
+    private let recordsKey = "pulsar.calendar.dailyHealthRecords.v1"
+    private let fileCache: PulsarSyncPayloadFileCache
+    private let state: State
+
+    init(
+        defaults: UserDefaults = .standard,
+        fileCache: PulsarSyncPayloadFileCache = .shared
+    ) {
+        self.fileCache = fileCache
+        let data = fileCache.migrateLegacyData(
+            from: defaults,
+            key: recordsKey,
+            to: .dailyHealthHistory,
+            validating: { (try? JSONDecoder().decode([DailyStrainRecord].self, from: $0)) != nil }
+        )
+        self.state = State(records: data.flatMap { try? JSONDecoder().decode([DailyStrainRecord].self, from: $0) } ?? [])
     }
 
     func loadRecords(calendar: Calendar = .current) -> [DailyStrainRecord] {
-        guard let data = defaults.data(forKey: recordsKey),
-              let records = try? decoder.decode([DailyStrainRecord].self, from: data) else { return [] }
-        return normalized(records, calendar: calendar)
+        normalized(state.records, calendar: calendar)
     }
 
     @discardableResult
@@ -74,8 +89,11 @@ struct DailyHealthHistoryStore {
     }
 
     private func save(_ records: [DailyStrainRecord]) {
-        guard let data = try? encoder.encode(records) else { return }
-        defaults.set(data, forKey: recordsKey)
+        state.records = records
+        let revision = DispatchTime.now().uptimeNanoseconds
+        Task {
+            _ = await fileCache.save(records, for: .dailyHealthHistory, revision: revision)
+        }
     }
 
     private func normalized(_ records: [DailyStrainRecord], calendar: Calendar) -> [DailyStrainRecord] {

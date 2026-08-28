@@ -87,6 +87,7 @@ struct StrainScoringEngine {
             workouts: input.workouts.map { workout in
                 let heartRates = workout.heartRateSamples.map(\.bpm).filter { $0 > 0 }
                 return StrainWorkoutSummary(
+                    id: workout.id,
                     workoutType: workout.type,
                     startDate: workout.start,
                     endDate: workout.end,

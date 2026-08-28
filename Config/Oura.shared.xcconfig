@@ -9,3 +9,4 @@ OURA_MOCK_MODE = NO
 
 #include? "Oura.local.xcconfig"
 #include? "Orion.shared.xcconfig"
+#include? "FoodCommunity.shared.xcconfig"
